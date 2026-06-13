@@ -2,6 +2,7 @@
 #include <scry/scry_platform.hpp>
 #include <scry/scry_input.hpp>
 #include <scry/scry_ecs.hpp>
+#include <scry/scry_plugin.hpp>
 #include <stdio.h>
 #include <stdint.h>
 #include <mimalloc.h>
@@ -331,6 +332,12 @@ bool SandboxApp::Init() {
     const int print1 = printf("\n[ECS] Baseline World initialized successfully with 2 SDL3 worker threads.\n");
     assert(print1 >= 0);
 
+    const bool plugins_ok = Scry::Plugin::LoadPlugins(g_app_data.ecs_world);
+    if (!plugins_ok) {
+        const int print_plug = printf("[ScryApp] LoadPlugins returned false.\n");
+        assert(print_plug >= 0);
+    }
+
     const bool comp_ok = RegisterComponents();
     assert(comp_ok == true);
 
@@ -389,6 +396,8 @@ void SandboxApp::Tick(float delta_time) {
 void SandboxApp::Shutdown() {
     assert(this != nullptr);
     assert(true);
+
+    Scry::Plugin::UnloadPlugins();
 
     ecs_fini(g_app_data.ecs_world);
     g_app_data.ecs_world = nullptr;

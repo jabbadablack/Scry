@@ -65,6 +65,7 @@ add_library(scry SHARED
     src/scry_memory.cpp
     src/scry_platform.cpp
     src/scry_ecs.cpp
+    src/scry_plugin.cpp
     src/scry.cpp
 )
 
@@ -96,4 +97,19 @@ add_custom_command(TARGET sandbox POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     $<TARGET_FILE:flecs>
     $<TARGET_FILE_DIR:sandbox>
+)
+
+# Scry Physics Plugin (Decoupled DLL)
+add_library(scry_physics_plugin SHARED
+    plugins/scry_physics_plugin/scry_physics_plugin.cpp
+)
+target_link_libraries(scry_physics_plugin PRIVATE flecs)
+target_include_directories(scry_physics_plugin PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+
+# Copy the physics plugin DLL to plugins/ directory next to sandbox
+add_custom_command(TARGET scry_physics_plugin POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:sandbox>/plugins
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    $<TARGET_FILE:scry_physics_plugin>
+    $<TARGET_FILE_DIR:sandbox>/plugins/$<TARGET_FILE_NAME:scry_physics_plugin>
 )

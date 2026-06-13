@@ -264,6 +264,8 @@ ecs_world_t* CreateWorld() {
         return nullptr;
     }
 
+    ECS_IMPORT(world, FlecsMeta);
+
     ecs_entity_desc_t desc = {};
 
     desc.name = "OnIntent";

@@ -3,6 +3,7 @@
 #include <scry/scry_input.hpp>
 #include <scry/scry_ecs.hpp>
 #include <scry/scry_plugin.hpp>
+#include <scry/scry_json.hpp>
 #include <stdio.h>
 #include <stdint.h>
 #include <mimalloc.h>
@@ -287,23 +288,7 @@ static bool RegisterSystems() {
     return true;
 }
 
-static bool CreatePlayer() {
-    assert(g_app_data.ecs_world != nullptr);
-    assert(id_DoubleBufferedPosition != 0);
 
-    ecs_entity_desc_t player_desc = {};
-    player_desc.name = "Player";
-    g_app_data.player_entity = ecs_entity_init(g_app_data.ecs_world, &player_desc);
-    assert(g_app_data.player_entity != 0);
-
-    Scry::ECS::DoubleBuffered<Position> initial_pos = { {10.0f, 20.0f}, {10.0f, 20.0f} };
-    ecs_set_id(g_app_data.ecs_world, g_app_data.player_entity, id_DoubleBufferedPosition, sizeof(initial_pos), &initial_pos);
-
-    MoveIntent initial_intent = { 0.0f, 0.0f };
-    ecs_set_id(g_app_data.ecs_world, g_app_data.player_entity, id_MoveIntent, sizeof(initial_intent), &initial_intent);
-
-    return true;
-}
 
 class SandboxApp : public Scry::Platform::ScryApp {
 public:
@@ -332,12 +317,6 @@ bool SandboxApp::Init() {
     const int print1 = printf("\n[ECS] Baseline World initialized successfully with 2 SDL3 worker threads.\n");
     assert(print1 >= 0);
 
-    const bool plugins_ok = Scry::Plugin::LoadPlugins(g_app_data.ecs_world);
-    if (!plugins_ok) {
-        const int print_plug = printf("[ScryApp] LoadPlugins returned false.\n");
-        assert(print_plug >= 0);
-    }
-
     const bool comp_ok = RegisterComponents();
     assert(comp_ok == true);
 
@@ -346,8 +325,17 @@ bool SandboxApp::Init() {
 
     Scry::ECS::RegisterDoubleBufferSync<Position>(g_app_data.ecs_world, id_DoubleBufferedPosition);
 
-    const bool player_ok = CreatePlayer();
-    assert(player_ok == true);
+    const bool json_ok = Scry::JSON::LoadProjectConfig(g_app_data.ecs_world, "scry_project.json");
+    assert(json_ok == true);
+    if (!json_ok) {
+        return false;
+    }
+
+    g_app_data.player_entity = ecs_lookup(g_app_data.ecs_world, "Player");
+    assert(g_app_data.player_entity != 0);
+    if (g_app_data.player_entity == 0) {
+        return false;
+    }
 
     const int print2 = printf("[ScryApp] AppInit: ECS world, components, systems, and Player entity registered.\n");
     assert(print2 >= 0);

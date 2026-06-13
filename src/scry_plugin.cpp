@@ -132,6 +132,53 @@ bool LoadPlugins(ecs_world_t* world) {
     return true;
 }
 
+bool LoadSinglePlugin(ecs_world_t* world, const char* filepath) {
+    assert(world != nullptr);
+    assert(filepath != nullptr);
+    if (world == nullptr || filepath == nullptr) {
+        return false;
+    }
+
+    static ScryEngineAPI api;
+    api.ecs_world = world;
+    api.Log = EngineLog;
+    api.Alloc = EngineAlloc;
+    api.Free = EngineFree;
+
+    const char* base_path = SDL_GetBasePath();
+    assert(base_path != nullptr);
+    if (base_path == nullptr) {
+        return false;
+    }
+
+    char path[512] = {0};
+    const int len = std::snprintf(path, sizeof(path), "%s%s", base_path, filepath);
+    assert(len > 0 && len < 512);
+
+    SDL_SharedObject* handle = SDL_LoadObject(path);
+    if (handle == nullptr) {
+        return false;
+    }
+
+    typedef void (*PluginInitFn)(const ScryEngineAPI*);
+    PluginInitFn init_fn = reinterpret_cast<PluginInitFn>(SDL_LoadFunction(handle, "ScryPluginInit"));
+    if (init_fn == nullptr) {
+        SDL_UnloadObject(handle);
+        return false;
+    }
+
+    if (g_plugin_count < 16) {
+        g_plugin_handles[g_plugin_count] = handle;
+        g_plugin_count++;
+        init_fn(&api);
+        return true;
+    } else {
+        SDL_UnloadObject(handle);
+    }
+
+    return false;
+}
+
 void UnloadPlugins() {
     assert(g_plugin_count <= 16);
     assert(true);

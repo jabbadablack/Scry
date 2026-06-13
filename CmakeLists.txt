@@ -1,5 +1,52 @@
 cmake_minimum_required(VERSION 3.18)
-project(SCRY)
+project(SCRY VERSION 1.0.0 LANGUAGES C CXX)
 
+# Require C++20 and C11
 set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+
+# Configure mimalloc options
+set(MI_OVERRIDE ON CACHE BOOL "Override standard malloc" FORCE)
+set(MI_BUILD_SHARED OFF CACHE BOOL "Build mimalloc as a shared library" FORCE)
+set(MI_BUILD_OBJECT OFF CACHE BOOL "Build mimalloc object files" FORCE)
+set(MI_BUILD_TESTS OFF CACHE BOOL "Build mimalloc tests" FORCE)
+set(MI_BUILD_STATIC ON CACHE BOOL "Build mimalloc as static library" FORCE)
+
+# Integrate mimalloc via FetchContent
+include(FetchContent)
+FetchContent_Declare(
+    mimalloc
+    GIT_REPOSITORY https://github.com/microsoft/mimalloc.git
+    GIT_TAG v2.1.2
+)
+FetchContent_MakeAvailable(mimalloc)
+
+# Scry Shared Library
+add_library(scry SHARED
+    src/scry_memory.cpp
+    src/scry.cpp
+)
+
+# Set Scry include directories
+target_include_directories(scry PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+
+# Export macro definitions
+target_compile_definitions(scry PRIVATE SCRY_EXPORT)
+
+# Link mimalloc statically into the shared library scry
+target_link_libraries(scry PRIVATE mimalloc-static)
+target_include_directories(scry PRIVATE "${mimalloc_SOURCE_DIR}/include")
+
+# Sandbox executable
+add_executable(sandbox
+    sandbox/main.cpp
+)
+
+# Link sandbox against scry and mimalloc-static
+target_link_libraries(sandbox PRIVATE scry mimalloc-static)
+target_include_directories(sandbox PRIVATE "${mimalloc_SOURCE_DIR}/include")

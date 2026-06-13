@@ -13,3 +13,6 @@
         #define SCRY_API
     #endif
 #endif
+
+extern "C" SCRY_API const char* ScryGetVersion();
+

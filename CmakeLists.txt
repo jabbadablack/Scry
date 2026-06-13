@@ -25,7 +25,12 @@ set(SDL_HAPTIC OFF CACHE BOOL "Disable SDL Haptic subsystem" FORCE)
 set(SDL_SENSOR OFF CACHE BOOL "Disable SDL Sensor subsystem" FORCE)
 set(SDL_CAMERA OFF CACHE BOOL "Disable SDL Camera subsystem" FORCE)
 
-# Integrate mimalloc & SDL3 via FetchContent
+# Configure Flecs options
+set(FLECS_SHARED ON CACHE BOOL "Build Flecs shared library" FORCE)
+set(FLECS_STATIC OFF CACHE BOOL "Build Flecs static library" FORCE)
+set(FLECS_TESTS OFF CACHE BOOL "Build Flecs tests" FORCE)
+
+# Integrate mimalloc, SDL3, & Flecs via FetchContent
 include(FetchContent)
 
 FetchContent_Declare(
@@ -40,12 +45,19 @@ FetchContent_Declare(
     GIT_TAG release-3.2.0
 )
 
-FetchContent_MakeAvailable(mimalloc SDL3)
+FetchContent_Declare(
+    flecs
+    GIT_REPOSITORY https://github.com/SanderMertens/flecs.git
+    GIT_TAG v4.1.5
+)
+
+FetchContent_MakeAvailable(mimalloc SDL3 flecs)
 
 # Scry Shared Library
 add_library(scry SHARED
     src/scry_memory.cpp
     src/scry_platform.cpp
+    src/scry_ecs.cpp
     src/scry.cpp
 )
 
@@ -59,7 +71,7 @@ target_include_directories(scry PUBLIC
 target_compile_definitions(scry PRIVATE SCRY_EXPORT)
 
 # Link dependencies to the shared library scry
-target_link_libraries(scry PRIVATE mimalloc-static SDL3-static)
+target_link_libraries(scry PRIVATE mimalloc-static SDL3-static flecs)
 target_include_directories(scry PRIVATE "${mimalloc_SOURCE_DIR}/include")
 
 # Sandbox executable
@@ -67,6 +79,14 @@ add_executable(sandbox
     sandbox/main.cpp
 )
 
-# Link sandbox against scry and mimalloc-static
-target_link_libraries(sandbox PRIVATE scry mimalloc-static)
+# Link sandbox against scry, flecs, and mimalloc-static
+target_link_libraries(sandbox PRIVATE scry flecs mimalloc-static)
 target_include_directories(sandbox PRIVATE "${mimalloc_SOURCE_DIR}/include")
+
+
+# Copy flecs DLL to sandbox output directory for runtime execution
+add_custom_command(TARGET sandbox POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    $<TARGET_FILE:flecs>
+    $<TARGET_FILE_DIR:sandbox>
+)

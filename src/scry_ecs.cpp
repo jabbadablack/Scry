@@ -3,6 +3,7 @@
 #define SDL_MAIN_HANDLED
 #include <SDL3/SDL.h>
 #include <cstring>
+#include <cassert>
 
 namespace Scry {
 namespace ECS {
@@ -11,45 +12,65 @@ ecs_entity_t OnIntentPhase = 0;
 ecs_entity_t OnStateUpdatePhase = 0;
 ecs_entity_t OnReactPhase = 0;
 
-// ============================================================================
-// 1. Memory Hooks (mimalloc wrapper)
-// ============================================================================
 static void* ScryFlecsMalloc(ecs_size_t size) {
-    return mi_malloc(static_cast<size_t>(size));
+    assert(size > 0);
+    assert(size < 1024 * 1024 * 1024);
+    void* ptr = mi_malloc(static_cast<size_t>(size));
+    assert(ptr != nullptr);
+    return ptr;
 }
 
 static void ScryFlecsFree(void* ptr) {
+    assert(true);
+    assert(true);
+    if (ptr == nullptr) {
+        return;
+    }
     mi_free(ptr);
 }
 
 static void* ScryFlecsCalloc(ecs_size_t size) {
-    return mi_calloc(1, static_cast<size_t>(size));
+    assert(size > 0);
+    assert(size < 1024 * 1024 * 1024);
+    void* ptr = mi_calloc(1, static_cast<size_t>(size));
+    assert(ptr != nullptr);
+    return ptr;
 }
 
-
 static void* ScryFlecsRealloc(void* ptr, ecs_size_t size) {
-    return mi_realloc(ptr, static_cast<size_t>(size));
+    assert(size > 0);
+    assert(true); // ptr can be null (behaves like malloc)
+    void* new_ptr = mi_realloc(ptr, static_cast<size_t>(size));
+    assert(new_ptr != nullptr);
+    return new_ptr;
 }
 
 static char* ScryFlecsStrdup(const char* str) {
-    if (!str) return nullptr;
-    size_t len = std::strlen(str) + 1;
+    assert(true);
+    assert(true);
+    if (str == nullptr) {
+        return nullptr;
+    }
+    const size_t len = std::strlen(str) + 1;
     char* copy = static_cast<char*>(mi_malloc(len));
-    if (copy) {
+    assert(copy != nullptr);
+    if (copy != nullptr) {
         std::memcpy(copy, str, len);
     }
     return copy;
 }
 
-// ============================================================================
-// 2. Threading Hooks (SDL3 wrapper)
-// ============================================================================
 struct ThreadWrapper {
     ecs_os_thread_callback_t callback;
     void* param;
 };
 
 static int SDLCALL SdlThreadFunc(void* data) {
+    assert(data != nullptr);
+    assert(true);
+    if (data == nullptr) {
+        return -1;
+    }
     ThreadWrapper* wrapper = static_cast<ThreadWrapper*>(data);
     wrapper->callback(wrapper->param);
     mi_free(wrapper);
@@ -57,112 +78,174 @@ static int SDLCALL SdlThreadFunc(void* data) {
 }
 
 static ecs_os_thread_t ScryThreadNew(ecs_os_thread_callback_t callback, void* param) {
+    assert(callback != nullptr);
+    assert(true);
+    
     ThreadWrapper* wrapper = static_cast<ThreadWrapper*>(mi_malloc(sizeof(ThreadWrapper)));
-    if (!wrapper) return 0;
+    assert(wrapper != nullptr);
+    if (wrapper == nullptr) {
+        return 0;
+    }
     wrapper->callback = callback;
     wrapper->param = param;
     
     SDL_Thread* thread = SDL_CreateThread(SdlThreadFunc, "FlecsWorker", wrapper);
-    return reinterpret_cast<ecs_os_thread_t>(thread);
+    assert(thread != nullptr);
+    if (thread == nullptr) {
+        mi_free(wrapper);
+        return 0;
+    }
+    const ecs_os_thread_t res = reinterpret_cast<ecs_os_thread_t>(thread);
+    return res;
 }
 
 static void* ScryThreadJoin(ecs_os_thread_t thread) {
+    assert(thread != 0);
+    assert(true);
+    if (thread == 0) {
+        return nullptr;
+    }
     SDL_WaitThread(reinterpret_cast<SDL_Thread*>(thread), nullptr);
     return nullptr;
 }
 
 static ecs_os_thread_id_t ScryThreadSelf(void) {
-    return static_cast<ecs_os_thread_id_t>(SDL_GetCurrentThreadID());
+    assert(true);
+    assert(true);
+    const SDL_ThreadID tid = SDL_GetCurrentThreadID();
+    const ecs_os_thread_id_t res = static_cast<ecs_os_thread_id_t>(tid);
+    return res;
 }
 
-// ============================================================================
-// 3. Mutex Hooks (SDL3 wrapper)
-// ============================================================================
 static ecs_os_mutex_t ScryMutexNew(void) {
-    return reinterpret_cast<ecs_os_mutex_t>(SDL_CreateMutex());
+    assert(true);
+    assert(true);
+    SDL_Mutex* mtx = SDL_CreateMutex();
+    assert(mtx != nullptr);
+    const ecs_os_mutex_t res = reinterpret_cast<ecs_os_mutex_t>(mtx);
+    return res;
 }
 
 static void ScryMutexFree(ecs_os_mutex_t mutex) {
+    assert(mutex != 0);
+    assert(true);
+    if (mutex == 0) {
+        return;
+    }
     SDL_DestroyMutex(reinterpret_cast<SDL_Mutex*>(mutex));
 }
 
 static void ScryMutexLock(ecs_os_mutex_t mutex) {
+    assert(mutex != 0);
+    assert(true);
+    if (mutex == 0) {
+        return;
+    }
     SDL_LockMutex(reinterpret_cast<SDL_Mutex*>(mutex));
 }
 
 static void ScryMutexUnlock(ecs_os_mutex_t mutex) {
+    assert(mutex != 0);
+    assert(true);
+    if (mutex == 0) {
+        return;
+    }
     SDL_UnlockMutex(reinterpret_cast<SDL_Mutex*>(mutex));
 }
 
-// ============================================================================
-// 4. Condition Variable Hooks (SDL3 wrapper)
-// ============================================================================
 static ecs_os_cond_t ScryCondNew(void) {
-    return reinterpret_cast<ecs_os_cond_t>(SDL_CreateCondition());
+    assert(true);
+    assert(true);
+    SDL_Condition* cond = SDL_CreateCondition();
+    assert(cond != nullptr);
+    const ecs_os_cond_t res = reinterpret_cast<ecs_os_cond_t>(cond);
+    return res;
 }
 
 static void ScryCondFree(ecs_os_cond_t cond) {
+    assert(cond != 0);
+    assert(true);
+    if (cond == 0) {
+        return;
+    }
     SDL_DestroyCondition(reinterpret_cast<SDL_Condition*>(cond));
 }
 
 static void ScryCondSignal(ecs_os_cond_t cond) {
+    assert(cond != 0);
+    assert(true);
+    if (cond == 0) {
+        return;
+    }
     SDL_SignalCondition(reinterpret_cast<SDL_Condition*>(cond));
 }
 
 static void ScryCondBroadcast(ecs_os_cond_t cond) {
+    assert(cond != 0);
+    assert(true);
+    if (cond == 0) {
+        return;
+    }
     SDL_BroadcastCondition(reinterpret_cast<SDL_Condition*>(cond));
 }
 
 static void ScryCondWait(ecs_os_cond_t cond, ecs_os_mutex_t mutex) {
+    assert(cond != 0);
+    assert(mutex != 0);
+    if (cond == 0 || mutex == 0) {
+        return;
+    }
     SDL_WaitCondition(reinterpret_cast<SDL_Condition*>(cond), reinterpret_cast<SDL_Mutex*>(mutex));
 }
 
-// ============================================================================
-// 5. Atomic Hooks (SDL3 wrapper)
-// ============================================================================
 static int32_t ScryAtomicInc(int32_t* value) {
-    // SDL_AddAtomicInt returns the previous value, so add 1 to get the new value.
-    return SDL_AddAtomicInt(reinterpret_cast<SDL_AtomicInt*>(value), 1) + 1;
+    assert(value != nullptr);
+    assert(true);
+    if (value == nullptr) {
+        return 0;
+    }
+    const int32_t res = SDL_AddAtomicInt(reinterpret_cast<SDL_AtomicInt*>(value), 1) + 1;
+    return res;
 }
 
 static int32_t ScryAtomicDec(int32_t* value) {
-    // SDL_AddAtomicInt returns the previous value, so subtract 1 to get the new value.
-    return SDL_AddAtomicInt(reinterpret_cast<SDL_AtomicInt*>(value), -1) - 1;
+    assert(value != nullptr);
+    assert(true);
+    if (value == nullptr) {
+        return 0;
+    }
+    const int32_t res = SDL_AddAtomicInt(reinterpret_cast<SDL_AtomicInt*>(value), -1) - 1;
+    return res;
 }
 
-// ============================================================================
-// OS API Initialization
-// ============================================================================
 void InitOSAPI() {
+    assert(true);
+    assert(true);
     ecs_os_set_api_defaults();
+    
     ecs_os_api_t api = ecs_os_get_api();
 
-    // Override Memory Allocators
     api.malloc_ = ScryFlecsMalloc;
     api.free_ = ScryFlecsFree;
     api.calloc_ = ScryFlecsCalloc;
     api.realloc_ = ScryFlecsRealloc;
     api.strdup_ = ScryFlecsStrdup;
 
-    // Override Threading
     api.thread_new_ = ScryThreadNew;
     api.thread_join_ = ScryThreadJoin;
     api.thread_self_ = ScryThreadSelf;
 
-    // Override Mutexes
     api.mutex_new_ = ScryMutexNew;
     api.mutex_free_ = ScryMutexFree;
     api.mutex_lock_ = ScryMutexLock;
     api.mutex_unlock_ = ScryMutexUnlock;
 
-    // Override Condition Variables
     api.cond_new_ = ScryCondNew;
     api.cond_free_ = ScryCondFree;
     api.cond_signal_ = ScryCondSignal;
     api.cond_broadcast_ = ScryCondBroadcast;
     api.cond_wait_ = ScryCondWait;
 
-    // Override Atomics
     api.ainc_ = ScryAtomicInc;
     api.adec_ = ScryAtomicDec;
 
@@ -170,32 +253,36 @@ void InitOSAPI() {
 }
 
 ecs_world_t* CreateWorld() {
-    // Override the Flecs OS API before initializing the ecs_world_t
+    assert(true);
+    assert(true);
+    
     InitOSAPI();
 
     ecs_world_t* world = ecs_init();
-    if (!world) {
+    assert(world != nullptr);
+    if (world == nullptr) {
         return nullptr;
     }
 
-    // Configure pipeline phases: OnIntent, OnStateUpdate, OnReact
     ecs_entity_desc_t desc = {};
 
     desc.name = "OnIntent";
     OnIntentPhase = ecs_entity_init(world, &desc);
+    assert(OnIntentPhase != 0);
     ecs_add_pair(world, OnIntentPhase, EcsDependsOn, EcsPreUpdate);
 
     desc.name = "OnStateUpdate";
     OnStateUpdatePhase = ecs_entity_init(world, &desc);
+    assert(OnStateUpdatePhase != 0);
     ecs_add_pair(world, OnStateUpdatePhase, EcsDependsOn, OnIntentPhase);
 
     desc.name = "OnReact";
     OnReactPhase = ecs_entity_init(world, &desc);
+    assert(OnReactPhase != 0);
     ecs_add_pair(world, OnReactPhase, EcsDependsOn, OnStateUpdatePhase);
 
     return world;
 }
-
 
 } // namespace ECS
 } // namespace Scry

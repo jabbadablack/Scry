@@ -53,6 +53,13 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(mimalloc SDL3 flecs)
 
+# Enable all pedantic compiler warnings and treat warnings as errors
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    add_compile_options(-Wall -Wextra -Wpedantic -Werror)
+elseif(MSVC)
+    add_compile_options(/W4 /WX)
+endif()
+
 # Scry Shared Library
 add_library(scry SHARED
     src/scry_memory.cpp

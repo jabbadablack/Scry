@@ -1,33 +1,10 @@
 #include <scry/scry_memory.hpp>
+#include <scry/scry_platform.hpp>
+#include <scry/scry_input.hpp>
 #include <stdio.h>
 #include <stdint.h>
 #include <mimalloc.h>
 #include <new>
-
-// Global operator new/delete overrides in sandbox to use mimalloc
-void* operator new(size_t size) {
-    return mi_malloc(size);
-}
-
-void* operator new[](size_t size) {
-    return mi_malloc(size);
-}
-
-void operator delete(void* p) noexcept {
-    mi_free(p);
-}
-
-void operator delete[](void* p) noexcept {
-    mi_free(p);
-}
-
-void operator delete(void* p, size_t size) noexcept {
-    mi_free(p);
-}
-
-void operator delete[](void* p, size_t size) noexcept {
-    mi_free(p);
-}
 
 struct TestParticle {
     float x;             // 4 bytes
@@ -37,15 +14,85 @@ struct TestParticle {
     int8_t active;       // 1 byte
 };
 
+struct AppData {
+    uint32_t frame_count = 0;
+};
+
 extern "C" SCRY_API const char* ScryGetVersion();
 
+// App Lifecycle callbacks
+bool AppInit(void* user_data) {
+    AppData* data = static_cast<AppData*>(user_data);
+    data->frame_count = 0;
+    printf("\n[ScryApp] Init: Application state reset. Press W, Space, or left/right mouse clicks to test inputs!\n");
+    printf("[ScryApp] Press ESCAPE or close the window to exit the engine loop.\n\n");
+    return true;
+}
 
-int main() {
+void AppTick(void* user_data, float delta_time) {
+    AppData* data = static_cast<AppData*>(user_data);
+    data->frame_count++;
+
+    // Read input from the global double-buffered input bitmask
+    bool w_down = Scry::Input::g_input_buffer.IsKeyDown(Scry::Input::Key::W);
+    bool space_down = Scry::Input::g_input_buffer.IsKeyDown(Scry::Input::Key::Space);
+    bool click_down = Scry::Input::g_input_buffer.IsKeyDown(Scry::Input::Key::MouseL);
+    bool right_click = Scry::Input::g_input_buffer.IsKeyDown(Scry::Input::Key::MouseR);
+    
+    int16_t mouse_x = 0;
+    int16_t mouse_y = 0;
+    Scry::Input::g_input_buffer.GetMousePos(mouse_x, mouse_y);
+
+    // Print status every 120 frames (~2 seconds with 1ms delay)
+    if (data->frame_count % 120 == 0) {
+        printf("[ScryApp] Frame %4u | dt: %.4fs | Keys: W=%d, Space=%d | Mouse: LClick=%d, RClick=%d | Pos: (%d, %d)\n",
+               data->frame_count, delta_time, w_down, space_down, click_down, right_click, mouse_x, mouse_y);
+    }
+
+    // Auto-terminate sandbox after 240 frames (~4 seconds) for automated test execution
+    if (data->frame_count >= 240) {
+        printf("[ScryApp] Auto-terminating sandbox at frame %u for verification...\n", data->frame_count);
+        Scry::Platform::RequestEngineExit();
+    }
+}
+
+
+void AppShutdown(void* user_data) {
+    AppData* data = static_cast<AppData*>(user_data);
+    printf("[ScryApp] Shutdown: Final frame count: %u\n", data->frame_count);
+}
+
+// Global operator new/delete overrides in sandbox to use mimalloc
+void* operator new(size_t size) {
+    return mi_malloc(size);
+}
+void* operator new[](size_t size) {
+    return mi_malloc(size);
+}
+void operator delete(void* p) noexcept {
+    mi_free(p);
+}
+void operator delete[](void* p) noexcept {
+    mi_free(p);
+}
+void operator delete(void* p, size_t size) noexcept {
+    mi_free(p);
+}
+void operator delete[](void* p, size_t size) noexcept {
+    mi_free(p);
+}
+
+int main(int argc, char* argv[]) {
+    (void)argc;
+    (void)argv;
+
     printf("=== Scry Framework Engine Sandbox ===\n");
     printf("Engine Version: %s\n\n", ScryGetVersion());
 
-    // 1. Verify mimalloc overriding
-    printf("--- 1. Allocator Override Verification ---\n");
+    // ----------------------------------------------------
+    // Phase 1: Core Memory Verification
+    // ----------------------------------------------------
+    printf("--- PHASE 1: Core Memory Verification ---\n");
     
     // Test operator new in Sandbox
     int* p_new = new int(42);
@@ -61,15 +108,13 @@ int main() {
            p_dll, dll_new_ok ? "YES" : "NO");
     Scry::Memory::FreeInDll(p_dll);
 
-
-    // 2. Test Arena Allocator
-    printf("\n--- 2. Arena Allocator Verification ---\n");
+    // Test Arena Allocator
     const size_t arena_size = 1024;
     void* arena_backing = ::operator new(arena_size);
     
     Scry::Memory::Arena arena;
     arena.Init(arena_backing, arena_size);
-    printf("Arena initialized with %zu bytes backing store.\n", arena_size);
+    printf("\nArena initialized with %zu bytes backing store.\n", arena_size);
 
     void* p1 = arena.Allocate(10, 8); // 8-byte aligned
     void* p2 = arena.Allocate(20, 16); // 16-byte aligned
@@ -84,17 +129,13 @@ int main() {
 
     printf("Arena used memory: %zu bytes (remaining: %zu bytes)\n", 
            arena.GetUsedMemory(), arena.GetRemainingMemory());
-
     arena.Reset();
-    printf("Arena reset. Current used memory: %zu bytes\n", arena.GetUsedMemory());
     ::operator delete(arena_backing);
 
-    // 3. Test Pool Allocator
-    printf("\n--- 3. Pool Allocator Verification ---\n");
-    
+    // Test Pool Allocator
     const uint32_t pool_capacity = 4;
     size_t pool_mem_size = Scry::Memory::PoolAllocator<TestParticle, pool_capacity>::GetRequiredMemorySize();
-    printf("PoolAllocator required backing memory size: %zu bytes\n", pool_mem_size);
+    printf("\nPoolAllocator required backing memory size: %zu bytes\n", pool_mem_size);
     
     void* pool_backing = ::operator new(pool_mem_size);
     
@@ -102,63 +143,50 @@ int main() {
     pool.Init(pool_backing, pool_mem_size);
     printf("Pool initialized using contiguous pre-allocated block.\n");
 
-    // Allocate indices
     uint32_t h1 = pool.Allocate();
     uint32_t h2 = pool.Allocate();
     uint32_t h3 = pool.Allocate();
     uint32_t h4 = pool.Allocate();
 
-    printf("Allocated index 1: %u\n", h1);
-    printf("Allocated index 2: %u\n", h2);
-    printf("Allocated index 3: %u\n", h3);
-    printf("Allocated index 4: %u\n", h4);
-
+    printf("Allocated index 1: %u, index 2: %u, index 3: %u, index 4: %u\n", h1, h2, h3, h4);
     uint32_t h5 = pool.Allocate();
-    printf("Allocated index 5 (should fail/return 0xFFFFFFFF since capacity is %u): %u\n", pool_capacity, h5);
+    printf("Allocating index 5 (should fail): %u\n", h5);
 
-    // Initialize the allocated particle data
     TestParticle* pParticle1 = pool.Get(h1);
-    if (pParticle1) {
-        pParticle1->x = 1.0f;
-        pParticle1->y = 2.0f;
-        pParticle1->z = 3.0f;
-        pParticle1->id = 101;
-        pParticle1->active = 1;
-        printf("Set particle 1 data: id=%u, pos=(%.1f, %.1f, %.1f), active=%d\n", 
-               pParticle1->id, pParticle1->x, pParticle1->y, pParticle1->z, pParticle1->active);
-    }
-
     TestParticle* pParticle2 = pool.Get(h2);
-    if (pParticle2) {
-        pParticle2->x = 10.0f;
-        pParticle2->y = 20.0f;
-        pParticle2->z = 30.0f;
-        pParticle2->id = 102;
-        pParticle2->active = 1;
-    }
-
-    // Verify contiguous layout of underlying memory
     if (pParticle1 && pParticle2) {
         ptrdiff_t byte_diff = (uintptr_t)pParticle2 - (uintptr_t)pParticle1;
-        printf("Verify contiguous block: address difference between particle 2 and particle 1: %td bytes (expected %zu)\n", 
+        printf("Verify contiguous block layout: difference: %td bytes (expected %zu)\n", 
                byte_diff, sizeof(TestParticle));
     }
 
-    // Test Free and slot reuse
-    printf("Freeing particle 2 (index %u)\n", h2);
     pool.Free(h2);
-
-    TestParticle* pParticle2_after = pool.Get(h2);
-    printf("Get particle 2 after free: %p (expected NULL/nullptr)\n", (void*)pParticle2_after);
-
     uint32_t h6 = pool.Allocate();
     printf("Allocated index after freeing: %u (expected to reuse %u)\n", h6, h2);
 
     pool.Reset();
-    printf("Pool reset. Active count: %zu\n", pool.GetActiveCount());
-    
     ::operator delete(pool_backing);
 
-    printf("\nAll memory checks completed successfully!\n");
+    // ----------------------------------------------------
+    // Phase 2: Platform & Engine Loop Verification
+    // ----------------------------------------------------
+    printf("\n--- PHASE 2: SDL3 Platform & Engine Loop ---\n");
+    printf("Starting SDL3 lifecycle loop...\n");
+
+    AppData app_data;
+    Scry::Platform::ScryApp app;
+    app.Init = AppInit;
+    app.Tick = AppTick;
+    app.Shutdown = AppShutdown;
+    app.user_data = &app_data;
+
+    // Launch engine loop (ZERO heap allocations during execution)
+    bool success = Scry::Platform::RunEngine(&app);
+    if (success) {
+        printf("\nEngine loop execution completed successfully.\n");
+    } else {
+        printf("\nEngine loop failed to launch.\n");
+    }
+
     return 0;
 }

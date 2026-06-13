@@ -14,18 +14,38 @@ set(MI_BUILD_OBJECT OFF CACHE BOOL "Build mimalloc object files" FORCE)
 set(MI_BUILD_TESTS OFF CACHE BOOL "Build mimalloc tests" FORCE)
 set(MI_BUILD_STATIC ON CACHE BOOL "Build mimalloc as static library" FORCE)
 
-# Integrate mimalloc via FetchContent
+# Configure SDL3 options to minimize compile time
+set(SDL_SHARED OFF CACHE BOOL "Build shared SDL library" FORCE)
+set(SDL_STATIC ON CACHE BOOL "Build static SDL library" FORCE)
+set(SDL_TESTS OFF CACHE BOOL "Build SDL tests" FORCE)
+set(SDL_INSTALL OFF CACHE BOOL "Install SDL" FORCE)
+set(SDL_AUDIO OFF CACHE BOOL "Disable SDL Audio subsystem" FORCE)
+set(SDL_JOYSTICK OFF CACHE BOOL "Disable SDL Joystick subsystem" FORCE)
+set(SDL_HAPTIC OFF CACHE BOOL "Disable SDL Haptic subsystem" FORCE)
+set(SDL_SENSOR OFF CACHE BOOL "Disable SDL Sensor subsystem" FORCE)
+set(SDL_CAMERA OFF CACHE BOOL "Disable SDL Camera subsystem" FORCE)
+
+# Integrate mimalloc & SDL3 via FetchContent
 include(FetchContent)
+
 FetchContent_Declare(
     mimalloc
     GIT_REPOSITORY https://github.com/microsoft/mimalloc.git
     GIT_TAG v2.1.2
 )
-FetchContent_MakeAvailable(mimalloc)
+
+FetchContent_Declare(
+    SDL3
+    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+    GIT_TAG release-3.2.0
+)
+
+FetchContent_MakeAvailable(mimalloc SDL3)
 
 # Scry Shared Library
 add_library(scry SHARED
     src/scry_memory.cpp
+    src/scry_platform.cpp
     src/scry.cpp
 )
 
@@ -38,8 +58,8 @@ target_include_directories(scry PUBLIC
 # Export macro definitions
 target_compile_definitions(scry PRIVATE SCRY_EXPORT)
 
-# Link mimalloc statically into the shared library scry
-target_link_libraries(scry PRIVATE mimalloc-static)
+# Link dependencies to the shared library scry
+target_link_libraries(scry PRIVATE mimalloc-static SDL3-static)
 target_include_directories(scry PRIVATE "${mimalloc_SOURCE_DIR}/include")
 
 # Sandbox executable

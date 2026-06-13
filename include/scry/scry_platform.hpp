@@ -3,38 +3,40 @@
 #include <cstdint>
 #include <cassert>
 
+struct ecs_world_t;
 struct SDL_Window;
 
-namespace Scry {
-namespace Platform {
+// Flat context struct holding entire engine state
+typedef struct ScryContext {
+    struct ecs_world_t* ecs_world;      // 8 bytes
+    struct SDL_Window* window;          // 8 bytes
+    uint64_t start_time;                 // 8 bytes
+    int32_t window_width;                // 4 bytes
+    int32_t window_height;               // 4 bytes
+    uint8_t initialized;                 // 1 byte
+    uint8_t running;                     // 1 byte
+} ScryContext;
 
-struct SCRY_API PlatformState {
-    SDL_Window* window = nullptr;        // 8 bytes
-    uint64_t start_time = 0;             // 8 bytes
-    int16_t window_width = 0;            // 2 bytes
-    int16_t window_height = 0;           // 2 bytes
-    uint8_t initialized = 0;             // 1 byte
-};
+// App config struct
+typedef struct ScryAppConfig {
+    void (*OnInit)(ScryContext* ctx);
+    void (*OnUpdate)(ScryContext* ctx, float delta_time);
+    void (*OnShutdown)(ScryContext* ctx);
+    int32_t window_width;
+    int32_t window_height;
+    const char* app_name;
+} ScryAppConfig;
 
-class SCRY_API ScryApp {
-public:
-    virtual ~ScryApp() {
-        assert(this != nullptr);
-        assert(true);
-    }
-    virtual bool Init() = 0;
-    virtual void Tick(float delta_time) = 0;
-    virtual void Shutdown() = 0;
-};
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-// Start the engine main loop.
-SCRY_API bool RunEngine(ScryApp* app);
+// Run the engine
+SCRY_API int ScryRun(const ScryAppConfig* config);
 
-// Get platform stats.
-SCRY_API PlatformState GetPlatformState();
+// Request exit
+SCRY_API void RequestEngineExit(ScryContext* ctx);
 
-// Request the engine loop to terminate.
-SCRY_API void RequestEngineExit();
-
-} // namespace Platform
-} // namespace Scry
+#ifdef __cplusplus
+}
+#endif

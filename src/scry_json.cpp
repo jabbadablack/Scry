@@ -181,12 +181,15 @@ static void ParseState(ecs_world_t* world, yyjson_val* state_obj) {
     }
 }
 
-bool LoadProjectConfig(ecs_world_t* world, const char* filepath) {
-    assert(world != nullptr);
+bool LoadProjectConfig(ScryContext* ctx, const char* filepath) {
+    assert(ctx != nullptr);
+    assert(ctx->ecs_world != nullptr);
     assert(filepath != nullptr);
-    if (world == nullptr || filepath == nullptr) {
+    if (ctx == nullptr || ctx->ecs_world == nullptr || filepath == nullptr) {
         return false;
     }
+
+    ecs_world_t* world = ctx->ecs_world;
 
     const char* base_path = SDL_GetBasePath();
     assert(base_path != nullptr);
@@ -229,7 +232,7 @@ bool LoadProjectConfig(ecs_world_t* world, const char* filepath) {
             const char* plugin_path = yyjson_get_str(val);
             assert(plugin_path != nullptr);
             if (plugin_path != nullptr) {
-                const bool loaded = Scry::Plugin::LoadSinglePlugin(world, plugin_path);
+                const bool loaded = Scry::Plugin::LoadSinglePlugin(ctx, plugin_path);
                 assert(loaded == true);
             }
         }

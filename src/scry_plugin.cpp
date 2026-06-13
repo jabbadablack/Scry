@@ -100,15 +100,16 @@ static SDL_EnumerationResult SDLCALL EnumCallback(void* userdata, const char* di
     return SDL_ENUM_CONTINUE;
 }
 
-bool LoadPlugins(ecs_world_t* world) {
-    assert(world != nullptr);
+bool LoadPlugins(ScryContext* ctx) {
+    assert(ctx != nullptr);
+    assert(ctx->ecs_world != nullptr);
     assert(g_plugin_count == 0);
-    if (world == nullptr) {
+    if (ctx == nullptr || ctx->ecs_world == nullptr) {
         return false;
     }
 
     static ScryEngineAPI api;
-    api.ecs_world = world;
+    api.ecs_world = ctx->ecs_world;
     api.Log = EngineLog;
     api.Alloc = EngineAlloc;
     api.Free = EngineFree;
@@ -132,15 +133,16 @@ bool LoadPlugins(ecs_world_t* world) {
     return true;
 }
 
-bool LoadSinglePlugin(ecs_world_t* world, const char* filepath) {
-    assert(world != nullptr);
+bool LoadSinglePlugin(ScryContext* ctx, const char* filepath) {
+    assert(ctx != nullptr);
+    assert(ctx->ecs_world != nullptr);
     assert(filepath != nullptr);
-    if (world == nullptr || filepath == nullptr) {
+    if (ctx == nullptr || ctx->ecs_world == nullptr || filepath == nullptr) {
         return false;
     }
 
     static ScryEngineAPI api;
-    api.ecs_world = world;
+    api.ecs_world = ctx->ecs_world;
     api.Log = EngineLog;
     api.Alloc = EngineAlloc;
     api.Free = EngineFree;

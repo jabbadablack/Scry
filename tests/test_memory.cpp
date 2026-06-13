@@ -7,13 +7,13 @@ TEST_CASE("Arena Allocator basic allocation", "[memory]") {
     REQUIRE(backing != nullptr);
 
     Scry::Memory::Arena arena;
-    arena.Init(backing, arena_size);
-    REQUIRE(arena.GetTotalSize() == arena_size);
-    REQUIRE(arena.GetUsedMemory() == 0);
+    Scry::Memory::ScryArenaInit(&arena, backing, arena_size);
+    REQUIRE(Scry::Memory::ScryArenaGetTotalSize(&arena) == arena_size);
+    REQUIRE(Scry::Memory::ScryArenaGetUsedMemory(&arena) == 0);
 
-    void* p1 = arena.Allocate(128, 8);
+    void* p1 = Scry::Memory::ScryArenaAllocate(&arena, 128, 8);
     REQUIRE(p1 != nullptr);
-    REQUIRE(arena.GetUsedMemory() == 128);
+    REQUIRE(Scry::Memory::ScryArenaGetUsedMemory(&arena) == 128);
 
     ::operator delete(backing);
 }

@@ -1,6 +1,7 @@
 #define SDL_MAIN_HANDLED
 #include <scry/scry_platform.hpp>
 #include <scry/scry_input.hpp>
+#include <scry/scry_ecs.hpp>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <cassert>
@@ -13,14 +14,6 @@ InputBuffer g_input_buffer;
 
 namespace Scry {
 namespace Platform {
-
-static PlatformState g_platform_state;
-
-PlatformState GetPlatformState() {
-    assert(g_platform_state.initialized <= 1);
-    assert(g_platform_state.window_width >= 0);
-    return g_platform_state;
-}
 
 static void ProcessInputEvent(const SDL_Event& event, Scry::Input::InputState& write_state) {
     assert(&event != nullptr);
@@ -63,45 +56,9 @@ static void ProcessInputEvent(const SDL_Event& event, Scry::Input::InputState& w
     }
 }
 
-static bool InitPlatformWindow() {
-    assert(g_platform_state.initialized == 0);
-    assert(g_platform_state.window == nullptr);
-
-    SDL_SetMainReady();
-
-    const bool init_ok = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
-    if (!init_ok) {
-        return false;
-    }
-
-    g_platform_state.window = SDL_CreateWindow("Scry Engine Sandbox", 800, 600, 0);
-    if (!g_platform_state.window) {
-        SDL_Quit();
-        return false;
-    }
-
-    g_platform_state.window_width = 800;
-    g_platform_state.window_height = 600;
-    g_platform_state.start_time = SDL_GetTicks();
-    g_platform_state.initialized = 1;
-
-    return true;
-}
-
-static void PlatformTeardown() {
-    assert(g_platform_state.initialized == 1);
-    assert(g_platform_state.window != nullptr);
-
-    SDL_DestroyWindow(g_platform_state.window);
-    SDL_Quit();
-
-    g_platform_state.window = nullptr;
-    g_platform_state.initialized = 0;
-}
-
-static void ProcessInputPass(bool* running) {
-    assert(running != nullptr);
-    assert(g_platform_state.initialized == 1);
+static void ProcessInputPass(ScryContext* ctx) {
+    assert(ctx != nullptr);
+    assert(ctx->initialized == 1);
 
     const uint8_t w_idx = Scry::Input::g_input_buffer.write_index;
     const uint8_t r_idx = Scry::Input::g_input_buffer.read_index;
@@ -111,9 +68,9 @@ static void ProcessInputPass(bool* running) {
     bool has_event = SDL_PollEvent(&event);
     while (has_event) {
         if (event.type == SDL_EVENT_QUIT) {
-            *running = false;
+            ctx->running = 0;
         } else if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
-            *running = false;
+            ctx->running = 0;
         } else {
             ProcessInputEvent(event, Scry::Input::g_input_buffer.states[w_idx]);
         }
@@ -123,60 +80,86 @@ static void ProcessInputPass(bool* running) {
     Scry::Input::g_input_buffer.Swap();
 }
 
-bool RunEngine(ScryApp* app) {
-    assert(app != nullptr);
-    assert(g_platform_state.initialized == 0);
-    if (app == nullptr) {
-        return false;
+} // namespace Platform
+} // namespace Scry
+
+extern "C" {
+
+SCRY_API int ScryRun(const ScryAppConfig* config) {
+    assert(config != nullptr);
+    assert(config->OnInit != nullptr);
+    assert(config->OnUpdate != nullptr);
+    assert(config->OnShutdown != nullptr);
+    assert(config->window_width > 0);
+    assert(config->window_height > 0);
+
+    SDL_SetMainReady();
+    const bool init_ok = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
+    if (!init_ok) {
+        return -1;
     }
 
-    const bool win_ok = InitPlatformWindow();
-    if (!win_ok) {
-        return false;
+    SDL_Window* window = SDL_CreateWindow(config->app_name ? config->app_name : "Scry Engine",
+                                         config->window_width,
+                                         config->window_height,
+                                         0);
+    if (!window) {
+        SDL_Quit();
+        return -2;
     }
 
-    const bool app_init_ok = app->Init();
-    if (!app_init_ok) {
-        PlatformTeardown();
-        return false;
+    struct ecs_world_t* world = Scry::ECS::CreateWorld();
+    if (!world) {
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return -3;
     }
 
-    bool running = true;
+    ScryContext ctx = {};
+    ctx.ecs_world = world;
+    ctx.window = window;
+    ctx.start_time = SDL_GetTicks();
+    ctx.window_width = config->window_width;
+    ctx.window_height = config->window_height;
+    ctx.initialized = 1;
+    ctx.running = 1;
+
+    config->OnInit(&ctx);
+
     uint64_t last_time = SDL_GetTicks();
 
-    while (running) {
-        ProcessInputPass(&running);
+    while (ctx.running) {
+        Scry::Platform::ProcessInputPass(&ctx);
 
         const bool esc_pressed = Scry::Input::g_input_buffer.IsKeyDown(Scry::Input::Key::Escape);
         if (esc_pressed) {
-            running = false;
+            ctx.running = 0;
         }
 
         const uint64_t current_time = SDL_GetTicks();
         const float dt = static_cast<float>(current_time - last_time) / 1000.0f;
         last_time = current_time;
 
-        app->Tick(dt);
+        config->OnUpdate(&ctx, dt);
         SDL_Delay(1);
     }
 
-    app->Shutdown();
-    PlatformTeardown();
+    config->OnShutdown(&ctx);
 
-    return true;
+    ecs_fini(world);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+
+    return 0;
 }
 
-void RequestEngineExit() {
-    assert(g_platform_state.initialized == 1);
-    assert(g_platform_state.window != nullptr);
+SCRY_API void RequestEngineExit(ScryContext* ctx) {
+    assert(ctx != nullptr);
+    assert(ctx->initialized == 1);
 
-    SDL_Event quit_event;
-    SDL_zero(quit_event);
-    quit_event.type = SDL_EVENT_QUIT;
-    
-    const bool push_ok = SDL_PushEvent(&quit_event);
-    assert(push_ok == true);
+    if (ctx != nullptr) {
+        ctx->running = 0;
+    }
 }
 
-} // namespace Platform
-} // namespace Scry
+} // extern "C"

@@ -54,8 +54,8 @@ set(EIGEN_BUILD_DOC OFF CACHE BOOL "" FORCE)
 set(EIGEN_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 
 # CMake Options
-option(SCRY_BUILD_EXAMPLES "Build example applications" ON)
-option(SCRY_BUILD_TESTS "Build test suite" ON)
+option(SCRY_BUILD_EXAMPLES "Build the example game project (examples/sandbox)" ON)
+option(SCRY_BUILD_TESTS    "Build and auto-run the test suite after every build" ON)
 
 # Integrate mimalloc, SDL3, Flecs, yyjson, Catch2, libassert, quill, string_id, and eigen
 include(FetchContent)
@@ -136,36 +136,38 @@ elseif(MSVC)
     set(SCRY_WARNING_FLAGS /W4 /WX)
 endif()
 
-# Automate file discovery
-file(GLOB_RECURSE SCRY_SRC CONFIGURE_DEPENDS "src/*.cpp")
-file(GLOB_RECURSE SCRY_INC CONFIGURE_DEPENDS "include/*.hpp")
+# Load plugin/game helper macros.  These are also exported to the build tree
+# so that downstream projects can call scry_add_plugin() after find_package(Scry).
+include(cmake/ScryHelpers.cmake)
 
-# Scry Shared Library (Framework)
+# ─── Engine Library ──────────────────────────────────────────────────────────
+
+file(GLOB_RECURSE SCRY_SRC CONFIGURE_DEPENDS "src/*.cpp")
+file(GLOB_RECURSE SCRY_INC CONFIGURE_DEPENDS "include/*.hpp" "include/*.h")
+
 add_library(scry SHARED ${SCRY_SRC} ${SCRY_INC})
 target_compile_options(scry PRIVATE ${SCRY_WARNING_FLAGS})
 
-# Set Scry include directories
 target_include_directories(scry PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
 
-# Export macro definitions
 target_compile_definitions(scry PRIVATE SCRY_EXPORT)
 
-target_link_libraries(scry 
+target_link_libraries(scry
     PUBLIC
-        libassert::assert 
+        libassert::assert
         eigen
         quill::quill
-    PRIVATE 
-        mimalloc-static 
-        SDL3-static 
-        flecs 
-        yyjson 
+    PRIVATE
+        mimalloc-static
+        SDL3-static
+        flecs
+        yyjson
         foonathan_string_id
 )
-target_include_directories(scry PRIVATE 
+target_include_directories(scry PRIVATE
     "${mimalloc_SOURCE_DIR}/include"
     "${string_id_SOURCE_DIR}"
     "${string_id_BINARY_DIR}"
@@ -174,65 +176,42 @@ target_include_directories(scry PRIVATE
 # Precompile Eigen/Dense once for the scry target — it's a very heavy header
 target_precompile_headers(scry PRIVATE <Eigen/Dense>)
 
-# Treat third-party include directories as SYSTEM to suppress compiler warnings in their headers
+# Suppress warnings from third-party headers
 foreach(dep eigen quill foonathan_string_id flecs yyjson)
     if(TARGET ${dep})
-        set_target_properties(${dep} PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "$<TARGET_PROPERTY:${dep},INTERFACE_INCLUDE_DIRECTORIES>")
+        set_target_properties(${dep} PROPERTIES
+            INTERFACE_SYSTEM_INCLUDE_DIRECTORIES
+                "$<TARGET_PROPERTY:${dep},INTERFACE_INCLUDE_DIRECTORIES>")
     endif()
 endforeach()
 
-# Define macro for plugin building
-macro(scry_add_plugin target_name)
-    if(SCRY_IS_PLUGIN)
-        file(GLOB_RECURSE PLUGIN_SRC CONFIGURE_DEPENDS "*.cpp" "*.c")
-        add_library(${target_name} SHARED ${PLUGIN_SRC})
-        target_compile_options(${target_name} PRIVATE ${SCRY_WARNING_FLAGS})
-        target_link_libraries(${target_name} PRIVATE scry flecs)
-        target_include_directories(${target_name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../include")
-        
-        # Copy plugin to the binary output directory next to scry DLL
-        add_custom_command(TARGET ${target_name} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:scry>/plugins
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:${target_name}>
-            $<TARGET_FILE_DIR:scry>/plugins/$<TARGET_FILE_NAME:${target_name}>
-        )
-    else()
-        message(FATAL_ERROR "Plugin ${target_name} cannot be built: SCRY_IS_PLUGIN is not set to true")
-    endif()
-endmacro()
+# ─── Tests ───────────────────────────────────────────────────────────────────
+# When SCRY_BUILD_TESTS is ON the test suite is built AND automatically executed
+# as part of every cmake --build invocation (via the run_tests ALL target).
 
-# JSON Dependency Injection for Plugins
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/project.json")
-    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/project.json" PROJECT_JSON)
-    string(JSON PLUGINS_LEN LENGTH "${PROJECT_JSON}" "plugins")
-    math(EXPR loop_end "${PLUGINS_LEN} - 1")
-    if(loop_end GREATER_EQUAL 0)
-        foreach(idx RANGE ${loop_end})
-            string(JSON plugin_name GET "${PROJECT_JSON}" "plugins" ${idx})
-            set(plugin_json_path "${CMAKE_CURRENT_SOURCE_DIR}/plugins/${plugin_name}/plugin.json")
-            if(EXISTS "${plugin_json_path}")
-                file(READ "${plugin_json_path}" PLUGIN_JSON)
-                string(JSON parsed_name GET "${PLUGIN_JSON}" "name")
-                if(parsed_name STREQUAL plugin_name)
-                    set(SCRY_IS_PLUGIN TRUE)
-                    add_subdirectory("plugins/${plugin_name}")
-                else()
-                    message(WARNING "Plugin name mismatch for ${plugin_name}: got ${parsed_name}")
-                endif()
-            else()
-                message(WARNING "plugin.json not found for ${plugin_name} at ${plugin_json_path}")
-            endif()
-        endforeach()
-    endif()
-endif()
-
-# Build examples if requested
-if(SCRY_BUILD_EXAMPLES)
-    add_subdirectory(examples)
-endif()
-
-# Build tests if requested
 if(SCRY_BUILD_TESTS)
     add_subdirectory(tests)
+
+    # Run the test binary directly rather than through CTest.
+    # enable_testing() at root scope pulls in Eigen's 780+ test targets;
+    # invoking scry_tests directly sidesteps that entirely.
+    add_custom_target(run_tests ALL
+        COMMAND $<TARGET_FILE:scry_tests> --reporter compact
+        DEPENDS scry_tests
+        WORKING_DIRECTORY "$<TARGET_FILE_DIR:scry_tests>"
+        COMMENT "Running Scry test suite"
+    )
+endif()
+
+# ─── Example game project ────────────────────────────────────────────────────
+# The sandbox is its own isolated CMake project (has cmake_minimum_required +
+# project()) — it just happens to be added here via add_subdirectory so that
+# one cmake --build from the engine root builds everything together.
+# Plugins are NOT declared here; the sandbox's own project.json drives which
+# plugins are built, connecting them to the engine instance the sandbox uses.
+
+if(SCRY_BUILD_EXAMPLES)
+    set(SCRY_PLUGINS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/plugins" CACHE PATH
+        "Root directory that contains all Scry plugin sub-projects")
+    add_subdirectory(examples/sandbox)
 endif()

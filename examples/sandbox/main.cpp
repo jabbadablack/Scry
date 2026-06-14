@@ -12,7 +12,7 @@ static void OnInit(ScryContext* ctx) {
     // Load runtime plugin manifest.  The CMake JSON parser already built
     // ScryInputPlugin by reading project.json at configure time; here we prove
     // the engine loads it at runtime from the same declaration.
-    const bool ok = Scry::JSON::LoadProjectConfig(ctx, "sandbox_project.json");
+    const bool ok = Scry::JSON::LoadProjectConfig(ctx, "scry_project.json");
     DEBUG_ASSERT(ok == true);
     (void)ok;
 }

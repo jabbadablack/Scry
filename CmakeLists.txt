@@ -53,6 +53,11 @@ set(QUILL_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(EIGEN_BUILD_DOC OFF CACHE BOOL "" FORCE)
 set(EIGEN_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 
+# Configure enkiTS options
+set(ENKITS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(ENKITS_BUILD_TESTING  OFF CACHE BOOL "" FORCE)
+set(ENKITS_INSTALL        OFF CACHE BOOL "" FORCE)
+
 # CMake Options
 option(SCRY_BUILD_EXAMPLES "Build the example game project (examples/sandbox)" ON)
 option(SCRY_BUILD_TESTS    "Build and auto-run the test suite after every build" ON)
@@ -114,7 +119,13 @@ FetchContent_Declare(
     GIT_TAG master
 )
 
-FetchContent_MakeAvailable(mimalloc SDL3 flecs yyjson Catch2 libassert quill string_id)
+FetchContent_Declare(
+    enkiTS
+    GIT_REPOSITORY https://github.com/dougbinks/enkiTS.git
+    GIT_TAG master
+)
+
+FetchContent_MakeAvailable(mimalloc SDL3 flecs yyjson Catch2 libassert quill string_id enkiTS)
 
 # Populate and patch eigen manually to avoid target collision on "uninstall"
 FetchContent_GetProperties(eigen)
@@ -166,6 +177,7 @@ target_link_libraries(scry
         flecs
         yyjson
         foonathan_string_id
+        enkiTS
 )
 target_include_directories(scry PRIVATE
     "${mimalloc_SOURCE_DIR}/include"
@@ -177,7 +189,7 @@ target_include_directories(scry PRIVATE
 target_precompile_headers(scry PRIVATE <Eigen/Dense>)
 
 # Suppress warnings from third-party headers
-foreach(dep eigen quill foonathan_string_id flecs yyjson)
+foreach(dep eigen quill foonathan_string_id flecs yyjson enkiTS)
     if(TARGET ${dep})
         set_target_properties(${dep} PROPERTIES
             INTERFACE_SYSTEM_INCLUDE_DIRECTORIES

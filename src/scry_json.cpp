@@ -138,11 +138,14 @@ static void ParseState(ecs_world_t* world, yyjson_val* state_obj) {
     DEBUG_ASSERT(world != nullptr);
     DEBUG_ASSERT(state_obj != nullptr);
 
-    // Retrieve components globally registered (from sandbox registry)
+    // Look up component IDs that were pre-registered by the application.
+    // Either or both may be absent — the loop body skips unknowns anyway,
+    // so we only need to bail if neither type is registered at all.
     const ecs_entity_t id_DoubleBufferedPosition = ecs_lookup(world, "DoubleBufferedPosition");
     const ecs_entity_t id_MoveIntent = ecs_lookup(world, "MoveIntent");
-    DEBUG_ASSERT(id_DoubleBufferedPosition != 0);
-    DEBUG_ASSERT(id_MoveIntent != 0);
+    if (id_DoubleBufferedPosition == 0 && id_MoveIntent == 0) {
+        return;
+    }
 
     size_t ent_idx, ent_max;
     yyjson_val *ent_key, *ent_val;
@@ -234,9 +237,9 @@ bool LoadProjectConfig(ScryContext* ctx, const char* filepath) {
         }
     }
 
-    // 2. Load State configuration
+    // 2. Load State configuration (skip when the state object is empty)
     yyjson_val* state_obj = yyjson_obj_get(root, "state");
-    if (state_obj != nullptr && yyjson_is_obj(state_obj)) {
+    if (state_obj != nullptr && yyjson_is_obj(state_obj) && yyjson_obj_size(state_obj) > 0) {
         ParseState(world, state_obj);
     }
 

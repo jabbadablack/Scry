@@ -1,5 +1,6 @@
 #include <scry/scry_plugin.hpp>
 #include <scry/scry_memory.hpp>
+#include <scry/scry_job_system.hpp>
 #include <SDL3/SDL.h>
 #include <mimalloc.h>
 #include <libassert/assert.hpp>
@@ -108,10 +109,11 @@ bool LoadPlugins(ScryContext* ctx) {
     }
 
     static ScryEngineAPI api;
-    api.ecs_world = ctx->ecs_world;
-    api.Log = EngineLog;
-    api.Alloc = EngineAlloc;
-    api.Free = EngineFree;
+    api.ecs_world  = ctx->ecs_world;
+    api.Log        = EngineLog;
+    api.Alloc      = EngineAlloc;
+    api.Free       = EngineFree;
+    api.SubmitTask = Scry::Jobs::SubmitTask;
 
     const char* base_path = SDL_GetBasePath();
     DEBUG_ASSERT(base_path != nullptr);
@@ -141,10 +143,11 @@ bool LoadSinglePlugin(ScryContext* ctx, const char* filepath) {
     }
 
     static ScryEngineAPI api;
-    api.ecs_world = ctx->ecs_world;
-    api.Log = EngineLog;
-    api.Alloc = EngineAlloc;
-    api.Free = EngineFree;
+    api.ecs_world  = ctx->ecs_world;
+    api.Log        = EngineLog;
+    api.Alloc      = EngineAlloc;
+    api.Free       = EngineFree;
+    api.SubmitTask = Scry::Jobs::SubmitTask;
 
     const char* base_path = SDL_GetBasePath();
     DEBUG_ASSERT(base_path != nullptr);

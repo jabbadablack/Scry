@@ -2,6 +2,7 @@
 #include <scry/scry_platform.hpp>
 #include <scry/scry_input.hpp>
 #include <scry/scry_ecs.hpp>
+#include <scry/scry_job_system.hpp>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <quill/Quill.h>
@@ -117,11 +118,19 @@ SCRY_API int ScryRun(const ScryAppConfig* config) {
         return -2;
     }
 
-    struct ecs_world_t* world = Scry::ECS::CreateWorld();
-    if (!world) {
+    const bool jobs_ok = Scry::Jobs::Init();
+    if (!jobs_ok) {
         SDL_DestroyWindow(window);
         SDL_Quit();
         return -3;
+    }
+
+    struct ecs_world_t* world = Scry::ECS::CreateWorld();
+    if (!world) {
+        Scry::Jobs::Shutdown();
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return -4;
     }
 
     ScryContext ctx = {};
@@ -156,6 +165,7 @@ SCRY_API int ScryRun(const ScryAppConfig* config) {
     config->OnShutdown(&ctx);
 
     ecs_fini(world);
+    Scry::Jobs::Shutdown();
     SDL_DestroyWindow(window);
     SDL_Quit();
 

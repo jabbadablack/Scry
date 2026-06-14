@@ -2,6 +2,7 @@
 #include <catch2/catch_approx.hpp>
 
 #include <scry/scry_ecs.hpp>
+#include <scry/scry_pipeline.hpp>
 #include <scry/scry_memory.hpp>
 #include <scry/scry_math.hpp>
 
@@ -41,15 +42,19 @@ TEST_CASE("mimalloc routes DLL allocations through its own heap", "[memory]") {
 }
 
 // ---------------------------------------------------------------------------
-// Test 2 — headless ECS world boots and exposes the three custom phases
+// Test 2 — headless ECS world boots and exposes all six custom pipeline phases
 // ---------------------------------------------------------------------------
 TEST_CASE("Headless Flecs world boots with custom pipeline phases", "[ecs]") {
     ecs_world_t* world = Scry::ECS::CreateWorld();
     REQUIRE(world != nullptr);
 
-    REQUIRE(Scry::ECS::OnIntentPhase      != 0);
-    REQUIRE(Scry::ECS::OnStateUpdatePhase != 0);
-    REQUIRE(Scry::ECS::OnReactPhase       != 0);
+    REQUIRE(Scry::Pipeline::ScryPhase_Input       != 0);
+    REQUIRE(Scry::Pipeline::ScryPhase_Intent      != 0);
+    REQUIRE(Scry::Pipeline::ScryPhase_StateUpdate != 0);
+    REQUIRE(Scry::Pipeline::ScryPhase_StateSync   != 0);
+    REQUIRE(Scry::Pipeline::ScryPhase_React       != 0);
+    REQUIRE(Scry::Pipeline::ScryPhase_Cleanup     != 0);
+    REQUIRE(Scry::Pipeline::IsIntent              != 0);
 
     ecs_fini(world);
 }
@@ -58,9 +63,12 @@ TEST_CASE("Headless Flecs world boots with custom pipeline phases", "[ecs]") {
 // Test 3 — double-buffered MoveIntent tick produces the correct Write state
 //
 // Pipeline execution order for one ecs_progress(world, 1.0f):
-//   OnIntentPhase      — nothing registered
-//   OnStateUpdatePhase — TestMoveSystem: write.pos = read.pos + dir*(speed*dt)
-//   OnReactPhase       — SyncDoubleBuffer: read.pos = write.pos
+//   ScryPhase_Input       — nothing registered
+//   ScryPhase_Intent      — nothing registered
+//   ScryPhase_StateUpdate — TestMoveSystem: write.pos = read.pos + dir*(speed*dt)
+//   ScryPhase_StateSync   — SyncDoubleBuffer: read.pos = write.pos
+//   ScryPhase_React       — nothing registered
+//   ScryPhase_Cleanup     — IntentCleanupSystem (no IsIntent comps registered here)
 //
 // Initial state: read=(0,0), write=(0,0), dir=(1,0)
 // After tick:    write=(10,0), read=(10,0)
@@ -95,11 +103,11 @@ TEST_CASE("Double-buffered MoveIntent tick produces correct write buffer math", 
     const ecs_entity_t id_Intent   = ecs_component_init(world, &intent_comp);
     REQUIRE(id_Intent != 0);
 
-    // --- Register state-update system on OnStateUpdatePhase --------------
+    // --- Register state-update system on ScryPhase_StateUpdate -----------
     ecs_entity_desc_t sys_ent_desc = {};
     sys_ent_desc.name = "TestMoveSystem";
     const ecs_entity_t sys_ent = ecs_entity_init(world, &sys_ent_desc);
-    ecs_add_pair(world, sys_ent, EcsDependsOn, Scry::ECS::OnStateUpdatePhase);
+    ecs_add_pair(world, sys_ent, EcsDependsOn, Scry::Pipeline::ScryPhase_StateUpdate);
 
     ecs_system_desc_t sys_desc        = {};
     sys_desc.entity                   = sys_ent;
@@ -120,7 +128,7 @@ TEST_CASE("Double-buffered MoveIntent tick produces correct write buffer math", 
     const ecs_entity_t sys = ecs_system_init(world, &sys_desc);
     REQUIRE(sys != 0);
 
-    // --- Register read←write sync on OnReactPhase -----------------------
+    // --- Register read←write sync on ScryPhase_StateSync ----------------
     Scry::ECS::RegisterDoubleBufferSync<TestPosition>(world, id_DBPos);
 
     // --- Spawn the entity with known initial state -----------------------

@@ -1,4 +1,5 @@
 #include <scry/scry_ecs.hpp>
+#include <scry/scry_pipeline.hpp>
 #include <scry/scry_job_system.hpp>
 #include <mimalloc.h>
 #define SDL_MAIN_HANDLED
@@ -7,10 +8,6 @@
 #include <libassert/assert.hpp>
 namespace Scry {
 namespace ECS {
-
-ecs_entity_t OnIntentPhase = 0;
-ecs_entity_t OnStateUpdatePhase = 0;
-ecs_entity_t OnReactPhase = 0;
 
 static void* ScryFlecsMalloc(ecs_size_t size) {
     DEBUG_ASSERT(size > 0);
@@ -286,22 +283,8 @@ ecs_world_t* CreateWorld() {
 
     ECS_IMPORT(world, FlecsMeta);
 
-    ecs_entity_desc_t desc = {};
-
-    desc.name = "OnIntent";
-    OnIntentPhase = ecs_entity_init(world, &desc);
-    DEBUG_ASSERT(OnIntentPhase != 0);
-    ecs_add_pair(world, OnIntentPhase, EcsDependsOn, EcsPreUpdate);
-
-    desc.name = "OnStateUpdate";
-    OnStateUpdatePhase = ecs_entity_init(world, &desc);
-    DEBUG_ASSERT(OnStateUpdatePhase != 0);
-    ecs_add_pair(world, OnStateUpdatePhase, EcsDependsOn, OnIntentPhase);
-
-    desc.name = "OnReact";
-    OnReactPhase = ecs_entity_init(world, &desc);
-    DEBUG_ASSERT(OnReactPhase != 0);
-    ecs_add_pair(world, OnReactPhase, EcsDependsOn, OnStateUpdatePhase);
+    // Build the 6-phase custom pipeline and register the intent cleanup system.
+    Scry::Pipeline::InitPipeline(world);
 
     // Bind Flecs parallel system execution to the enkiTS worker pool.
     // task_new_/task_join_ are already wired; this tells Flecs how many

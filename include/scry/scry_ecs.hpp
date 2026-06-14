@@ -1,30 +1,30 @@
 #pragma once
 #include <scry/scry.h>
+#include <scry/scry_pipeline.hpp>
 #include <flecs.h>
 #include <libassert/assert.hpp>
 
 namespace Scry {
 namespace ECS {
 
-// Custom phases exposed globally
-SCRY_API extern ecs_entity_t OnIntentPhase;
-SCRY_API extern ecs_entity_t OnStateUpdatePhase;
-SCRY_API extern ecs_entity_t OnReactPhase;
-
-// Initialize the global Flecs OS API overrides (Memory, Threading, Atomics)
+// Initialize the Flecs OS API overrides (memory, threading, atomics).
 SCRY_API void InitOSAPI();
 
-// Create a new baseline ECS World with our custom pipeline phases
+// Create a new ECS world: installs the OS API, imports FlecsMeta, builds
+// the custom Scry pipeline, and binds the enkiTS task scheduler.
 SCRY_API ecs_world_t* CreateWorld();
 
-// Double buffered system template
+// ── Double-buffer template ────────────────────────────────────────────────
+
 template <typename T>
 struct DoubleBuffered {
     T read;
     T write;
 };
 
-// Helper to register a double-buffer sync system for component type T
+// Register a read<-write sync system for component T in ScryPhase_StateSync.
+// After every StateUpdate, this copies write -> read so the next frame's
+// Intent and Input systems see a stable snapshot.
 template <typename T>
 void RegisterDoubleBufferSync(ecs_world_t* world, ecs_entity_t component_id) {
     DEBUG_ASSERT(world != nullptr);
@@ -36,15 +36,15 @@ void RegisterDoubleBufferSync(ecs_world_t* world, ecs_entity_t component_id) {
 
     ecs_entity_desc_t ent_desc = {};
     ent_desc.name = "SyncDoubleBuffer";
-    
+
     const ecs_entity_t sys_ent = ecs_entity_init(world, &ent_desc);
     DEBUG_ASSERT(sys_ent != 0);
 
-    ecs_add_pair(world, sys_ent, EcsDependsOn, OnReactPhase);
+    ecs_add_pair(world, sys_ent, EcsDependsOn, Scry::Pipeline::ScryPhase_StateSync);
 
-    ecs_system_desc_t sys_desc = {};
-    sys_desc.entity = sys_ent;
-    sys_desc.query.terms[0].id = component_id;
+    ecs_system_desc_t sys_desc      = {};
+    sys_desc.entity                 = sys_ent;
+    sys_desc.query.terms[0].id      = component_id;
     sys_desc.callback = [](ecs_iter_t* it) {
         DEBUG_ASSERT(it != nullptr);
         DEBUG_ASSERT(it->count >= 0);

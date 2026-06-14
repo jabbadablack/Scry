@@ -80,5 +80,9 @@ uint32_t GetTotalThreadCount() {
     return g_scheduler.GetNumTaskThreads() + 1u;
 }
 
+enki::TaskScheduler* GetScheduler() {
+    return &g_scheduler;
+}
+
 } // namespace Jobs
 } // namespace Scry

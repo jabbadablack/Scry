@@ -8,16 +8,18 @@
 
 struct ecs_world_t;
 struct SDL_Window;
+namespace enki { class TaskScheduler; }
 
 // Full definition of the opaque ScryContext type declared in scry.h.
 // Fields are internal and subject to change between engine versions.
 struct ScryContext {
-    struct ecs_world_t* ecs_world;
-    struct SDL_Window*  window;
-    void*               user_data;
-    uint64_t            start_time;
-    int32_t             window_width;
-    int32_t             window_height;
-    uint8_t             initialized;
-    uint8_t             running;
+    struct ecs_world_t*  ecs_world;
+    struct SDL_Window*   window;
+    enki::TaskScheduler* scheduler;
+    void*                user_data;
+    uint64_t             start_time;
+    int32_t              window_width;
+    int32_t              window_height;
+    uint8_t              initialized;
+    uint8_t              running;
 };

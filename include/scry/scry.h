@@ -42,10 +42,13 @@ typedef struct ScryAppConfig {
     int32_t     window_width;   /* Initial window width  in pixels  (must > 0). */
     int32_t     window_height;  /* Initial window height in pixels  (must > 0). */
 
-    /* Lifecycle callbacks — all three must be non-NULL.
-       They are called on the main thread in Init → Update* → Shutdown order. */
+    /* Lifecycle callbacks.
+       OnInit and OnShutdown must be non-NULL.
+       OnUpdate is optional (NULL is valid): games that drive all logic through
+       ECS systems can omit it. When provided it is called on the main thread
+       after each ecs_progress(), seeing fully-synced ECS state. */
     void (*OnInit)(ScryContext* ctx);
-    void (*OnUpdate)(ScryContext* ctx, float dt);
+    void (*OnUpdate)(ScryContext* ctx, float dt); /* optional — may be NULL */
     void (*OnShutdown)(ScryContext* ctx);
 
     /* Opaque application state forwarded into the context at startup.

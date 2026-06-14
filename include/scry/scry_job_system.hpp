@@ -2,6 +2,8 @@
 #include <scry/scry.h>
 #include <scry/ScryEngineAPI.h>
 
+namespace enki { class TaskScheduler; }
+
 namespace Scry {
 namespace Jobs {
 
@@ -34,6 +36,11 @@ SCRY_API void* WaitFlecsTask(void* handle);
 // Total threads managed by the scheduler (task threads + main thread).
 // Used to configure Flecs's task-thread count to match enkiTS's pool size.
 SCRY_API uint32_t GetTotalThreadCount();
+
+// Raw scheduler pointer for storage in ScryContext.
+// Only forward-declared here; callers that need to call scheduler methods must
+// include <TaskScheduler.h> directly.
+SCRY_API enki::TaskScheduler* GetScheduler();
 
 } // namespace Jobs
 } // namespace Scry

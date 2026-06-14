@@ -59,19 +59,40 @@ static SDL_EnumerationResult SDLCALL LibSearchCallback(void* userdata, const cha
 
 static SDL_EnumerationResult SDLCALL RegistryEnumCallback(void* userdata, const char* dirname, const char* fname) {
     (void)userdata;
-    if (std::strstr(fname, ".dll") || std::strstr(fname, ".so")) return SDL_ENUM_CONTINUE;
-
+    
     char plugin_dir[512];
-    std::snprintf(plugin_dir, sizeof(plugin_dir), "%s/%s", dirname, fname);
+    size_t dir_len = std::strlen(dirname);
+    if (dir_len > 0 && (dirname[dir_len-1] == '/' || dirname[dir_len-1] == '\\')) {
+        std::snprintf(plugin_dir, sizeof(plugin_dir), "%s%s", dirname, fname);
+    } else {
+        std::snprintf(plugin_dir, sizeof(plugin_dir), "%s/%s", dirname, fname);
+    }
     
     char json_path[512];
     std::snprintf(json_path, sizeof(json_path), "%s/plugin.json", plugin_dir);
     
-    size_t size = 0;
-    void* buffer = SDL_LoadFile(json_path, &size);
-    if (!buffer) return SDL_ENUM_CONTINUE;
+    std::FILE* f = std::fopen(json_path, "rb");
+    if (!f) return SDL_ENUM_CONTINUE;
     
-    yyjson_doc* doc = yyjson_read(static_cast<const char*>(buffer), size, 0);
+    std::fseek(f, 0, SEEK_END);
+    long fsize = std::ftell(f);
+    std::fseek(f, 0, SEEK_SET);
+    
+    if (fsize <= 0) {
+        std::fclose(f);
+        return SDL_ENUM_CONTINUE;
+    }
+    
+    char* buffer = static_cast<char*>(mi_malloc(static_cast<size_t>(fsize)));
+    if (!buffer) {
+        std::fclose(f);
+        return SDL_ENUM_CONTINUE;
+    }
+    
+    size_t read_bytes = std::fread(buffer, 1, static_cast<size_t>(fsize), f);
+    std::fclose(f);
+    
+    yyjson_doc* doc = yyjson_read(buffer, read_bytes, 0);
     if (doc) {
         yyjson_val* root = yyjson_doc_get_root(doc);
         yyjson_val* name_val = yyjson_obj_get(root, "name");
@@ -96,7 +117,7 @@ static SDL_EnumerationResult SDLCALL RegistryEnumCallback(void* userdata, const 
         }
         yyjson_doc_free(doc);
     }
-    SDL_free(buffer);
+    mi_free(buffer);
     
     return SDL_ENUM_CONTINUE;
 }

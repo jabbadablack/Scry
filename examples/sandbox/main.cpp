@@ -1,27 +1,18 @@
-/*
- * examples/sandbox/main.cpp
- *
- * Demonstrates the pure ISR (Intent-State-Reactor) lifecycle of the engine.
- * ALL per-frame logic lives in ECS systems registered during OnInit.
- */
-
 #include <engine/engine.h>
-#include <engine/pipeline.hpp>   // Phase_*, IsIntent
-#include <engine/ecs.hpp>        // DoubleBuffered
-#include <engine/json.hpp>       // LoadProjectConfig
-#include <engine/plugin.hpp>     // UnloadPlugins
+#include <engine/pipeline.hpp>
+#include <engine/ecs.hpp>
+#include <engine/json.hpp>
+#include <engine/plugin.hpp>
 #include <libassert/assert.hpp>
 #include <flecs.h>
-#include <cstdio>                // snprintf
-
-// Quill logging (application layer)
-#define QUILL_ROOT_LOGGER_ONLY
-#include <quill/Quill.h>
+#include <cstdio>
 
 // ── Component types ───────────────────────────────────────────────────────────
 
 struct Health       { float value; };
 struct DamageIntent { float amount; };
+
+// Relationship to link intent entities to their targets
 struct Target {};
 
 static constexpr float k_damage_amount = 10.0f;
@@ -29,7 +20,8 @@ static constexpr float k_damage_amount = 10.0f;
 // ── Logging callback ──────────────────────────────────────────────────────────
 
 static void AppLog(const char* msg) {
-    LOG_INFO("{}", msg);
+    std::printf("[AppLog] %s\n", msg);
+    std::fflush(stdout);
 }
 
 // ── Lifecycle callbacks ───────────────────────────────────────────────────────
@@ -150,7 +142,7 @@ static void OnInit(Context* ctx) {
             char buf[64];
             for (int i = 0; i < it->count; ++i) {
                 if (hp[i].read.value != hp[i].write.value) {
-                    snprintf(buf, sizeof(buf), "[React] health %f -> %f", 
+                    std::snprintf(buf, sizeof(buf), "[React] health %f -> %f", 
                              static_cast<double>(hp[i].read.value), 
                              static_cast<double>(hp[i].write.value));
                     EngineLog(buf);
@@ -180,16 +172,10 @@ static void OnShutdown(Context* ctx) {
     Engine::Plugin::UnloadPlugins();
 }
 
+// ── Entry point ───────────────────────────────────────────────────────────────
+
 int main(int argc, char* argv[]) {
     (void)argc; (void)argv;
-
-    // Initialize Quill in the application layer
-    std::shared_ptr<quill::Handler> log_handler = quill::stdout_handler();
-    log_handler->set_pattern("%(ascii_time) [%(thread)] %(fileline:<28) LOG_%(level_name) %(message)");
-    quill::Config log_cfg;
-    log_cfg.default_handlers.push_back(log_handler);
-    quill::configure(log_cfg);
-    quill::start();
 
     AppConfig config = {};
     config.title         = "Engine ISR Demo";
@@ -202,7 +188,7 @@ int main(int argc, char* argv[]) {
 
     const EngineError err = EngineRun(&config);
     if (err != SUCCESS) {
-        fprintf(stderr, "[Main] Engine failed to start with error code: %d\n", (int)err);
+        std::fprintf(stderr, "[Main] Engine failed to start with error code: %d\n", (int)err);
         return 1;
     }
 

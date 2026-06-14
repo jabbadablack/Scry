@@ -232,7 +232,7 @@ shutdown:
         }
     }
 
-    return static_cast<EngineError>(ret_code);
+    return ret_code;
 }
 
 ENGINE_API void RequestExit(Context* ctx) {
@@ -265,7 +265,7 @@ ENGINE_API void EngineLog(const char* msg) {
         if (g_app_log) {
             g_app_log(msg);
         } else {
-            printf("[Engine] %s\n", msg); fflush(stdout);
+            std::printf("[Engine] %s\n", msg); std::fflush(stdout);
         }
     }
 }

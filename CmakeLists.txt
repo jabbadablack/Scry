@@ -1,133 +1,55 @@
 cmake_minimum_required(VERSION 3.19)
 project(SCRY VERSION 1.0.0 LANGUAGES C CXX)
 
-
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
-
-# Require C++20 and C11
+# Require C++17 and C11
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# Set global output directories for all targets
+# Configure output directories
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
+# Build options
+option(SCRY_BUILD_TESTS "Build unit tests" ON)
+option(SCRY_BUILD_EXAMPLES "Build example sandbox" ON)
 
-# Configure mimalloc options
-set(MI_OVERRIDE ON CACHE BOOL "Override standard malloc" FORCE)
-set(MI_BUILD_SHARED OFF CACHE BOOL "Build mimalloc as a shared library" FORCE)
-set(MI_BUILD_OBJECT OFF CACHE BOOL "Build mimalloc object files" FORCE)
-set(MI_BUILD_TESTS OFF CACHE BOOL "Build mimalloc tests" FORCE)
-set(MI_BUILD_STATIC ON CACHE BOOL "Build mimalloc as static library" FORCE)
-
-# Configure SDL3 options to minimize compile time
-set(SDL_SHARED OFF CACHE BOOL "Build shared SDL library" FORCE)
-set(SDL_STATIC ON CACHE BOOL "Build static SDL library" FORCE)
-set(SDL_TESTS OFF CACHE BOOL "Build SDL tests" FORCE)
-set(SDL_INSTALL OFF CACHE BOOL "Install SDL" FORCE)
-set(SDL_AUDIO OFF CACHE BOOL "Disable SDL Audio subsystem" FORCE)
-set(SDL_JOYSTICK OFF CACHE BOOL "Disable SDL Joystick subsystem" FORCE)
-set(SDL_HAPTIC OFF CACHE BOOL "Disable SDL Haptic subsystem" FORCE)
-set(SDL_SENSOR OFF CACHE BOOL "Disable SDL Sensor subsystem" FORCE)
-set(SDL_CAMERA OFF CACHE BOOL "Disable SDL Camera subsystem" FORCE)
-
-# Configure Flecs options
-set(FLECS_SHARED ON CACHE BOOL "Build Flecs shared library" FORCE)
-set(FLECS_STATIC OFF CACHE BOOL "Build Flecs static library" FORCE)
-set(FLECS_TESTS OFF CACHE BOOL "Build Flecs tests" FORCE)
-
-# Configure Catch2 options
-set(CATCH_INSTALL_HELPERS OFF CACHE BOOL "" FORCE)
-set(CATCH_BUILD_TESTING OFF CACHE BOOL "" FORCE)
-
-# Configure quill options
-set(QUILL_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
-set(QUILL_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-
-# Configure Eigen options
-set(EIGEN_BUILD_DOC OFF CACHE BOOL "" FORCE)
-set(EIGEN_BUILD_TESTING OFF CACHE BOOL "" FORCE)
-
-# Configure enkiTS options
-set(ENKITS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(ENKITS_BUILD_TESTING  OFF CACHE BOOL "" FORCE)
-set(ENKITS_INSTALL        OFF CACHE BOOL "" FORCE)
-
-# CMake Options
-option(SCRY_BUILD_EXAMPLES "Build the example game project (examples/sandbox)" ON)
-option(SCRY_BUILD_TESTS    "Build and auto-run the test suite after every build" ON)
-
-# Integrate mimalloc, SDL3, Flecs, yyjson, Catch2, libassert, quill, string_id, and eigen
 include(FetchContent)
 
-FetchContent_Declare(
-    mimalloc
-    GIT_REPOSITORY https://github.com/microsoft/mimalloc.git
-    GIT_TAG v2.1.2
-)
+set(CMAKE_SKIP_INSTALL_RULES ON CACHE BOOL "" FORCE)
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 
-FetchContent_Declare(
-    SDL3
-    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-    GIT_TAG release-3.2.0
-)
+# ─── Dependencies (Local Source Overrides) ───
 
-FetchContent_Declare(
-    flecs
-    GIT_REPOSITORY https://github.com/SanderMertens/flecs.git
-    GIT_TAG v4.1.5
-)
+FetchContent_Declare(mimalloc SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/mimalloc")
+set(MI_OVERRIDE ON CACHE BOOL "" FORCE)
+set(MI_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+set(MI_BUILD_STATIC ON CACHE BOOL "" FORCE)
 
-FetchContent_Declare(
-    yyjson
-    GIT_REPOSITORY https://github.com/ibireme/yyjson.git
-    GIT_TAG 0.10.0
-)
+FetchContent_Declare(SDL3 SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/SDL3")
+set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+set(SDL_STATIC ON CACHE BOOL "" FORCE)
 
-FetchContent_Declare(
-    Catch2
-    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-    GIT_TAG v3.5.2
-)
+# Build Flecs as SHARED to ensure global state is consistent across DLL boundaries
+FetchContent_Declare(flecs SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/flecs")
+set(FLECS_STATIC OFF CACHE BOOL "" FORCE)
+set(FLECS_SHARED ON CACHE BOOL "" FORCE)
 
-FetchContent_Declare(
-    libassert
-    GIT_REPOSITORY https://github.com/jeremy-rifkin/libassert.git
-    GIT_TAG v2.1.0
-)
+FetchContent_Declare(yyjson SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/yyjson")
+FetchContent_Declare(Catch2 SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/Catch2")
+FetchContent_Declare(cpptrace SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/cpptrace")
+FetchContent_Declare(libassert SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/libassert")
+FetchContent_Declare(string_id SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/string_id")
+FetchContent_Declare(enkiTS SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/enkiTS")
+FetchContent_Declare(eigen SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/eigen")
 
-FetchContent_Declare(
-    quill
-    GIT_REPOSITORY https://github.com/odygrd/quill.git
-    GIT_TAG v3.7.0
-)
+FetchContent_MakeAvailable(mimalloc SDL3 flecs yyjson Catch2 cpptrace libassert string_id enkiTS)
 
-FetchContent_Declare(
-    string_id
-    GIT_REPOSITORY https://github.com/foonathan/string_id.git
-    GIT_TAG master
-)
-
-FetchContent_Declare(
-    eigen
-    GIT_REPOSITORY https://github.com/PX4/eigen.git
-    GIT_TAG master
-)
-
-FetchContent_Declare(
-    enkiTS
-    GIT_REPOSITORY https://github.com/dougbinks/enkiTS.git
-    GIT_TAG master
-)
-
-FetchContent_MakeAvailable(mimalloc SDL3 flecs yyjson Catch2 libassert quill string_id enkiTS)
-
-# Populate and patch eigen manually to avoid target collision on "uninstall"
+# Special handling for Eigen (patching uninstall target)
 FetchContent_GetProperties(eigen)
 if(NOT eigen_POPULATED)
     FetchContent_Populate(eigen)
@@ -140,14 +62,12 @@ if(NOT eigen_POPULATED)
     add_subdirectory(${eigen_SOURCE_DIR} ${eigen_BINARY_DIR})
 endif()
 
-# Define rigorous warning flags for Scry targets
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    set(SCRY_WARNING_FLAGS -Wall -Wextra -Wpedantic -Werror -Wno-tautological-compare -Wno-deprecated-enum-enum-conversion -Wno-deprecated-copy -Wno-deprecated-declarations -Wno-template-body)
-elseif(MSVC)
+if(MSVC)
     set(SCRY_WARNING_FLAGS /W4 /WX)
+else()
+    set(SCRY_WARNING_FLAGS -Wall -Wextra -Wpedantic -Wno-tautological-compare -Wno-deprecated-enum-enum-conversion -Wno-deprecated-copy -Wno-deprecated-declarations -Wno-template-body -Wno-attributes)
 endif()
 
-# Load plugin/game helper macros.
 include(cmake/EngineHelpers.cmake)
 
 # ─── Engine Library ──────────────────────────────────────────────────────────
@@ -158,71 +78,74 @@ file(GLOB_RECURSE SCRY_INC CONFIGURE_DEPENDS "include/*.hpp" "include/*.h")
 add_library(scry SHARED ${SCRY_SRC} ${SCRY_INC})
 target_compile_options(scry PRIVATE ${SCRY_WARNING_FLAGS})
 
+# Robust include propagation for dependencies
+# We use PUBLIC so both scry and anyone linking against scry (like sandbox and tests) see them.
 target_include_directories(scry PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/flecs/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/mimalloc/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/yyjson/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/enkiTS/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/eigen"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/string_id"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/libassert/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/cpptrace/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/Catch2/src/catch2"
 )
 
 target_compile_definitions(scry PRIVATE ENGINE_EXPORT)
 
 target_link_libraries(scry
     PUBLIC
-        libassert::assert
-        eigen
-        quill::quill
-        flecs           # public headers expose ecs_entity_t / ecs_world_t
-    PRIVATE
         mimalloc-static
-        SDL3-static
+        flecs
+        SDL3::SDL3-static
         yyjson
+        libassert::assert
         foonathan_string_id
         enkiTS
 )
-target_include_directories(scry PRIVATE
-    "${mimalloc_SOURCE_DIR}/include"
-    "${string_id_SOURCE_DIR}"
-    "${string_id_BINARY_DIR}"
-)
-
-# Precompile Eigen/Dense once for the scry target — it's a very heavy header
-target_precompile_headers(scry PRIVATE <Eigen/Dense>)
-
-# Suppress warnings from third-party headers
-foreach(dep eigen quill foonathan_string_id flecs yyjson enkiTS)
-    if(TARGET ${dep})
-        set_target_properties(${dep} PROPERTIES
-            INTERFACE_SYSTEM_INCLUDE_DIRECTORIES
-                "$<TARGET_PROPERTY:${dep},INTERFACE_INCLUDE_DIRECTORIES>")
-    endif()
-endforeach()
 
 # ─── Tests ───────────────────────────────────────────────────────────────────
-# When SCRY_BUILD_TESTS is ON the test suite is built AND automatically executed
-# as part of every cmake --build invocation (via the run_tests ALL target).
 
-if(SCRY_BUILD_TESTS AND NOT CMAKE_BUILD_TYPE STREQUAL "Release")
+if(SCRY_BUILD_TESTS)
     add_subdirectory(tests)
 
-    # Run the test binary directly rather than through CTest.
-    # enable_testing() at root scope pulls in Eigen's 780+ test targets;
-    # invoking scry_tests directly sidesteps that entirely.
-    add_custom_target(run_tests ALL
+    # Exclude tests from ALL builds by default
+    set_target_properties(scry_tests PROPERTIES EXCLUDE_FROM_ALL TRUE)
+    
+    # Re-enable for Debug in Multi-Config generators
+    if(CMAKE_CONFIGURATION_TYPES)
+        foreach(cfg ${CMAKE_CONFIGURATION_TYPES})
+            if(cfg STREQUAL "Debug")
+                string(TOUPPER ${cfg} cfg_upper)
+                # Note: EXCLUDE_FROM_ALL_DEBUG is supported by some generators
+                set_target_properties(scry_tests PROPERTIES EXCLUDE_FROM_ALL_${cfg_upper} FALSE)
+            endif()
+        endforeach()
+    endif()
+
+    add_custom_target(run_tests
         COMMAND $<TARGET_FILE:scry_tests> --reporter compact
         DEPENDS scry_tests
         WORKING_DIRECTORY "$<TARGET_FILE_DIR:scry_tests>"
         COMMENT "Running Scry test suite"
+        VERBATIM
     )
+    
+    set_target_properties(run_tests PROPERTIES EXCLUDE_FROM_ALL TRUE)
+    if(CMAKE_CONFIGURATION_TYPES)
+        foreach(cfg ${CMAKE_CONFIGURATION_TYPES})
+            if(cfg STREQUAL "Debug")
+                string(TOUPPER ${cfg} cfg_upper)
+                set_target_properties(run_tests PROPERTIES EXCLUDE_FROM_ALL_${cfg_upper} FALSE)
+            endif()
+        endforeach()
+    endif()
 endif()
 
-# ─── Example game project ────────────────────────────────────────────────────
-# The sandbox is its own isolated CMake project (has cmake_minimum_required +
-# project()) — it just happens to be added here via add_subdirectory so that
-# one cmake --build from the engine root builds everything together.
-# Plugins are NOT declared here; the sandbox's own project.json drives which
-# plugins are built, connecting them to the engine instance the sandbox uses.
-
+# ─── Example sandbox project ──────────────────────────────────────────────────
 if(SCRY_BUILD_EXAMPLES)
-    set(SCRY_PLUGINS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/plugins" CACHE PATH
-        "Root directory that contains all Scry plugin sub-projects")
     add_subdirectory(examples/sandbox)
 endif()

@@ -20,47 +20,104 @@ option(SCRY_BUILD_EXAMPLES "Build example sandbox" ON)
 
 include(FetchContent)
 
-set(CMAKE_SKIP_INSTALL_RULES ON CACHE BOOL "" FORCE)
+# ─── Global dependency settings to minimize noise ───
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(CMAKE_SKIP_INSTALL_RULES ON CACHE BOOL "" FORCE)
+set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 
-# ─── Dependencies (Local Source Overrides) ───
+# enkiTS
+set(ENKITS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(ENKITS_INSTALL OFF CACHE BOOL "" FORCE)
 
-FetchContent_Declare(mimalloc SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/mimalloc")
+# mimalloc
+set(MI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(MI_BUILD_OBJECT OFF CACHE BOOL "" FORCE)
 set(MI_OVERRIDE ON CACHE BOOL "" FORCE)
 set(MI_BUILD_SHARED OFF CACHE BOOL "" FORCE)
 set(MI_BUILD_STATIC ON CACHE BOOL "" FORCE)
 
-FetchContent_Declare(SDL3 SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/SDL3")
+# SDL3
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
 set(SDL_STATIC ON CACHE BOOL "" FORCE)
+set(SDL_TESTS OFF CACHE BOOL "" FORCE)
+set(SDL_INSTALL OFF CACHE BOOL "" FORCE)
 
-# Build Flecs as SHARED to ensure global state is consistent across DLL boundaries
-FetchContent_Declare(flecs SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/flecs")
+# Flecs
 set(FLECS_STATIC OFF CACHE BOOL "" FORCE)
 set(FLECS_SHARED ON CACHE BOOL "" FORCE)
+set(FLECS_TESTS OFF CACHE BOOL "" FORCE)
+set(FLECS_EXAMPLES OFF CACHE BOOL "" FORCE)
 
-FetchContent_Declare(yyjson SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/yyjson")
-FetchContent_Declare(Catch2 SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/Catch2")
-FetchContent_Declare(cpptrace SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/cpptrace")
-FetchContent_Declare(libassert SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/libassert")
-FetchContent_Declare(string_id SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/string_id")
-FetchContent_Declare(enkiTS SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/enkiTS")
-FetchContent_Declare(eigen SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/eigen")
+# Catch2
+set(CATCH_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(CATCH_INSTALL_HELPERS OFF CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(mimalloc SDL3 flecs yyjson Catch2 cpptrace libassert string_id enkiTS)
+# foonathan/string_id
+set(FOONATHAN_STRING_ID_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(FOONATHAN_STRING_ID_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 
-# Special handling for Eigen (patching uninstall target)
-FetchContent_GetProperties(eigen)
-if(NOT eigen_POPULATED)
-    FetchContent_Populate(eigen)
-    if(EXISTS "${eigen_SOURCE_DIR}/CMakeLists.txt")
-        file(READ "${eigen_SOURCE_DIR}/CMakeLists.txt" EIGEN_CMAKE)
-        string(REPLACE "add_custom_target ( uninstall" "add_custom_target ( eigen_uninstall" EIGEN_CMAKE "${EIGEN_CMAKE}")
-        string(REPLACE "add_custom_target(uninstall" "add_custom_target(eigen_uninstall" EIGEN_CMAKE "${EIGEN_CMAKE}")
-        file(WRITE "${eigen_SOURCE_DIR}/CMakeLists.txt" "${EIGEN_CMAKE}")
-    endif()
-    add_subdirectory(${eigen_SOURCE_DIR} ${eigen_BINARY_DIR})
-endif()
+# cpptrace
+set(CPPTRACE_INSTALL OFF CACHE BOOL "" FORCE)
+set(CPPTRACE_GET_SYMBOLS_WITH_DBGHELP ON CACHE BOOL "" FORCE)
+set(CPPTRACE_GET_SYMBOLS_WITH_LIBDWARF OFF CACHE BOOL "" FORCE)
+
+# libassert
+set(LIBASSERT_INSTALL OFF CACHE BOOL "" FORCE)
+set(LIBASSERT_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+
+# ─── FetchContent Declarations ───
+
+FetchContent_Declare(mimalloc
+    GIT_REPOSITORY https://github.com/microsoft/mimalloc.git
+    GIT_TAG        v2.1.2
+)
+
+FetchContent_Declare(SDL3
+    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+    GIT_TAG        main
+)
+
+FetchContent_Declare(flecs
+    GIT_REPOSITORY https://github.com/SanderMertens/flecs.git
+    GIT_TAG        master
+)
+
+FetchContent_Declare(yyjson
+    GIT_REPOSITORY https://github.com/ibireme/yyjson.git
+    GIT_TAG        master
+)
+
+FetchContent_Declare(Catch2
+    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+    GIT_TAG        v3.4.0
+)
+
+FetchContent_Declare(cpptrace
+    GIT_REPOSITORY https://github.com/jeremy-rifkin/cpptrace.git
+    GIT_TAG        v0.6.3
+)
+
+FetchContent_Declare(libassert
+    GIT_REPOSITORY https://github.com/jeremy-rifkin/libassert.git
+    GIT_TAG        v2.2.1
+)
+
+FetchContent_Declare(string_id
+    GIT_REPOSITORY https://github.com/foonathan/string_id.git
+    GIT_TAG        master
+)
+
+FetchContent_Declare(enkiTS
+    GIT_REPOSITORY https://github.com/dougbinks/enkiTS.git
+    GIT_TAG        master
+)
+
+FetchContent_Declare(eigen
+    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+    GIT_TAG        master
+)
+
+FetchContent_MakeAvailable(mimalloc SDL3 flecs yyjson Catch2 cpptrace libassert string_id enkiTS eigen)
 
 if(MSVC)
     set(SCRY_WARNING_FLAGS /W4 /WX)
@@ -78,20 +135,11 @@ file(GLOB_RECURSE SCRY_INC CONFIGURE_DEPENDS "include/*.hpp" "include/*.h")
 add_library(scry SHARED ${SCRY_SRC} ${SCRY_INC})
 target_compile_options(scry PRIVATE ${SCRY_WARNING_FLAGS})
 
-# Robust include propagation for dependencies
-# We use PUBLIC so both scry and anyone linking against scry (like sandbox and tests) see them.
 target_include_directories(scry PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
-    "${CMAKE_CURRENT_SOURCE_DIR}/external/flecs/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/external/mimalloc/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/external/yyjson/src"
-    "${CMAKE_CURRENT_SOURCE_DIR}/external/enkiTS/src"
-    "${CMAKE_CURRENT_SOURCE_DIR}/external/eigen"
-    "${CMAKE_CURRENT_SOURCE_DIR}/external/string_id"
-    "${CMAKE_CURRENT_SOURCE_DIR}/external/libassert/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/external/cpptrace/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/external/Catch2/src/catch2"
+    "${eigen_SOURCE_DIR}"
+    "${string_id_SOURCE_DIR}"
 )
 
 target_compile_definitions(scry PRIVATE ENGINE_EXPORT)
@@ -120,7 +168,6 @@ if(SCRY_BUILD_TESTS)
         foreach(cfg ${CMAKE_CONFIGURATION_TYPES})
             if(cfg STREQUAL "Debug")
                 string(TOUPPER ${cfg} cfg_upper)
-                # Note: EXCLUDE_FROM_ALL_DEBUG is supported by some generators
                 set_target_properties(scry_tests PROPERTIES EXCLUDE_FROM_ALL_${cfg_upper} FALSE)
             endif()
         endforeach()

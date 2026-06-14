@@ -15,28 +15,26 @@ macro(engine_add_plugin target_name)
         target_compile_options(${target_name} PRIVATE ${SCRY_WARNING_FLAGS})
     endif()
 
-    # Build directly into an isolated folder within the bin directory.
-    # We set config-specific output directories to handle Ninja Multi-Config correctly.
-    if(GENERATOR_IS_MULTI_CONFIG OR CMAKE_CONFIGURATION_TYPES)
-        foreach(cfg ${CMAKE_CONFIGURATION_TYPES})
-            string(TOUPPER ${cfg} cfg_upper)
-            set_target_properties(${target_name} PROPERTIES
-                RUNTIME_OUTPUT_DIRECTORY_${cfg_upper} "${CMAKE_BINARY_DIR}/bin/${cfg}/plugins/${target_name}"
-                LIBRARY_OUTPUT_DIRECTORY_${cfg_upper} "${CMAKE_BINARY_DIR}/bin/${cfg}/plugins/${target_name}"
-                PDB_OUTPUT_DIRECTORY_${cfg_upper}     "${CMAKE_BINARY_DIR}/bin/${cfg}/plugins/${target_name}"
-            )
-        endforeach()
-    else()
-        # Single-config generators
-        set(_OUTPUT_DIR "${CMAKE_BINARY_DIR}/bin/plugins/${target_name}")
-        set_target_properties(${target_name} PROPERTIES
-            RUNTIME_OUTPUT_DIRECTORY "${_OUTPUT_DIR}"
-            LIBRARY_OUTPUT_DIRECTORY "${_OUTPUT_DIR}"
-            PDB_OUTPUT_DIRECTORY     "${_OUTPUT_DIR}"
-        )
-    endif()
+    # Isolated output path: bin/<config>/plugins/<name>
+    set(_PLUGIN_DIR "$<TARGET_FILE_DIR:scry>/plugins/${target_name}")
 
-    # Stage plugin.json to the same isolated folder
+    set_target_properties(${target_name} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${_PLUGIN_DIR}"
+        LIBRARY_OUTPUT_DIRECTORY "${_PLUGIN_DIR}"
+        PDB_OUTPUT_DIRECTORY     "${_PLUGIN_DIR}"
+    )
+
+    # Config-specific overrides for Ninja Multi-Config
+    foreach(cfg ${CMAKE_CONFIGURATION_TYPES})
+        string(TOUPPER ${cfg} cfg_upper)
+        set_target_properties(${target_name} PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY_${cfg_upper} "${CMAKE_BINARY_DIR}/bin/${cfg}/plugins/${target_name}"
+            LIBRARY_OUTPUT_DIRECTORY_${cfg_upper} "${CMAKE_BINARY_DIR}/bin/${cfg}/plugins/${target_name}"
+            PDB_OUTPUT_DIRECTORY_${cfg_upper}     "${CMAKE_BINARY_DIR}/bin/${cfg}/plugins/${target_name}"
+        )
+    endforeach()
+
+    # Stage plugin.json to the isolated directory
     add_custom_command(TARGET ${target_name} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/plugin.json"

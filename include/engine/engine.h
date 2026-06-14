@@ -69,6 +69,11 @@ typedef struct AppConfig {
     /* NASA Rule #3: The engine must pre-allocate this exact amount of memory
        at the very start of EngineRun. */
     size_t global_memory_pool_size;
+
+    /* Worker thread count for the enkiTS task scheduler.
+       0 = default minimum (1 worker thread).
+       N = exactly N worker threads. */
+    uint32_t thread_count;
 } AppConfig;
 
 /* ── Engine API ──────────────────────────────────────────────────────────── */

@@ -35,16 +35,32 @@ struct FlecsTask : enki::ITaskSet {
     }
 };
 
-bool Init() {
-    g_scheduler.Initialize();
-    
+bool Init(uint32_t thread_count) {
+    // 0 = "use minimum": 1 worker thread. N = N worker threads (N+1 total with main).
+    const uint32_t total = (thread_count == 0) ? 2u : thread_count + 1u;
+    g_scheduler.Initialize(total);
+
+#ifndef NDEBUG
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "[Jobs] Scheduler started: %u total threads (%u workers)",
+        total, total - 1u);
+    EngineLog(buf);
+#endif
+
     size_t req_size = Memory::PoolGetRequiredSize(sizeof(FlecsTask), MAX_FLECS_TASKS);
     g_task_pool_mem = mi_malloc(req_size);
     DEBUG_ASSERT(g_task_pool_mem != nullptr);
-    if (g_task_pool_mem == nullptr) return false;
+    if (g_task_pool_mem == nullptr) {
+        EngineLog("[Jobs] FATAL: failed to allocate FlecsTask pool");
+        return false;
+    }
 
     Memory::PoolInit(&g_task_pool, g_task_pool_mem, req_size, sizeof(FlecsTask), MAX_FLECS_TASKS);
-    
+
+#ifndef NDEBUG
+    EngineLog("[Jobs] FlecsTask pool ready");
+#endif
+
     return true;
 }
 

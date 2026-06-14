@@ -171,10 +171,24 @@ void InitOSAPI() {
 
 ecs_world_t* CreateWorld() {
     InitOSAPI();
+
     ecs_world_t* world = ecs_init();
-    if (world == nullptr) return nullptr;
+    DEBUG_ASSERT(world != nullptr);
+    if (world == nullptr) {
+        EngineLog("[ECS] FATAL: ecs_init() returned null");
+        return nullptr;
+    }
+
+#ifndef NDEBUG
+    EngineLog("[ECS] World created");
+#endif
 
     Pipeline::InitPipeline(world);
+
+#ifndef NDEBUG
+    EngineLog("[ECS] Pipeline ready");
+#endif
+
     return world;
 }
 

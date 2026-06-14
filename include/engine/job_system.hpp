@@ -9,7 +9,8 @@ namespace Jobs {
 
 // Initialize the global task scheduler. Call before Flecs and before any
 // plugin is loaded. Returns false only if the OS thread pool cannot be created.
-ENGINE_API bool Init();
+// thread_count: 0 = 1 worker thread; N = N worker threads.
+ENGINE_API bool Init(uint32_t thread_count);
 
 // Drain all in-flight tasks and tear down all worker threads.
 // Must be called after ecs_fini and after all plugins are unloaded.

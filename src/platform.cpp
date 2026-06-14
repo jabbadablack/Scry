@@ -28,12 +28,12 @@ static void ProcessInputEvent(const SDL_Event& event, Engine::Input::InputState&
         const bool is_down = (event.type == SDL_EVENT_KEY_DOWN);
         const uint32_t scancode = static_cast<uint32_t>(event.key.scancode);
         if (scancode < 512) {
-            const uint32_t idx = scancode / 64;
-            const uint32_t bit = scancode % 64;
+            const uint32_t idx = scancode / 8;
+            const uint32_t bit = scancode % 8;
             if (is_down) {
-                write_state.keys[idx] |= (1ULL << bit);
+                write_state.keys[idx] |= static_cast<uint8_t>(1u << bit);
             } else {
-                write_state.keys[idx] &= ~(1ULL << bit);
+                write_state.keys[idx] &= static_cast<uint8_t>(~(1u << bit));
             }
         }
     } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
@@ -50,12 +50,12 @@ static void ProcessInputEvent(const SDL_Event& event, Engine::Input::InputState&
         }
 
         if (scancode != 0) {
-            const uint32_t idx = scancode / 64;
-            const uint32_t bit = scancode % 64;
+            const uint32_t idx = scancode / 8;
+            const uint32_t bit = scancode % 8;
             if (is_down) {
-                write_state.keys[idx] |= (1ULL << bit);
+                write_state.keys[idx] |= static_cast<uint8_t>(1u << bit);
             } else {
-                write_state.keys[idx] &= ~(1ULL << bit);
+                write_state.keys[idx] &= static_cast<uint8_t>(~(1u << bit));
             }
         }
     }
@@ -138,7 +138,7 @@ ENGINE_API EngineError EngineRun(const AppConfig* config) {
     }
 
     // ── 2. enkiTS task scheduler ──────────────────────────────────────────────
-    const bool jobs_ok = Engine::Jobs::Init();
+    const bool jobs_ok = Engine::Jobs::Init(config->thread_count);
     if (!jobs_ok) {
         ret_code = ERR_JOB_SYSTEM_INIT;
         goto shutdown;

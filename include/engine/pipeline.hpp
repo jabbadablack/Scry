@@ -14,24 +14,22 @@ ENGINE_API extern ecs_entity_t Phase_Intent;      // Converts input/AI into Inte
 ENGINE_API extern ecs_entity_t Phase_StateUpdate; // Core logic: evaluates Intents + State
 ENGINE_API extern ecs_entity_t Phase_StateSync;   // Flips DoubleBuffered<T> write -> read
 ENGINE_API extern ecs_entity_t Phase_React;       // Audio, VFX, and other reactions
-ENGINE_API extern ecs_entity_t Phase_Cleanup;     // Bulk-strips all IsIntent components
+ENGINE_API extern ecs_entity_t Phase_Cleanup;     // Bulk-zeros all registered intent component arrays
 
 // ── Intent component registry ─────────────────────────────────────────────
-// Tag applied to component TYPE entities that represent one-shot intents.
-// The Cleanup system removes every instance of each tagged type from all
-// game entities at the end of each frame, preventing stale intent leakage.
-//
-// Usage (after registering your component):
-//   ecs_add(world, ecs_id(MyIntentComp), Engine::Pipeline::IsIntent);
+// Metadata tag applied to component TYPE entities whose instances are
+// one-shot intents. Intent structs must begin with `uint8_t active` so the
+// cleanup system can zero the entire contiguous array with a single memset.
 ENGINE_API extern ecs_entity_t IsIntent;
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────
 // Build and activate the custom pipeline. Must be called from CreateWorld()
-// after ecs_init() and the FlecsMeta module import.
+// after ecs_init().
 ENGINE_API void InitPipeline(ecs_world_t* world);
 
-// Convenience wrapper: tags comp_id with IsIntent so the cleanup system
-// removes all instances of that component at the end of every frame.
+// Register an intent component for automatic bulk-zero cleanup each frame.
+// Creates a Phase_Cleanup system that memsets every instance of comp_id to 0,
+// resetting the `active` flag and payload without any archetype mutation.
 ENGINE_API void RegisterIntentComponent(ecs_world_t* world, ecs_entity_t comp_id);
 
 } // namespace Pipeline

@@ -9,11 +9,11 @@
 
 // ── Component types ───────────────────────────────────────────────────────────
 
-struct Health       { float value; };
-struct DamageIntent { float amount; };
+struct Health { float value; };
 
-// Relationship to link intent entities to their targets
-struct Target {};
+#pragma pack(push, 1)
+struct DamageIntent { uint8_t active; float amount; };
+#pragma pack(pop)
 
 static constexpr float k_damage_amount = 10.0f;
 
@@ -29,7 +29,6 @@ static void AppLog(const char* msg) {
 static void OnInit(Context* ctx) {
     DEBUG_ASSERT(ctx != nullptr);
 
-    // Loads project.json from the executable directory by default.
     Engine::JSON::LoadProjectConfig(ctx, nullptr);
 
     ecs_world_t* world = GetWorld(ctx);
@@ -46,8 +45,7 @@ static void OnInit(Context* ctx) {
         id_Health              = ecs_component_init(world, &c);
         DEBUG_ASSERT(id_Health != 0);
     }
-    
-    // Register sync system
+
     Engine::ECS::RegisterDoubleBufferSync<Health>(world, id_Health);
 
     // ── DamageIntent component ────────────────────────────────────────────────
@@ -63,14 +61,7 @@ static void OnInit(Context* ctx) {
         DEBUG_ASSERT(id_Damage != 0);
     }
 
-    // ── Target relationship ───────────────────────────────────────────────────
-    ecs_entity_t id_Target;
-    {
-        ecs_entity_desc_t e = {};
-        e.name              = "Target";
-        id_Target           = ecs_entity_init(world, &e);
-        DEBUG_ASSERT(id_Target != 0);
-    }
+    Engine::Pipeline::RegisterIntentComponent(world, id_Damage);
 
     // ── DamageQueueSystem — Intent phase ──────────────────────────────────────
     {
@@ -83,19 +74,15 @@ static void OnInit(Context* ctx) {
         s.entity               = sys_ent;
         s.query.terms[0].id    = id_Health;
         s.query.terms[0].inout = EcsIn;
+        s.query.terms[1].id    = id_Damage;
+        s.query.terms[1].inout = EcsInOut;
         s.callback = [](ecs_iter_t* it) {
-            const Engine::ECS::DoubleBuffered<Health>* hp = ecs_field(it, Engine::ECS::DoubleBuffered<Health>, 0);
-            const ecs_entity_t id_dmg = ecs_lookup(it->world, "DamageIntent");
-            const ecs_entity_t id_isi = ecs_lookup(it->world, "IsIntent");
-            const ecs_entity_t id_trg = ecs_lookup(it->world, "Target");
-
+            const Engine::ECS::DoubleBuffered<Health>* hp     = ecs_field(it, Engine::ECS::DoubleBuffered<Health>, 0);
+            DamageIntent*                               intent = ecs_field(it, DamageIntent, 1);
             for (int i = 0; i < it->count; ++i) {
                 if (hp[i].read.value > 0.0f) {
-                    ecs_entity_t intent = ecs_new(it->world);
-                    ecs_add_id(it->world, intent, id_isi);
-                    DamageIntent dmg = { k_damage_amount };
-                    ecs_set_id(it->world, intent, id_dmg, sizeof(dmg), &dmg);
-                    ecs_add_pair(it->world, intent, id_trg, it->entities[i]);
+                    intent[i].active = 1;
+                    intent[i].amount = k_damage_amount;
                 }
             }
         };
@@ -113,13 +100,16 @@ static void OnInit(Context* ctx) {
         ecs_system_desc_t s    = {};
         s.entity               = sys_ent;
         s.query.terms[0].id    = id_Damage;
-        s.query.terms[1].id    = ecs_pair(id_Target, id_Health);
-        s.query.terms[1].src.id = EcsCascade;
+        s.query.terms[0].inout = EcsIn;
+        s.query.terms[1].id    = id_Health;
+        s.query.terms[1].inout = EcsInOut;
         s.callback = [](ecs_iter_t* it) {
-            const DamageIntent* dmg = ecs_field(it, DamageIntent, 0);
-            Engine::ECS::DoubleBuffered<Health>* hp = ecs_field(it, Engine::ECS::DoubleBuffered<Health>, 1);
+            const DamageIntent*                  intent = ecs_field(it, DamageIntent, 0);
+            Engine::ECS::DoubleBuffered<Health>* hp     = ecs_field(it, Engine::ECS::DoubleBuffered<Health>, 1);
             for (int i = 0; i < it->count; ++i) {
-                hp[i].write.value -= dmg[i].amount;
+                if (intent[i].active) {
+                    hp[i].write.value -= intent[i].amount;
+                }
             }
         };
 
@@ -142,8 +132,8 @@ static void OnInit(Context* ctx) {
             char buf[64];
             for (int i = 0; i < it->count; ++i) {
                 if (hp[i].read.value != hp[i].write.value) {
-                    std::snprintf(buf, sizeof(buf), "[React] health %f -> %f", 
-                             static_cast<double>(hp[i].read.value), 
+                    std::snprintf(buf, sizeof(buf), "[React] health %f -> %f",
+                             static_cast<double>(hp[i].read.value),
                              static_cast<double>(hp[i].write.value));
                     EngineLog(buf);
                 }
@@ -161,6 +151,9 @@ static void OnInit(Context* ctx) {
 
         Engine::ECS::DoubleBuffered<Health> hp_init = {{100.0f}, {100.0f}};
         ecs_set_id(world, player, id_Health, sizeof(hp_init), &hp_init);
+
+        DamageIntent dmg_init = {};
+        ecs_set_id(world, player, id_Damage, sizeof(dmg_init), &dmg_init);
     }
 
     EngineLog("[Init] ISR demo ready — health will deplete to 0 over ~10 frames.");
@@ -178,13 +171,14 @@ int main(int argc, char* argv[]) {
     (void)argc; (void)argv;
 
     AppConfig config = {};
-    config.title         = "Engine ISR Demo";
-    config.window_width  = 800;
-    config.window_height = 600;
-    config.OnInit        = OnInit;
-    config.OnShutdown    = OnShutdown;
-    config.OnLog         = AppLog;
-    config.global_memory_pool_size = 1024 * 1024;
+    config.title                   = "Engine ISR Demo";
+    config.window_width            = 800;
+    config.window_height           = 600;
+    config.OnInit                  = OnInit;
+    config.OnShutdown              = OnShutdown;
+    config.OnLog                   = AppLog;
+    config.global_memory_pool_size = 256 * 1024;
+    config.thread_count            = 1;
 
     const EngineError err = EngineRun(&config);
     if (err != SUCCESS) {

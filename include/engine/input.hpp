@@ -37,17 +37,17 @@ enum class Key : uint32_t {
 };
 
 struct ENGINE_API InputState {
-    uint64_t keys[8] = {0};    // 64 bytes - 512 bits for tracking every possible SDL scancode + mouse buttons
-    int16_t mouse_x = 0;       // 2 bytes
-    int16_t mouse_y = 0;       // 2 bytes
-    // Total size: 68 bytes (padded to 72). Zero padding holes.
+    uint8_t keys[64] = {};  // 64 bytes - 512 bits; uint8_t enables SIMD block-reads without endianness concerns
+    int16_t mouse_x = 0;   // 2 bytes
+    int16_t mouse_y = 0;   // 2 bytes
+    // Total size: 68 bytes (alignment 2, no tail padding).
 };
 
 struct ENGINE_API InputBuffer {
     InputState states[2];      // 136 bytes (Double buffer for Read/Write states)
     uint8_t write_index = 0;   // 1 byte
     uint8_t read_index = 1;    // 1 byte
-    // Total size: 138 bytes (padded to 144). Sorted largest to smallest members.
+    // Total size: 138 bytes (alignment 2, no tail padding).
 
     inline void Swap() {
         uint8_t temp = read_index;
@@ -60,18 +60,18 @@ struct ENGINE_API InputBuffer {
     inline bool IsKeyDown(Key key) const {
         uint32_t scancode = static_cast<uint32_t>(key);
         if (scancode < 512) {
-            uint32_t idx = scancode / 64;
-            uint32_t bit = scancode % 64;
-            return (states[read_index].keys[idx] & (1ULL << bit)) != 0;
+            uint32_t idx = scancode / 8;
+            uint32_t bit = scancode % 8;
+            return (states[read_index].keys[idx] & (1u << bit)) != 0;
         }
         return false;
     }
 
     inline bool IsRawKeyDown(uint32_t scancode) const {
         if (scancode < 512) {
-            uint32_t idx = scancode / 64;
-            uint32_t bit = scancode % 64;
-            return (states[read_index].keys[idx] & (1ULL << bit)) != 0;
+            uint32_t idx = scancode / 8;
+            uint32_t bit = scancode % 8;
+            return (states[read_index].keys[idx] & (1u << bit)) != 0;
         }
         return false;
     }

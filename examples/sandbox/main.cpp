@@ -2,19 +2,7 @@
  * examples/sandbox/main.cpp
  *
  * Demonstrates the pure ISR (Intent-State-Reactor) lifecycle of the engine.
- * ALL per-frame logic lives in ECS systems registered during OnInit; there is no
- * OnUpdate callback.  The 6-phase pipeline drives everything each frame:
- *
- *   Intent phase  — DamageQueueSystem creates DamageIntent entities targeting
- *                   entities with Health > 0.
- *   State phase   — DamageSystem matches DamageIntent entities, subtracts
- *                   amount from Health via direct pointer math on write buffer.
- *   React phase   — HealthReactor checks read vs write and logs.
- *   Sync phase    — DoubleBufferSync copies write -> read.
- *   Cleanup phase — IntentCleanupSystem bulk-deletes all entities tagged IsIntent.
- *
- * After 10 frames Health reaches 0.  DamageQueueSystem stops queuing and the
- * demo idles silently until the user closes the window.
+ * ALL per-frame logic lives in ECS systems registered during OnInit.
  */
 
 #include <engine/engine.h>
@@ -34,8 +22,6 @@
 
 struct Health       { float value; };
 struct DamageIntent { float amount; };
-
-// Relationship to link intent entities to their targets
 struct Target {};
 
 static constexpr float k_damage_amount = 10.0f;
@@ -51,7 +37,8 @@ static void AppLog(const char* msg) {
 static void OnInit(Context* ctx) {
     DEBUG_ASSERT(ctx != nullptr);
 
-    Engine::JSON::LoadProjectConfig(ctx, "scry_project.json");
+    // Loads project.json from the executable directory by default.
+    Engine::JSON::LoadProjectConfig(ctx, nullptr);
 
     ecs_world_t* world = GetWorld(ctx);
 
@@ -174,7 +161,7 @@ static void OnInit(Context* ctx) {
         ecs_system_init(world, &s);
     }
 
-    // ── Spawn Player with Health = 100 ────────────────────────────────────────
+    // ── Spawn Player ──────────────────────────────────────────────────────────
     {
         ecs_entity_desc_t e       = {};
         e.name                    = "Player";
@@ -193,12 +180,10 @@ static void OnShutdown(Context* ctx) {
     Engine::Plugin::UnloadPlugins();
 }
 
-// ── Entry point ───────────────────────────────────────────────────────────────
-
 int main(int argc, char* argv[]) {
     (void)argc; (void)argv;
 
-    // 1. Initialize Quill in the application layer
+    // Initialize Quill in the application layer
     std::shared_ptr<quill::Handler> log_handler = quill::stdout_handler();
     log_handler->set_pattern("%(ascii_time) [%(thread)] %(fileline:<28) LOG_%(level_name) %(message)");
     quill::Config log_cfg;
@@ -213,7 +198,7 @@ int main(int argc, char* argv[]) {
     config.OnInit        = OnInit;
     config.OnShutdown    = OnShutdown;
     config.OnLog         = AppLog;
-    config.global_memory_pool_size = 1024 * 1024; // 1 MB pool for NASA Rule 3
+    config.global_memory_pool_size = 1024 * 1024;
 
     const EngineError err = EngineRun(&config);
     if (err != SUCCESS) {
@@ -221,7 +206,5 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    printf("[Main] Process exiting cleanly.\n");
-    fflush(stdout);
     return 0;
 }

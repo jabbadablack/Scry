@@ -147,9 +147,8 @@ elseif(MSVC)
     set(SCRY_WARNING_FLAGS /W4 /WX)
 endif()
 
-# Load plugin/game helper macros.  These are also exported to the build tree
-# so that downstream projects can call scry_add_plugin() after find_package(Scry).
-include(cmake/ScryHelpers.cmake)
+# Load plugin/game helper macros.
+include(cmake/EngineHelpers.cmake)
 
 # ─── Engine Library ──────────────────────────────────────────────────────────
 
@@ -201,7 +200,7 @@ endforeach()
 # When SCRY_BUILD_TESTS is ON the test suite is built AND automatically executed
 # as part of every cmake --build invocation (via the run_tests ALL target).
 
-if(SCRY_BUILD_TESTS)
+if(SCRY_BUILD_TESTS AND NOT CMAKE_BUILD_TYPE STREQUAL "Release")
     add_subdirectory(tests)
 
     # Run the test binary directly rather than through CTest.

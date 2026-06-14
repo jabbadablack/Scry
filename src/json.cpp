@@ -139,7 +139,11 @@ static void ParseState(ecs_world_t* world, yyjson_val* state_obj) {
 }
 
 bool LoadProjectConfig(Context* ctx, const char* filepath) {
-    if (ctx == nullptr || ctx->ecs_world == nullptr || filepath == nullptr) return false;
+    if (ctx == nullptr || ctx->ecs_world == nullptr) return false;
+
+    if (filepath == nullptr || std::strlen(filepath) == 0) {
+        filepath = "project.json";
+    }
 
     ecs_world_t* world = ctx->ecs_world;
 
@@ -167,20 +171,23 @@ bool LoadProjectConfig(Context* ctx, const char* filepath) {
 
     yyjson_val* root = yyjson_doc_get_root(doc);
 
-    // 1. Load Plugins
+    // Build the plugin name-to-path registry by scanning the plugins directory.
+    Engine::Plugin::LoadPlugins(ctx);
+
+    // Load Plugins listed in the project config by their designated names.
     yyjson_val* plugins_arr = yyjson_obj_get(root, "plugins");
     if (plugins_arr != nullptr && yyjson_is_arr(plugins_arr)) {
         size_t idx, max;
         yyjson_val* val;
         yyjson_arr_foreach(plugins_arr, idx, max, val) {
-            const char* plugin_path = yyjson_get_str(val);
-            if (plugin_path != nullptr) {
-                Engine::Plugin::LoadSinglePlugin(ctx, plugin_path);
+            const char* plugin_name = yyjson_get_str(val);
+            if (plugin_name != nullptr) {
+                Engine::Plugin::LoadSinglePlugin(ctx, plugin_name);
             }
         }
     }
 
-    // 2. Load State configuration (skip when the state object is empty)
+    // Load State configuration
     yyjson_val* state_obj = yyjson_obj_get(root, "state");
     if (state_obj != nullptr && yyjson_is_obj(state_obj) && yyjson_obj_size(state_obj) > 0) {
         ParseState(world, state_obj);

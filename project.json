@@ -1,5 +1,6 @@
 {
   "plugins": [
-    "scry_physics_plugin"
+    "scry_physics_plugin",
+    "scry_input_plugin"
   ]
 }

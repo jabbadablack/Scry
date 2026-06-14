@@ -1,0 +1,6 @@
+{
+  "plugins": [
+    "plugins/libscry_input_plugin.dll"
+  ],
+  "state": {}
+}

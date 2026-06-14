@@ -1,0 +1,1 @@
+scry_add_plugin(scry_input_plugin)

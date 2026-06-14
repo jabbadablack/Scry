@@ -5,6 +5,7 @@
 #include <scry/scry_job_system.hpp>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#define QUILL_ROOT_LOGGER_ONLY
 #include <quill/Quill.h>
 #include <libassert/assert.hpp>
 
@@ -132,6 +133,9 @@ SCRY_API int ScryRun(const ScryAppConfig* config) {
         SDL_Quit();
         return -4;
     }
+
+    LOG_INFO("[Engine] Flecs world bound to enkiTS scheduler ({} workers)",
+             static_cast<int32_t>(Scry::Jobs::GetTotalThreadCount()));
 
     ScryContext ctx = {};
     ctx.ecs_world = world;

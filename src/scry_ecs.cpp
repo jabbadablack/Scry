@@ -1,4 +1,5 @@
 #include <scry/scry_ecs.hpp>
+#include <scry/scry_job_system.hpp>
 #include <mimalloc.h>
 #define SDL_MAIN_HANDLED
 #include <SDL3/SDL.h>
@@ -114,6 +115,23 @@ static ecs_os_thread_id_t ScryThreadSelf(void) {
     const SDL_ThreadID tid = SDL_GetCurrentThreadID();
     const ecs_os_thread_id_t res = static_cast<ecs_os_thread_id_t>(tid);
     return res;
+}
+
+// enkiTS task hooks — used by ecs_set_task_threads().
+// Flecs calls task_new_ once per parallel worker slot; each becomes a
+// fire-once FlecsTask submitted to the global enki::TaskScheduler.
+
+static ecs_os_thread_t ScryTaskNew(ecs_os_thread_callback_t callback, void* param) {
+    DEBUG_ASSERT(callback != nullptr);
+    void* handle = Scry::Jobs::SubmitFlecsTask(
+        reinterpret_cast<Scry::Jobs::ScryFlecsTaskFn>(callback), param);
+    DEBUG_ASSERT(handle != nullptr);
+    return reinterpret_cast<ecs_os_thread_t>(handle);
+}
+
+static void* ScryTaskJoin(ecs_os_thread_t thread) {
+    DEBUG_ASSERT(thread != 0);
+    return Scry::Jobs::WaitFlecsTask(reinterpret_cast<void*>(thread));
 }
 
 static ecs_os_mutex_t ScryMutexNew(void) {
@@ -234,6 +252,9 @@ void InitOSAPI() {
     api.thread_join_ = ScryThreadJoin;
     api.thread_self_ = ScryThreadSelf;
 
+    api.task_new_  = ScryTaskNew;
+    api.task_join_ = ScryTaskJoin;
+
     api.mutex_new_ = ScryMutexNew;
     api.mutex_free_ = ScryMutexFree;
     api.mutex_lock_ = ScryMutexLock;
@@ -281,6 +302,12 @@ ecs_world_t* CreateWorld() {
     OnReactPhase = ecs_entity_init(world, &desc);
     DEBUG_ASSERT(OnReactPhase != 0);
     ecs_add_pair(world, OnReactPhase, EcsDependsOn, OnStateUpdatePhase);
+
+    // Bind Flecs parallel system execution to the enkiTS worker pool.
+    // task_new_/task_join_ are already wired; this tells Flecs how many
+    // concurrent workers to dispatch per parallel pipeline stage.
+    const int32_t worker_count = static_cast<int32_t>(Scry::Jobs::GetTotalThreadCount());
+    ecs_set_task_threads(world, worker_count);
 
     return world;
 }

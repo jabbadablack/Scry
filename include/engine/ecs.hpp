@@ -1,18 +1,18 @@
 #pragma once
-#include <scry/scry.h>
-#include <scry/scry_pipeline.hpp>
+#include <engine/engine.h>
+#include <engine/pipeline.hpp>
 #include <flecs.h>
 #include <libassert/assert.hpp>
 
-namespace Scry {
+namespace Engine {
 namespace ECS {
 
 // Initialize the Flecs OS API overrides (memory, threading, atomics).
-SCRY_API void InitOSAPI();
+ENGINE_API void InitOSAPI();
 
 // Create a new ECS world: installs the OS API, imports FlecsMeta, builds
 // the custom Scry pipeline, and binds the enkiTS task scheduler.
-SCRY_API ecs_world_t* CreateWorld();
+ENGINE_API ecs_world_t* CreateWorld();
 
 // ── Double-buffer template ────────────────────────────────────────────────
 
@@ -22,7 +22,7 @@ struct DoubleBuffered {
     T write;
 };
 
-// Register a read<-write sync system for component T in ScryPhase_StateSync.
+// Register a read<-write sync system for component T in Phase_StateSync.
 // After every StateUpdate, this copies write -> read so the next frame's
 // Intent and Input systems see a stable snapshot.
 template <typename T>
@@ -40,7 +40,7 @@ void RegisterDoubleBufferSync(ecs_world_t* world, ecs_entity_t component_id) {
     const ecs_entity_t sys_ent = ecs_entity_init(world, &ent_desc);
     DEBUG_ASSERT(sys_ent != 0);
 
-    ecs_add_pair(world, sys_ent, EcsDependsOn, Scry::Pipeline::ScryPhase_StateSync);
+    ecs_add_pair(world, sys_ent, EcsDependsOn, Engine::Pipeline::Phase_StateSync);
 
     ecs_system_desc_t sys_desc      = {};
     sys_desc.entity                 = sys_ent;
@@ -64,7 +64,8 @@ void RegisterDoubleBufferSync(ecs_world_t* world, ecs_entity_t component_id) {
 
     const ecs_entity_t final_sys = ecs_system_init(world, &sys_desc);
     DEBUG_ASSERT(final_sys != 0);
+    (void)final_sys;
 }
 
 } // namespace ECS
-} // namespace Scry
+} // namespace Engine

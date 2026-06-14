@@ -1,7 +1,7 @@
 #pragma once
 #include <Eigen/Dense>
 
-namespace Scry {
+namespace Engine {
 namespace Math {
 
 // Using Eigen::DontAlign to prevent memory alignment faults in arbitrary components/structs used by Flecs.
@@ -11,4 +11,4 @@ using ScryVec4 = Eigen::Matrix<float, 4, 1, Eigen::DontAlign>;
 using ScryMat4 = Eigen::Matrix<float, 4, 4, Eigen::ColMajor | Eigen::DontAlign>;
 
 } // namespace Math
-} // namespace Scry
+} // namespace Engine

@@ -1,46 +1,46 @@
 #pragma once
-#include <scry/scry.h>
-#include <scry/ScryEngineAPI.h>
+#include <engine/engine.h>
+#include <engine/PluginAPI.h>
 
 namespace enki { class TaskScheduler; }
 
-namespace Scry {
+namespace Engine {
 namespace Jobs {
 
 // Initialize the global task scheduler. Call before Flecs and before any
 // plugin is loaded. Returns false only if the OS thread pool cannot be created.
-SCRY_API bool Init();
+ENGINE_API bool Init();
 
 // Drain all in-flight tasks and tear down all worker threads.
 // Must be called after ecs_fini and after all plugins are unloaded.
-SCRY_API void Shutdown();
+ENGINE_API void Shutdown();
 
 // Submit a parallel-for over [0, count) items, blocking until all ranges
-// have been processed. Matches the ScryTaskFn signature in ScryEngineAPI.h
+// have been processed. Matches the TaskFn signature in PluginAPI.h
 // so the same function pointer works for both the internal and plugin API.
-SCRY_API void SubmitTask(ScryTaskFn fn, void* user_data, uint32_t count);
+ENGINE_API void SubmitTask(TaskFn fn, void* user_data, uint32_t count);
 
 // ── Flecs task-scheduler bridge ───────────────────────────────────────────
 // Intentionally mirrors ecs_os_thread_callback_t (void*(*)(void*)) without
-// pulling in flecs.h so scry_ecs.cpp can cast between the two safely.
-typedef void* (*ScryFlecsTaskFn)(void* param);
+// pulling in flecs.h so ecs.cpp can cast between the two safely.
+typedef void* (*FlecsTaskFn)(void* param);
 
 // Submit a single fire-once task; starts executing immediately on an available
 // worker. Returns an opaque handle that must be passed to WaitFlecsTask.
-SCRY_API void* SubmitFlecsTask(ScryFlecsTaskFn callback, void* param);
+ENGINE_API void* SubmitFlecsTask(FlecsTaskFn callback, void* param);
 
 // Block until the task is complete; returns the callback's return value.
 // Destroys and frees the handle — do not use it after this call.
-SCRY_API void* WaitFlecsTask(void* handle);
+ENGINE_API void* WaitFlecsTask(void* handle);
 
 // Total threads managed by the scheduler (task threads + main thread).
 // Used to configure Flecs's task-thread count to match enkiTS's pool size.
-SCRY_API uint32_t GetTotalThreadCount();
+ENGINE_API uint32_t GetTotalThreadCount();
 
-// Raw scheduler pointer for storage in ScryContext.
+// Raw scheduler pointer for storage in Context.
 // Only forward-declared here; callers that need to call scheduler methods must
 // include <TaskScheduler.h> directly.
-SCRY_API enki::TaskScheduler* GetScheduler();
+ENGINE_API enki::TaskScheduler* GetScheduler();
 
 } // namespace Jobs
-} // namespace Scry
+} // namespace Engine

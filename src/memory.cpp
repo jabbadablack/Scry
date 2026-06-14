@@ -1,8 +1,8 @@
-#include <scry/scry_memory.hpp>
+#include <engine/memory.hpp>
 #include <mimalloc.h>
 #include <libassert/assert.hpp>
 
-namespace Scry {
+namespace Engine {
 namespace Memory {
 
 bool IsUsingMimalloc(const void* ptr) {
@@ -29,7 +29,7 @@ void FreeInDll(void* ptr) {
     ::operator delete(ptr);
 }
 
-void ScryArenaInit(Arena* arena, void* backing_memory, size_t size) {
+void ArenaInit(Arena* arena, void* backing_memory, size_t size) {
     DEBUG_ASSERT(arena != nullptr);
     DEBUG_ASSERT(backing_memory != nullptr);
     DEBUG_ASSERT(size > 0);
@@ -39,7 +39,7 @@ void ScryArenaInit(Arena* arena, void* backing_memory, size_t size) {
     arena->offset = 0;
 }
 
-void* ScryArenaAllocate(Arena* arena, size_t size, size_t alignment) {
+void* ArenaAllocate(Arena* arena, size_t size, size_t alignment) {
     DEBUG_ASSERT(arena != nullptr);
     DEBUG_ASSERT(size > 0);
     DEBUG_ASSERT(alignment > 0);
@@ -62,7 +62,7 @@ void* ScryArenaAllocate(Arena* arena, size_t size, size_t alignment) {
     return result;
 }
 
-void ScryArenaReset(Arena* arena) {
+void ArenaReset(Arena* arena) {
     DEBUG_ASSERT(arena != nullptr);
     arena->offset = 0;
 }
@@ -73,7 +73,7 @@ static size_t AlignSize(size_t size, size_t alignment) {
     return (size + (alignment - 1)) & ~(alignment - 1);
 }
 
-size_t ScryPoolGetRequiredSize(size_t block_size, uint32_t capacity) {
+size_t PoolGetRequiredSize(size_t block_size, uint32_t capacity) {
     DEBUG_ASSERT(block_size > 0);
     DEBUG_ASSERT(capacity > 0);
     
@@ -83,14 +83,14 @@ size_t ScryPoolGetRequiredSize(size_t block_size, uint32_t capacity) {
     return data_size + next_free_size + states_size;
 }
 
-void ScryPoolInit(PoolAllocator* pool, void* memory, size_t memory_size, size_t block_size, uint32_t capacity) {
+void PoolInit(PoolAllocator* pool, void* memory, size_t memory_size, size_t block_size, uint32_t capacity) {
     DEBUG_ASSERT(pool != nullptr);
     DEBUG_ASSERT(memory != nullptr);
     DEBUG_ASSERT(memory_size > 0);
     DEBUG_ASSERT(block_size > 0);
     DEBUG_ASSERT(capacity > 0);
 
-    const size_t required = ScryPoolGetRequiredSize(block_size, capacity);
+    const size_t required = PoolGetRequiredSize(block_size, capacity);
     DEBUG_ASSERT(memory_size >= required);
     if (memory_size < required) {
         return;
@@ -119,7 +119,7 @@ void ScryPoolInit(PoolAllocator* pool, void* memory, size_t memory_size, size_t 
     }
 }
 
-uint32_t ScryPoolAllocate(PoolAllocator* pool) {
+uint32_t PoolAllocate(PoolAllocator* pool) {
     DEBUG_ASSERT(pool != nullptr);
     DEBUG_ASSERT(pool->capacity > 0);
 
@@ -135,7 +135,7 @@ uint32_t ScryPoolAllocate(PoolAllocator* pool) {
     return index;
 }
 
-void ScryPoolFree(PoolAllocator* pool, uint32_t index) {
+void PoolFree(PoolAllocator* pool, uint32_t index) {
     DEBUG_ASSERT(pool != nullptr);
     DEBUG_ASSERT(pool->capacity > 0);
 
@@ -152,7 +152,7 @@ void ScryPoolFree(PoolAllocator* pool, uint32_t index) {
     pool->active_count--;
 }
 
-void ScryPoolReset(PoolAllocator* pool) {
+void PoolReset(PoolAllocator* pool) {
     DEBUG_ASSERT(pool != nullptr);
     DEBUG_ASSERT(pool->capacity > 0);
 
@@ -169,7 +169,7 @@ void ScryPoolReset(PoolAllocator* pool) {
 }
 
 } // namespace Memory
-} // namespace Scry
+} // namespace Engine
 
 // Global operator new/delete overrides to use mimalloc
 void* operator new(size_t size) {
@@ -193,12 +193,12 @@ void operator delete[](void* p) noexcept {
 }
 
 void operator delete(void* p, size_t size) noexcept {
-    DEBUG_ASSERT(size > 0);
+    (void)size;
     mi_free(p);
 }
 
 void operator delete[](void* p, size_t size) noexcept {
-    DEBUG_ASSERT(size > 0);
+    (void)size;
     mi_free(p);
 }
 

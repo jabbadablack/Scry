@@ -1,8 +1,8 @@
 #pragma once
-#include <scry/scry.h>
+#include <engine/engine.h>
 #include <cstdint>
 
-namespace Scry {
+namespace Engine {
 namespace Input {
 
 enum class Key : uint32_t {
@@ -36,14 +36,14 @@ enum class Key : uint32_t {
     MouseR = 511
 };
 
-struct SCRY_API InputState {
+struct ENGINE_API InputState {
     uint64_t keys[8] = {0};    // 64 bytes - 512 bits for tracking every possible SDL scancode + mouse buttons
     int16_t mouse_x = 0;       // 2 bytes
     int16_t mouse_y = 0;       // 2 bytes
     // Total size: 68 bytes (padded to 72). Zero padding holes.
 };
 
-struct SCRY_API InputBuffer {
+struct ENGINE_API InputBuffer {
     InputState states[2];      // 136 bytes (Double buffer for Read/Write states)
     uint8_t write_index = 0;   // 1 byte
     uint8_t read_index = 1;    // 1 byte
@@ -83,7 +83,7 @@ struct SCRY_API InputBuffer {
 };
 
 // Global, pre-allocated double-buffer for input state
-SCRY_API extern InputBuffer g_input_buffer;
+ENGINE_API extern InputBuffer g_input_buffer;
 
 } // namespace Input
-} // namespace Scry
+} // namespace Engine

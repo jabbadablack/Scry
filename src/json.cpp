@@ -1,9 +1,10 @@
-#include <scry/scry_json.hpp>
-#include <scry/scry_platform.hpp>
-#include <scry/scry_math.hpp>
-#include <scry/scry_memory.hpp>
-#include <scry/scry_plugin.hpp>
-#include <scry/scry_ecs.hpp>
+#include <engine/json.hpp>
+#include <engine/engine_context.hpp>
+#include <engine/platform.hpp>
+#include <engine/math.hpp>
+#include <engine/memory.hpp>
+#include <engine/plugin.hpp>
+#include <engine/ecs.hpp>
 #include <SDL3/SDL.h>
 #include <yyjson.h>
 #include <mimalloc.h>
@@ -15,7 +16,7 @@
 
 namespace sid = foonathan::string_id;
 
-namespace Scry {
+namespace Engine {
 namespace JSON {
 
 static sid::default_database& GetStringIdDatabase() {
@@ -75,10 +76,12 @@ static char* ReadFileToContiguousBuffer(const char* filepath, size_t* out_size) 
 
     const int seek_end_res = std::fseek(f, 0, SEEK_END);
     DEBUG_ASSERT(seek_end_res == 0);
+    (void)seek_end_res;
     const long file_size = std::ftell(f);
     DEBUG_ASSERT(file_size >= 0);
     const int seek_set_res = std::fseek(f, 0, SEEK_SET);
     DEBUG_ASSERT(seek_set_res == 0);
+    (void)seek_set_res;
 
     char* buffer = static_cast<char*>(mi_malloc(static_cast<size_t>(file_size) + 1));
     DEBUG_ASSERT(buffer != nullptr);
@@ -97,11 +100,11 @@ static char* ReadFileToContiguousBuffer(const char* filepath, size_t* out_size) 
 
 // Parsers for individual components
 struct Position {
-    Scry::Math::ScryVec2 pos;
+    Engine::Math::ScryVec2 pos;
 };
 
 struct MoveIntent {
-    Scry::Math::ScryVec2 dir;
+    Engine::Math::ScryVec2 dir;
 };
 
 static void ParseDoubleBufferedPosition(ecs_world_t* world, ecs_entity_t entity, ecs_entity_t comp_id, yyjson_val* comp_val) {
@@ -114,7 +117,7 @@ static void ParseDoubleBufferedPosition(ecs_world_t* world, ecs_entity_t entity,
     DEBUG_ASSERT(write_obj != nullptr);
 
     if (read_obj != nullptr && write_obj != nullptr) {
-        Scry::ECS::DoubleBuffered<Position> pos = {};
+        Engine::ECS::DoubleBuffered<Position> pos = {};
         pos.read.pos.x() = static_cast<float>(yyjson_get_real(yyjson_obj_get(read_obj, "x")));
         pos.read.pos.y() = static_cast<float>(yyjson_get_real(yyjson_obj_get(read_obj, "y")));
         pos.write.pos.x() = static_cast<float>(yyjson_get_real(yyjson_obj_get(write_obj, "x")));
@@ -181,7 +184,7 @@ static void ParseState(ecs_world_t* world, yyjson_val* state_obj) {
     }
 }
 
-bool LoadProjectConfig(ScryContext* ctx, const char* filepath) {
+bool LoadProjectConfig(Context* ctx, const char* filepath) {
     DEBUG_ASSERT(ctx != nullptr);
     DEBUG_ASSERT(ctx->ecs_world != nullptr);
     DEBUG_ASSERT(filepath != nullptr);
@@ -200,6 +203,7 @@ bool LoadProjectConfig(ScryContext* ctx, const char* filepath) {
     char full_path[512] = {0};
     const int path_len = std::snprintf(full_path, sizeof(full_path), "%s%s", base_path, filepath);
     DEBUG_ASSERT(path_len > 0 && path_len < 512);
+    (void)path_len;
 
     size_t size = 0;
     char* buffer = ReadFileToContiguousBuffer(full_path, &size);
@@ -232,8 +236,9 @@ bool LoadProjectConfig(ScryContext* ctx, const char* filepath) {
             const char* plugin_path = yyjson_get_str(val);
             DEBUG_ASSERT(plugin_path != nullptr);
             if (plugin_path != nullptr) {
-                const bool loaded = Scry::Plugin::LoadSinglePlugin(ctx, plugin_path);
+                const bool loaded = Engine::Plugin::LoadSinglePlugin(ctx, plugin_path);
                 DEBUG_ASSERT(loaded == true);
+                (void)loaded;
             }
         }
     }
@@ -250,4 +255,4 @@ bool LoadProjectConfig(ScryContext* ctx, const char* filepath) {
 }
 
 } // namespace JSON
-} // namespace Scry
+} // namespace Engine

@@ -1,4 +1,4 @@
-#include <scry/ScryEngineAPI.h>
+#include <engine/PluginAPI.h>
 #include <flecs.h>
 #include <libassert/assert.hpp>
 
@@ -10,7 +10,7 @@ struct DummyPhysicsIntent {
 // Unique uint32_t token for component registration (not using a string)
 const uint32_t DUMMY_PHYSICS_INTENT_TOKEN = 12345;
 
-extern "C" SCRY_PLUGIN_EXPORT void ScryPluginInit(const ScryEngineAPI* api) {
+extern "C" PLUGIN_EXPORT void PluginInit(const PluginAPI* api) {
     DEBUG_ASSERT(api != nullptr);
     DEBUG_ASSERT(api->ecs_world != nullptr);
 
@@ -31,6 +31,7 @@ extern "C" SCRY_PLUGIN_EXPORT void ScryPluginInit(const ScryEngineAPI* api) {
     
     const ecs_entity_t comp_id = ecs_component_init(api->ecs_world, &comp_desc);
     DEBUG_ASSERT(comp_id == DUMMY_PHYSICS_INTENT_TOKEN);
+    (void)comp_id;
 
     // Register a Flecs query matching this component
     ecs_query_desc_t query_desc = {};

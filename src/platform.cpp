@@ -1,8 +1,9 @@
 #define SDL_MAIN_HANDLED
-#include <scry/scry_platform.hpp>
-#include <scry/scry_input.hpp>
-#include <scry/scry_ecs.hpp>
-#include <scry/scry_job_system.hpp>
+#include <engine/engine_context.hpp>
+#include <engine/platform.hpp>
+#include <engine/input.hpp>
+#include <engine/ecs.hpp>
+#include <engine/job_system.hpp>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #define QUILL_ROOT_LOGGER_ONLY
@@ -10,16 +11,16 @@
 #include <mimalloc.h>
 #include <libassert/assert.hpp>
 
-namespace Scry {
+namespace Engine {
 namespace Input {
 InputBuffer g_input_buffer;
 }
 }
 
-namespace Scry {
+namespace Engine {
 namespace Platform {
 
-static void ProcessInputEvent(const SDL_Event& event, Scry::Input::InputState& write_state) {
+static void ProcessInputEvent(const SDL_Event& event, Engine::Input::InputState& write_state) {
     DEBUG_ASSERT(&event != nullptr);
     DEBUG_ASSERT(&write_state != nullptr);
 
@@ -60,13 +61,21 @@ static void ProcessInputEvent(const SDL_Event& event, Scry::Input::InputState& w
     }
 }
 
-static void ProcessInputPass(ScryContext* ctx) {
+void* InitWindow(const char* title, int32_t width, int32_t height) {
+    SDL_SetMainReady();
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
+        return nullptr;
+    }
+    return SDL_CreateWindow(title ? title : "Engine", width, height, 0);
+}
+
+void PumpEvents(Context* ctx) {
     DEBUG_ASSERT(ctx != nullptr);
     DEBUG_ASSERT(ctx->initialized == 1);
 
-    const uint8_t w_idx = Scry::Input::g_input_buffer.write_index;
-    const uint8_t r_idx = Scry::Input::g_input_buffer.read_index;
-    Scry::Input::g_input_buffer.states[w_idx] = Scry::Input::g_input_buffer.states[r_idx];
+    const uint8_t w_idx = Engine::Input::g_input_buffer.write_index;
+    const uint8_t r_idx = Engine::Input::g_input_buffer.read_index;
+    Engine::Input::g_input_buffer.states[w_idx] = Engine::Input::g_input_buffer.states[r_idx];
 
     SDL_Event event;
     bool has_event = SDL_PollEvent(&event);
@@ -76,106 +85,104 @@ static void ProcessInputPass(ScryContext* ctx) {
         } else if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
             ctx->running = 0;
         } else {
-            ProcessInputEvent(event, Scry::Input::g_input_buffer.states[w_idx]);
+            ProcessInputEvent(event, Engine::Input::g_input_buffer.states[w_idx]);
         }
         has_event = SDL_PollEvent(&event);
     }
 
-    Scry::Input::g_input_buffer.Swap();
+    Engine::Input::g_input_buffer.Swap();
+}
+
+uint64_t GetTime() {
+    return SDL_GetTicks();
+}
+
+void DestroyWindow(void* window_handle) {
+    if (window_handle) {
+        SDL_DestroyWindow(static_cast<SDL_Window*>(window_handle));
+    }
+    SDL_Quit();
 }
 
 } // namespace Platform
-} // namespace Scry
+} // namespace Engine
 
 extern "C" {
 
-SCRY_API int ScryRun(const ScryAppConfig* config) {
+enum class Subsystem { None, Mimalloc, Quill, EnkiTS, SDL3, Flecs };
+
+ENGINE_API EngineError EngineRun(const AppConfig* config) {
     DEBUG_ASSERT(config != nullptr);
     DEBUG_ASSERT(config->OnInit != nullptr);
     DEBUG_ASSERT(config->OnShutdown != nullptr);
     DEBUG_ASSERT(config->window_width > 0);
     DEBUG_ASSERT(config->window_height > 0);
 
+    Subsystem init_checklist[16] = { Subsystem::None };
+    int init_count = 0;
+    EngineError ret_code = SUCCESS;
+    
+    void* global_memory_pool = nullptr;
+    void* window = nullptr;
+    struct ecs_world_t* world = nullptr;
+    Context ctx = {};
+
     // ── 1. mimalloc ──────────────────────────────────────────────────────────
-    // Explicit process init ensures the heap and arena metadata are fully ready
-    // before any subsystem allocates. With MI_OVERRIDE ON this is already done
-    // at DLL load time; calling it again is a documented no-op.
     mi_process_init();
+    init_checklist[init_count++] = Subsystem::Mimalloc;
+
+    if (config->global_memory_pool_size > 0) {
+        global_memory_pool = mi_malloc(config->global_memory_pool_size);
+        DEBUG_ASSERT(global_memory_pool != nullptr);
+    }
 
     // ── 2. Quill async logging ────────────────────────────────────────────────
-    // Must start before any LOG_* macro is used. The backend thread runs for the
-    // lifetime of the process; quill::flush() drains it before we return.
     std::shared_ptr<quill::Handler> log_handler = quill::stdout_handler();
-    log_handler->set_pattern(
-        "%(ascii_time) [%(thread)] %(fileline:<28) LOG_%(level_name) %(message)");
+    log_handler->set_pattern("%(ascii_time) [%(thread)] %(fileline:<28) LOG_%(level_name) %(message)");
     quill::Config log_cfg;
     log_cfg.default_handlers.push_back(log_handler);
     quill::configure(log_cfg);
     quill::start();
+    init_checklist[init_count++] = Subsystem::Quill;
 
     LOG_INFO("[Engine] mimalloc active, Quill logging started");
 
     // ── 3. enkiTS task scheduler ──────────────────────────────────────────────
-    // Must be running before Flecs so that CreateWorld can call ecs_set_task_threads
-    // and the task_new_/task_join_ OS-API hooks resolve to live workers.
-    const bool jobs_ok = Scry::Jobs::Init();
-    DEBUG_ASSERT(jobs_ok);
+    const bool jobs_ok = Engine::Jobs::Init();
     if (!jobs_ok) {
         LOG_INFO("[Engine] FATAL: enkiTS scheduler failed to initialize");
-        return -2;
+        ret_code = ERR_JOB_SYSTEM_INIT;
+        goto shutdown;
     }
-    LOG_INFO("[Engine] enkiTS initialized ({} task threads)",
-             Scry::Jobs::GetTotalThreadCount() - 1u);
+    init_checklist[init_count++] = Subsystem::EnkiTS;
+    LOG_INFO("[Engine] enkiTS initialized ({} task threads)", Engine::Jobs::GetTotalThreadCount() - 1u);
 
-    // ── 4. SDL3 platform layer ────────────────────────────────────────────────
-    SDL_SetMainReady();
-    const bool sdl_ok = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
-    if (!sdl_ok) {
-        LOG_INFO("[Engine] FATAL: SDL_Init failed — {}", SDL_GetError());
-        Scry::Jobs::Shutdown();
-        return -3;
-    }
-
-    SDL_Window* window = SDL_CreateWindow(
-        config->title ? config->title : "Scry Engine",
-        config->window_width,
-        config->window_height,
-        0);
+    // ── 4. Platform (SDL3) ────────────────────────────────────────────────
+    window = Engine::Platform::InitWindow(config->title, config->window_width, config->window_height);
     if (!window) {
-        LOG_INFO("[Engine] FATAL: SDL_CreateWindow failed — {}", SDL_GetError());
-        SDL_Quit();
-        Scry::Jobs::Shutdown();
-        return -4;
+        LOG_INFO("[Engine] FATAL: Window creation failed");
+        ret_code = ERR_PLATFORM_INIT;
+        goto shutdown;
     }
-    LOG_INFO("[Engine] SDL3 window '{}' created ({}x{})",
-             config->title ? config->title : "Scry Engine",
-             config->window_width, config->window_height);
+    init_checklist[init_count++] = Subsystem::SDL3;
+    LOG_INFO("[Engine] Window '{}' created ({}x{})", config->title ? config->title : "Engine", config->window_width, config->window_height);
 
     // ── 5. Flecs ECS world ────────────────────────────────────────────────────
-    // CreateWorld installs the custom OS-API (mimalloc allocator, enkiTS task
-    // hooks, SDL3 mutexes/condvars), imports FlecsMeta, and builds the 6-phase
-    // custom ISR pipeline. Flecs runs single-threaded by default; individual
-    // systems may opt into parallel dispatch via ecs_set_task_threads later.
-    struct ecs_world_t* world = Scry::ECS::CreateWorld();
-    DEBUG_ASSERT(world != nullptr);
+    world = Engine::ECS::CreateWorld();
     if (!world) {
         LOG_INFO("[Engine] FATAL: Flecs world creation failed");
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        Scry::Jobs::Shutdown();
-        return -5;
+        ret_code = ERR_ECS_INIT;
+        goto shutdown;
     }
+    init_checklist[init_count++] = Subsystem::Flecs;
     LOG_INFO("[Engine] Flecs world created");
 
     // ── 6. Context assembly ───────────────────────────────────────────────────
-    // ScryContext is defined in scry_platform.hpp (internal only). External
-    // code sees only the opaque forward declaration from scry.h.
-    ScryContext ctx     = {};
     ctx.ecs_world       = world;
-    ctx.window          = window;
-    ctx.scheduler       = Scry::Jobs::GetScheduler();
+    ctx.window_handle   = window;
+    ctx.scheduler       = Engine::Jobs::GetScheduler();
     ctx.user_data       = config->user_data;
-    ctx.start_time      = SDL_GetTicks();
+    ctx.start_time      = Engine::Platform::GetTime();
     ctx.window_width    = config->window_width;
     ctx.window_height   = config->window_height;
     ctx.initialized     = 1;
@@ -186,38 +193,31 @@ SCRY_API int ScryRun(const ScryAppConfig* config) {
     config->OnInit(&ctx);
     LOG_INFO("[Engine] OnInit complete — entering main loop");
 
-    uint64_t last_tick = SDL_GetTicks();
+    {
+        uint64_t last_tick = Engine::Platform::GetTime();
 
-    // ── 8. Main loop ──────────────────────────────────────────────────────────
-    // Each iteration:
-    //   a) SDL event pump → fills the double-buffered input state
-    //   b) Escape / window-close quick exit
-    //   c) ecs_progress — runs the full 6-phase ISR pipeline:
-    //        ScryPhase_Input → Intent → StateUpdate → StateSync → React → Cleanup
-    while (ctx.running) {
-        Scry::Platform::ProcessInputPass(&ctx);
+        // ── 8. Main loop ──────────────────────────────────────────────────────────
+        while (ctx.running) {
+            Engine::Platform::PumpEvents(&ctx);
 
-        if (!ctx.running) {
-            break;
+            if (!ctx.running) break;
+
+            if (Engine::Input::g_input_buffer.IsKeyDown(Engine::Input::Key::Escape)) {
+                ctx.running = 0;
+                break;
+            }
+
+            const uint64_t now = Engine::Platform::GetTime();
+            const float dt = static_cast<float>(now - last_tick) / 1000.0f;
+            last_tick = now;
+
+            if (!ecs_progress(world, dt)) {
+                ctx.running = 0;
+                break;
+            }
+
+            SDL_Delay(1);
         }
-
-        if (Scry::Input::g_input_buffer.IsKeyDown(Scry::Input::Key::Escape)) {
-            ctx.running = 0;
-            break;
-        }
-
-        const uint64_t now = SDL_GetTicks();
-        const float dt = static_cast<float>(now - last_tick) / 1000.0f;
-        last_tick = now;
-
-        // Step the ECS pipeline. Returns false only if ecs_quit() was called
-        // from inside a system, which we treat as a clean exit signal.
-        if (!ecs_progress(world, dt)) {
-            ctx.running = 0;
-            break;
-        }
-
-        SDL_Delay(1);
     }
 
     // ── 9. Teardown ───────────────────────────────────────────────────────────
@@ -226,23 +226,41 @@ SCRY_API int ScryRun(const ScryAppConfig* config) {
         config->OnShutdown(&ctx);
     }
 
-    // Reverse init order: Flecs → SDL → enkiTS.
-    // ecs_fini drains all in-flight tasks (task_join_) before enkiTS is shut down.
-    ecs_fini(world);
-    LOG_INFO("[Engine] Flecs world destroyed");
+shutdown:
+    // NASA Rule Check: Loop backward through the init_checklist array
+    for (int i = init_count - 1; i >= 0; --i) {
+        switch (init_checklist[i]) {
+            case Subsystem::Flecs:
+                if (world) ecs_fini(world);
+                LOG_INFO("[Engine] Flecs world destroyed");
+                break;
+            case Subsystem::SDL3:
+                if (window) Engine::Platform::DestroyWindow(window);
+                LOG_INFO("[Engine] Platform window shut down");
+                break;
+            case Subsystem::EnkiTS:
+                Engine::Jobs::Shutdown();
+                LOG_INFO("[Engine] enkiTS shut down — all worker threads joined");
+                break;
+            case Subsystem::Quill:
+                quill::flush();
+                break;
+            case Subsystem::Mimalloc:
+                if (global_memory_pool) {
+                    mi_free(global_memory_pool);
+                    global_memory_pool = nullptr;
+                }
+                break;
+            case Subsystem::None:
+            default:
+                break;
+        }
+    }
 
-    SDL_DestroyWindow(window);
-    SDL_Quit();
-    LOG_INFO("[Engine] SDL3 shut down");
-
-    Scry::Jobs::Shutdown();
-    LOG_INFO("[Engine] enkiTS shut down — all worker threads joined");
-
-    quill::flush();
-    return 0;
+    return ret_code;
 }
 
-SCRY_API void RequestEngineExit(ScryContext* ctx) {
+ENGINE_API void RequestExit(Context* ctx) {
     DEBUG_ASSERT(ctx != nullptr);
     DEBUG_ASSERT(ctx->initialized == 1);
     if (ctx != nullptr) {
@@ -250,7 +268,7 @@ SCRY_API void RequestEngineExit(ScryContext* ctx) {
     }
 }
 
-SCRY_API void* ScryGetUserData(const ScryContext* ctx) {
+ENGINE_API void* GetUserData(const Context* ctx) {
     DEBUG_ASSERT(ctx != nullptr);
     if (ctx == nullptr) {
         return nullptr;
@@ -258,7 +276,7 @@ SCRY_API void* ScryGetUserData(const ScryContext* ctx) {
     return ctx->user_data;
 }
 
-SCRY_API struct ecs_world_t* ScryGetWorld(const ScryContext* ctx) {
+ENGINE_API struct ecs_world_t* GetWorld(const Context* ctx) {
     DEBUG_ASSERT(ctx != nullptr);
     if (ctx == nullptr) {
         return nullptr;
@@ -266,7 +284,7 @@ SCRY_API struct ecs_world_t* ScryGetWorld(const ScryContext* ctx) {
     return ctx->ecs_world;
 }
 
-SCRY_API void ScryLog(const char* msg) {
+ENGINE_API void EngineLog(const char* msg) {
     DEBUG_ASSERT(msg != nullptr);
     if (msg != nullptr) {
         LOG_INFO("{}", msg);

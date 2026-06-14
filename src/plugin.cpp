@@ -1,7 +1,8 @@
-#include <scry/scry_plugin.hpp>
-#include <scry/scry_platform.hpp>
-#include <scry/scry_memory.hpp>
-#include <scry/scry_job_system.hpp>
+#include <engine/plugin.hpp>
+#include <engine/engine_context.hpp>
+#include <engine/platform.hpp>
+#include <engine/memory.hpp>
+#include <engine/job_system.hpp>
 #include <SDL3/SDL.h>
 #include <mimalloc.h>
 #include <libassert/assert.hpp>
@@ -9,7 +10,7 @@
 #include <quill/Quill.h>
 #include <cstring>
 
-namespace Scry {
+namespace Engine {
 namespace Plugin {
 
 static SDL_SharedObject* g_plugin_handles[16] = {nullptr};
@@ -76,14 +77,15 @@ static SDL_EnumerationResult SDLCALL EnumCallback(void* userdata, const char* di
     char path[512] = {0};
     const int len = std::snprintf(path, sizeof(path), "%s%s", dirname, fname);
     DEBUG_ASSERT(len > 0 && len < 512);
+    (void)len;
 
     SDL_SharedObject* handle = SDL_LoadObject(path);
     if (handle == nullptr) {
         return SDL_ENUM_CONTINUE;
     }
 
-    typedef void (*PluginInitFn)(const ScryEngineAPI*);
-    PluginInitFn init_fn = reinterpret_cast<PluginInitFn>(SDL_LoadFunction(handle, "ScryPluginInit"));
+    typedef void (*PluginInitFn)(const PluginAPI*);
+    PluginInitFn init_fn = reinterpret_cast<PluginInitFn>(SDL_LoadFunction(handle, "PluginInit"));
     if (init_fn == nullptr) {
         SDL_UnloadObject(handle);
         return SDL_ENUM_CONTINUE;
@@ -92,7 +94,7 @@ static SDL_EnumerationResult SDLCALL EnumCallback(void* userdata, const char* di
     if (g_plugin_count < 16) {
         g_plugin_handles[g_plugin_count] = handle;
         g_plugin_count++;
-        const ScryEngineAPI* api = static_cast<const ScryEngineAPI*>(userdata);
+        const PluginAPI* api = static_cast<const PluginAPI*>(userdata);
         init_fn(api);
     } else {
         SDL_UnloadObject(handle);
@@ -101,7 +103,7 @@ static SDL_EnumerationResult SDLCALL EnumCallback(void* userdata, const char* di
     return SDL_ENUM_CONTINUE;
 }
 
-bool LoadPlugins(ScryContext* ctx) {
+bool LoadPlugins(Context* ctx) {
     DEBUG_ASSERT(ctx != nullptr);
     DEBUG_ASSERT(ctx->ecs_world != nullptr);
     DEBUG_ASSERT(g_plugin_count == 0);
@@ -109,12 +111,12 @@ bool LoadPlugins(ScryContext* ctx) {
         return false;
     }
 
-    static ScryEngineAPI api;
+    static PluginAPI api;
     api.ecs_world  = ctx->ecs_world;
     api.Log        = EngineLog;
     api.Alloc      = EngineAlloc;
     api.Free       = EngineFree;
-    api.SubmitTask = Scry::Jobs::SubmitTask;
+    api.SubmitTask = Engine::Jobs::SubmitTask;
 
     const char* base_path = SDL_GetBasePath();
     DEBUG_ASSERT(base_path != nullptr);
@@ -125,6 +127,7 @@ bool LoadPlugins(ScryContext* ctx) {
     char plugins_dir[512] = {0};
     const int len = std::snprintf(plugins_dir, sizeof(plugins_dir), "%splugins", base_path);
     DEBUG_ASSERT(len > 0 && len < 512);
+    (void)len;
 
     const bool enum_ok = SDL_EnumerateDirectory(plugins_dir, EnumCallback, &api);
     if (!enum_ok) {
@@ -135,7 +138,7 @@ bool LoadPlugins(ScryContext* ctx) {
     return true;
 }
 
-bool LoadSinglePlugin(ScryContext* ctx, const char* filepath) {
+bool LoadSinglePlugin(Context* ctx, const char* filepath) {
     DEBUG_ASSERT(ctx != nullptr);
     DEBUG_ASSERT(ctx->ecs_world != nullptr);
     DEBUG_ASSERT(filepath != nullptr);
@@ -143,12 +146,12 @@ bool LoadSinglePlugin(ScryContext* ctx, const char* filepath) {
         return false;
     }
 
-    static ScryEngineAPI api;
+    static PluginAPI api;
     api.ecs_world  = ctx->ecs_world;
     api.Log        = EngineLog;
     api.Alloc      = EngineAlloc;
     api.Free       = EngineFree;
-    api.SubmitTask = Scry::Jobs::SubmitTask;
+    api.SubmitTask = Engine::Jobs::SubmitTask;
 
     const char* base_path = SDL_GetBasePath();
     DEBUG_ASSERT(base_path != nullptr);
@@ -159,14 +162,15 @@ bool LoadSinglePlugin(ScryContext* ctx, const char* filepath) {
     char path[512] = {0};
     const int len = std::snprintf(path, sizeof(path), "%s%s", base_path, filepath);
     DEBUG_ASSERT(len > 0 && len < 512);
+    (void)len;
 
     SDL_SharedObject* handle = SDL_LoadObject(path);
     if (handle == nullptr) {
         return false;
     }
 
-    typedef void (*PluginInitFn)(const ScryEngineAPI*);
-    PluginInitFn init_fn = reinterpret_cast<PluginInitFn>(SDL_LoadFunction(handle, "ScryPluginInit"));
+    typedef void (*PluginInitFn)(const PluginAPI*);
+    PluginInitFn init_fn = reinterpret_cast<PluginInitFn>(SDL_LoadFunction(handle, "PluginInit"));
     if (init_fn == nullptr) {
         SDL_UnloadObject(handle);
         return false;
@@ -200,4 +204,4 @@ void UnloadPlugins() {
 }
 
 } // namespace Plugin
-} // namespace Scry
+} // namespace Engine

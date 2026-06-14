@@ -2,8 +2,9 @@
 #include <scry/scry_memory.hpp>
 #include <SDL3/SDL.h>
 #include <mimalloc.h>
-#include <cassert>
-#include <cstdio>
+#include <libassert/assert.hpp>
+#define QUILL_ROOT_LOGGER_ONLY
+#include <quill/Quill.h>
 #include <cstring>
 
 namespace Scry {
@@ -13,26 +14,24 @@ static SDL_SharedObject* g_plugin_handles[16] = {nullptr};
 static uint32_t g_plugin_count = 0;
 
 static void EngineLog(const char* msg) {
-    assert(msg != nullptr);
-    assert(true);
+    DEBUG_ASSERT(msg != nullptr);
     if (msg == nullptr) {
         return;
     }
-    const int res = std::printf("[Engine] %s\n", msg);
-    assert(res >= 0);
+    LOG_INFO("[Engine] {}", msg);
 }
 
 static void* EngineAlloc(size_t size) {
-    assert(size > 0);
-    assert(size < 1024 * 1024 * 1024);
+    DEBUG_ASSERT(size > 0);
+    DEBUG_ASSERT(size < 1024 * 1024 * 1024);
     void* ptr = mi_malloc(size);
-    assert(ptr != nullptr);
+    DEBUG_ASSERT(ptr != nullptr);
     return ptr;
 }
 
 static void EngineFree(void* ptr) {
-    assert(true);
-    assert(true);
+    DEBUG_ASSERT(true);
+    DEBUG_ASSERT(true);
     if (ptr == nullptr) {
         return;
     }
@@ -40,8 +39,8 @@ static void EngineFree(void* ptr) {
 }
 
 static bool EndsWith(const char* str, const char* suffix) {
-    assert(str != nullptr);
-    assert(suffix != nullptr);
+    DEBUG_ASSERT(str != nullptr);
+    DEBUG_ASSERT(suffix != nullptr);
     if (str == nullptr || suffix == nullptr) {
         return false;
     }
@@ -55,8 +54,8 @@ static bool EndsWith(const char* str, const char* suffix) {
 }
 
 static SDL_EnumerationResult SDLCALL EnumCallback(void* userdata, const char* dirname, const char* fname) {
-    assert(userdata != nullptr);
-    assert(fname != nullptr);
+    DEBUG_ASSERT(userdata != nullptr);
+    DEBUG_ASSERT(fname != nullptr);
     if (userdata == nullptr || fname == nullptr) {
         return SDL_ENUM_CONTINUE;
     }
@@ -74,7 +73,7 @@ static SDL_EnumerationResult SDLCALL EnumCallback(void* userdata, const char* di
 
     char path[512] = {0};
     const int len = std::snprintf(path, sizeof(path), "%s%s", dirname, fname);
-    assert(len > 0 && len < 512);
+    DEBUG_ASSERT(len > 0 && len < 512);
 
     SDL_SharedObject* handle = SDL_LoadObject(path);
     if (handle == nullptr) {
@@ -101,9 +100,9 @@ static SDL_EnumerationResult SDLCALL EnumCallback(void* userdata, const char* di
 }
 
 bool LoadPlugins(ScryContext* ctx) {
-    assert(ctx != nullptr);
-    assert(ctx->ecs_world != nullptr);
-    assert(g_plugin_count == 0);
+    DEBUG_ASSERT(ctx != nullptr);
+    DEBUG_ASSERT(ctx->ecs_world != nullptr);
+    DEBUG_ASSERT(g_plugin_count == 0);
     if (ctx == nullptr || ctx->ecs_world == nullptr) {
         return false;
     }
@@ -115,14 +114,14 @@ bool LoadPlugins(ScryContext* ctx) {
     api.Free = EngineFree;
 
     const char* base_path = SDL_GetBasePath();
-    assert(base_path != nullptr);
+    DEBUG_ASSERT(base_path != nullptr);
     if (base_path == nullptr) {
         return false;
     }
 
     char plugins_dir[512] = {0};
     const int len = std::snprintf(plugins_dir, sizeof(plugins_dir), "%splugins", base_path);
-    assert(len > 0 && len < 512);
+    DEBUG_ASSERT(len > 0 && len < 512);
 
     const bool enum_ok = SDL_EnumerateDirectory(plugins_dir, EnumCallback, &api);
     if (!enum_ok) {
@@ -134,9 +133,9 @@ bool LoadPlugins(ScryContext* ctx) {
 }
 
 bool LoadSinglePlugin(ScryContext* ctx, const char* filepath) {
-    assert(ctx != nullptr);
-    assert(ctx->ecs_world != nullptr);
-    assert(filepath != nullptr);
+    DEBUG_ASSERT(ctx != nullptr);
+    DEBUG_ASSERT(ctx->ecs_world != nullptr);
+    DEBUG_ASSERT(filepath != nullptr);
     if (ctx == nullptr || ctx->ecs_world == nullptr || filepath == nullptr) {
         return false;
     }
@@ -148,14 +147,14 @@ bool LoadSinglePlugin(ScryContext* ctx, const char* filepath) {
     api.Free = EngineFree;
 
     const char* base_path = SDL_GetBasePath();
-    assert(base_path != nullptr);
+    DEBUG_ASSERT(base_path != nullptr);
     if (base_path == nullptr) {
         return false;
     }
 
     char path[512] = {0};
     const int len = std::snprintf(path, sizeof(path), "%s%s", base_path, filepath);
-    assert(len > 0 && len < 512);
+    DEBUG_ASSERT(len > 0 && len < 512);
 
     SDL_SharedObject* handle = SDL_LoadObject(path);
     if (handle == nullptr) {
@@ -182,12 +181,12 @@ bool LoadSinglePlugin(ScryContext* ctx, const char* filepath) {
 }
 
 void UnloadPlugins() {
-    assert(g_plugin_count <= 16);
-    assert(true);
+    DEBUG_ASSERT(g_plugin_count <= 16);
+    DEBUG_ASSERT(true);
 
     for (uint32_t i = 0; i < g_plugin_count; ++i) {
         SDL_SharedObject* handle = g_plugin_handles[i];
-        assert(handle != nullptr);
+        DEBUG_ASSERT(handle != nullptr);
         if (handle != nullptr) {
             SDL_UnloadObject(handle);
             g_plugin_handles[i] = nullptr;

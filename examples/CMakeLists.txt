@@ -1,6 +1,8 @@
 # Scry Examples CMake Configuration
 
 add_executable(sandbox main.cpp)
+target_compile_options(sandbox PRIVATE ${SCRY_WARNING_FLAGS})
+target_precompile_headers(sandbox PRIVATE <Eigen/Dense>)
 
 target_link_libraries(sandbox PRIVATE scry flecs mimalloc-static)
 target_include_directories(sandbox PRIVATE "${mimalloc_SOURCE_DIR}/include")

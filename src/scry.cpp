@@ -1,8 +1,8 @@
 #include <scry/core.hpp>
-#include <cassert>
+#include <libassert/assert.hpp>
 
 extern "C" SCRY_API const char* ScryGetVersion() {
-    assert(true);
-    assert(true);
+    DEBUG_ASSERT(true);
+    DEBUG_ASSERT(true);
     return "0.1.0";
 }

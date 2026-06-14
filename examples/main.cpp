@@ -4,11 +4,13 @@
 #include <scry/scry_ecs.hpp>
 #include <scry/scry_plugin.hpp>
 #include <scry/scry_json.hpp>
-#include <stdio.h>
+#include <scry/scry_math.hpp>
+#define QUILL_ROOT_LOGGER_ONLY
+#include <quill/Quill.h>
+#include <libassert/assert.hpp>
 #include <stdint.h>
 #include <mimalloc.h>
 #include <new>
-#include <cassert>
 
 struct TestParticle {
     float x;             // 4 bytes
@@ -19,13 +21,11 @@ struct TestParticle {
 };
 
 struct Position {
-    float x;
-    float y;
+    Scry::Math::ScryVec2 pos;
 };
 
 struct MoveIntent {
-    float dx;
-    float dy;
+    Scry::Math::ScryVec2 dir;
 };
 
 struct AppData {
@@ -38,11 +38,11 @@ static ecs_entity_t id_DoubleBufferedPosition = 0;
 static ecs_entity_t id_MoveIntent = 0;
 
 static void OnIntentSystem(ecs_iter_t* it) {
-    assert(it != nullptr);
-    assert(it->count >= 0);
+    DEBUG_ASSERT(it != nullptr);
+    DEBUG_ASSERT(it->count >= 0);
 
     MoveIntent* intent = ecs_field(it, MoveIntent, 0);
-    assert(intent != nullptr);
+    DEBUG_ASSERT(intent != nullptr);
 
     float dx = 0.0f;
     float dy = 0.0f;
@@ -72,177 +72,163 @@ static void OnIntentSystem(ecs_iter_t* it) {
     }
 
     for (int i = 0; i < it->count; ++i) {
-        intent[i].dx = dx;
-        intent[i].dy = dy;
+        intent[i].dir.x() = dx;
+        intent[i].dir.y() = dy;
     }
 }
 
 static void OnStateUpdateSystem(ecs_iter_t* it) {
-    assert(it != nullptr);
-    assert(it->count >= 0);
+    DEBUG_ASSERT(it != nullptr);
+    DEBUG_ASSERT(it->count >= 0);
 
     using DBPosition = Scry::ECS::DoubleBuffered<Position>;
     DBPosition* db_pos = ecs_field(it, DBPosition, 0);
-    assert(db_pos != nullptr);
+    DEBUG_ASSERT(db_pos != nullptr);
 
     const MoveIntent* intent = ecs_field(it, const MoveIntent, 1);
-    assert(intent != nullptr);
+    DEBUG_ASSERT(intent != nullptr);
 
     const float speed = 10.0f;
 
     for (int i = 0; i < it->count; ++i) {
-        db_pos[i].write.x = db_pos[i].read.x + intent[i].dx * speed * it->delta_time;
-        db_pos[i].write.y = db_pos[i].read.y + intent[i].dy * speed * it->delta_time;
+        db_pos[i].write.pos = db_pos[i].read.pos + intent[i].dir * (speed * it->delta_time);
     }
 }
 
 static void VerifyMemoryAllocations() {
-    assert(true);
-    assert(true);
+    DEBUG_ASSERT(true);
+    DEBUG_ASSERT(true);
 
     int* p_new = new int(42);
     const bool sandbox_new_ok = Scry::Memory::IsUsingMimalloc(p_new);
-    const int print1 = printf("Sandbox allocation via 'new': pointer %p is managed by mimalloc: %s\n", 
+    LOG_INFO("Sandbox allocation via 'new': pointer {} is managed by mimalloc: {}", 
            static_cast<void*>(p_new), sandbox_new_ok ? "YES" : "NO");
-    assert(print1 >= 0);
     delete p_new;
 
     void* p_dll = Scry::Memory::AllocInDll(32);
     const bool dll_new_ok = Scry::Memory::IsUsingMimalloc(p_dll);
-    const int print2 = printf("DLL allocation via 'new':     pointer %p is managed by mimalloc: %s\n", 
+    LOG_INFO("DLL allocation via 'new':     pointer {} is managed by mimalloc: {}", 
            p_dll, dll_new_ok ? "YES" : "NO");
-    assert(print2 >= 0);
     Scry::Memory::FreeInDll(p_dll);
 }
 
 static void VerifyArenaAllocator() {
-    assert(true);
-    assert(true);
+    DEBUG_ASSERT(true);
+    DEBUG_ASSERT(true);
 
     const size_t arena_size = 1024;
     void* arena_backing = ::operator new(arena_size);
-    assert(arena_backing != nullptr);
+    DEBUG_ASSERT(arena_backing != nullptr);
     
     Scry::Memory::Arena arena;
     Scry::Memory::ScryArenaInit(&arena, arena_backing, arena_size);
-    const int print1 = printf("\nArena initialized with %zu bytes backing store.\n", arena_size);
-    assert(print1 >= 0);
+    LOG_INFO("Arena initialized with {} bytes backing store.", arena_size);
 
     void* p1 = Scry::Memory::ScryArenaAllocate(&arena, 10, 8); 
-    assert(p1 != nullptr);
+    DEBUG_ASSERT(p1 != nullptr);
     void* p2 = Scry::Memory::ScryArenaAllocate(&arena, 20, 16); 
-    assert(p2 != nullptr);
+    DEBUG_ASSERT(p2 != nullptr);
     void* p3 = Scry::Memory::ScryArenaAllocate(&arena, 5, 4);  
-    assert(p3 != nullptr);
+    DEBUG_ASSERT(p3 != nullptr);
 
-    const int print2 = printf("Allocated p1 (10 bytes, align 8)  at %p (offset relative to backing: %zu)\n", 
+    LOG_INFO("Allocated p1 (10 bytes, align 8)  at {} (offset relative to backing: {})", 
            p1, reinterpret_cast<uintptr_t>(p1) - reinterpret_cast<uintptr_t>(arena_backing));
-    assert(print2 >= 0);
-    const int print3 = printf("Allocated p2 (20 bytes, align 16) at %p (offset relative to backing: %zu)\n", 
+    LOG_INFO("Allocated p2 (20 bytes, align 16) at {} (offset relative to backing: {})", 
            p2, reinterpret_cast<uintptr_t>(p2) - reinterpret_cast<uintptr_t>(arena_backing));
-    assert(print3 >= 0);
-    const int print4 = printf("Allocated p3 (5 bytes,  align 4)  at %p (offset relative to backing: %zu)\n", 
+    LOG_INFO("Allocated p3 (5 bytes,  align 4)  at {} (offset relative to backing: {})", 
            p3, reinterpret_cast<uintptr_t>(p3) - reinterpret_cast<uintptr_t>(arena_backing));
-    assert(print4 >= 0);
 
-    const int print5 = printf("Arena used memory: %zu bytes (remaining: %zu bytes)\n", 
+    LOG_INFO("Arena used memory: {} bytes (remaining: {} bytes)", 
            Scry::Memory::ScryArenaGetUsedMemory(&arena), Scry::Memory::ScryArenaGetRemainingMemory(&arena));
-    assert(print5 >= 0);
 
     Scry::Memory::ScryArenaReset(&arena);
     ::operator delete(arena_backing);
 }
 
 static void VerifyPoolAllocator() {
-    assert(true);
-    assert(true);
+    DEBUG_ASSERT(true);
+    DEBUG_ASSERT(true);
 
     const uint32_t pool_capacity = 4;
     const size_t pool_mem_size = Scry::Memory::ScryPoolGetRequiredSize(sizeof(TestParticle), pool_capacity);
-    const int print1 = printf("\nPoolAllocator required backing memory size: %zu bytes\n", pool_mem_size);
-    assert(print1 >= 0);
+    LOG_INFO("PoolAllocator required backing memory size: {} bytes", pool_mem_size);
     
     void* pool_backing = ::operator new(pool_mem_size);
-    assert(pool_backing != nullptr);
+    DEBUG_ASSERT(pool_backing != nullptr);
     
     Scry::Memory::PoolAllocator pool;
     Scry::Memory::ScryPoolInit(&pool, pool_backing, pool_mem_size, sizeof(TestParticle), pool_capacity);
-    const int print2 = printf("Pool initialized using contiguous pre-allocated block.\n");
-    assert(print2 >= 0);
+    LOG_INFO("Pool initialized using contiguous pre-allocated block.");
 
     const uint32_t h1 = Scry::Memory::ScryPoolAllocate(&pool);
-    assert(h1 != 0xFFFFFFFF);
+    DEBUG_ASSERT(h1 != 0xFFFFFFFF);
     const uint32_t h2 = Scry::Memory::ScryPoolAllocate(&pool);
-    assert(h2 != 0xFFFFFFFF);
+    DEBUG_ASSERT(h2 != 0xFFFFFFFF);
     const uint32_t h3 = Scry::Memory::ScryPoolAllocate(&pool);
-    assert(h3 != 0xFFFFFFFF);
+    DEBUG_ASSERT(h3 != 0xFFFFFFFF);
     const uint32_t h4 = Scry::Memory::ScryPoolAllocate(&pool);
-    assert(h4 != 0xFFFFFFFF);
+    DEBUG_ASSERT(h4 != 0xFFFFFFFF);
 
-    const int print3 = printf("Allocated index 1: %u, index 2: %u, index 3: %u, index 4: %u\n", h1, h2, h3, h4);
-    assert(print3 >= 0);
+    LOG_INFO("Allocated index 1: {}, index 2: {}, index 3: {}, index 4: {}", h1, h2, h3, h4);
     const uint32_t h5 = Scry::Memory::ScryPoolAllocate(&pool);
-    const int print4 = printf("Allocating index 5 (should fail): %u\n", h5);
-    assert(print4 >= 0);
+    LOG_INFO("Allocating index 5 (should fail): {}", h5);
 
     void* pParticle1 = Scry::Memory::ScryPoolGet(&pool, h1);
-    assert(pParticle1 != nullptr);
+    DEBUG_ASSERT(pParticle1 != nullptr);
     void* pParticle2 = Scry::Memory::ScryPoolGet(&pool, h2);
-    assert(pParticle2 != nullptr);
+    DEBUG_ASSERT(pParticle2 != nullptr);
     if (pParticle1 != nullptr && pParticle2 != nullptr) {
         const ptrdiff_t byte_diff = reinterpret_cast<uintptr_t>(pParticle2) - reinterpret_cast<uintptr_t>(pParticle1);
-        const int print5 = printf("Verify contiguous block layout: difference: %td bytes (expected %zu)\n", 
+        LOG_INFO("Verify contiguous block layout: difference: {} bytes (expected {})", 
                byte_diff, sizeof(TestParticle));
-        assert(print5 >= 0);
     }
 
     Scry::Memory::ScryPoolFree(&pool, h2);
     const uint32_t h6 = Scry::Memory::ScryPoolAllocate(&pool);
-    const int print6 = printf("Allocated index after freeing: %u (expected to reuse %u)\n", h6, h2);
-    assert(print6 >= 0);
+    LOG_INFO("Allocated index after freeing: {} (expected to reuse {})", h6, h2);
 
     Scry::Memory::ScryPoolReset(&pool);
     ::operator delete(pool_backing);
 }
 
 static bool RegisterComponents(ScryContext* ctx) {
-    assert(ctx != nullptr);
-    assert(ctx->ecs_world != nullptr);
+    DEBUG_ASSERT(ctx != nullptr);
+    DEBUG_ASSERT(ctx->ecs_world != nullptr);
 
     ecs_entity_desc_t ent_desc = {};
     ent_desc.name = "DoubleBufferedPosition";
     const ecs_entity_t comp_ent_pos = ecs_entity_init(ctx->ecs_world, &ent_desc);
-    assert(comp_ent_pos != 0);
+    DEBUG_ASSERT(comp_ent_pos != 0);
 
     ecs_component_desc_t comp_desc = {};
     comp_desc.entity = comp_ent_pos;
     comp_desc.type.size = sizeof(Scry::ECS::DoubleBuffered<Position>);
     comp_desc.type.alignment = alignof(Scry::ECS::DoubleBuffered<Position>);
     id_DoubleBufferedPosition = ecs_component_init(ctx->ecs_world, &comp_desc);
-    assert(id_DoubleBufferedPosition != 0);
+    DEBUG_ASSERT(id_DoubleBufferedPosition != 0);
 
     ent_desc.name = "MoveIntent";
     const ecs_entity_t comp_ent_intent = ecs_entity_init(ctx->ecs_world, &ent_desc);
-    assert(comp_ent_intent != 0);
+    DEBUG_ASSERT(comp_ent_intent != 0);
 
     comp_desc = {};
     comp_desc.entity = comp_ent_intent;
     comp_desc.type.size = sizeof(MoveIntent);
     comp_desc.type.alignment = alignof(MoveIntent);
     id_MoveIntent = ecs_component_init(ctx->ecs_world, &comp_desc);
-    assert(id_MoveIntent != 0);
+    DEBUG_ASSERT(id_MoveIntent != 0);
 
     return true;
 }
 
 static bool RegisterSystems(ScryContext* ctx) {
-    assert(ctx != nullptr);
-    assert(ctx->ecs_world != nullptr);
+    DEBUG_ASSERT(ctx != nullptr);
+    DEBUG_ASSERT(ctx->ecs_world != nullptr);
 
     ecs_entity_desc_t sys_ent_desc = {};
     sys_ent_desc.name = "OnIntentSystem";
     const ecs_entity_t sys_ent_intent = ecs_entity_init(ctx->ecs_world, &sys_ent_desc);
-    assert(sys_ent_intent != 0);
+    DEBUG_ASSERT(sys_ent_intent != 0);
     ecs_add_pair(ctx->ecs_world, sys_ent_intent, EcsDependsOn, Scry::ECS::OnIntentPhase);
 
     ecs_system_desc_t sys_desc = {};
@@ -250,12 +236,12 @@ static bool RegisterSystems(ScryContext* ctx) {
     sys_desc.query.terms[0].id = id_MoveIntent;
     sys_desc.callback = OnIntentSystem;
     const ecs_entity_t sys1 = ecs_system_init(ctx->ecs_world, &sys_desc);
-    assert(sys1 != 0);
+    DEBUG_ASSERT(sys1 != 0);
 
     ecs_entity_desc_t sys_ent_update_desc = {};
     sys_ent_update_desc.name = "OnStateUpdateSystem";
     const ecs_entity_t sys_ent_update = ecs_entity_init(ctx->ecs_world, &sys_ent_update_desc);
-    assert(sys_ent_update != 0);
+    DEBUG_ASSERT(sys_ent_update != 0);
     ecs_add_pair(ctx->ecs_world, sys_ent_update, EcsDependsOn, Scry::ECS::OnStateUpdatePhase);
 
     ecs_system_desc_t sys_update_desc = {};
@@ -265,44 +251,41 @@ static bool RegisterSystems(ScryContext* ctx) {
     sys_update_desc.query.terms[1].inout = EcsIn;
     sys_update_desc.callback = OnStateUpdateSystem;
     const ecs_entity_t sys2 = ecs_system_init(ctx->ecs_world, &sys_update_desc);
-    assert(sys2 != 0);
+    DEBUG_ASSERT(sys2 != 0);
 
     return true;
 }
 
 static void AppInit(ScryContext* ctx) {
-    assert(ctx != nullptr);
-    assert(ctx->ecs_world != nullptr);
+    DEBUG_ASSERT(ctx != nullptr);
+    DEBUG_ASSERT(ctx->ecs_world != nullptr);
 
     g_app_data.frame_count = 0;
     ecs_set_threads(ctx->ecs_world, 2);
 
-    const int print1 = printf("\n[ECS] Baseline World initialized successfully with 2 SDL3 worker threads.\n");
-    assert(print1 >= 0);
+    LOG_INFO("Baseline World initialized successfully with 2 SDL3 worker threads.");
 
     const bool comp_ok = RegisterComponents(ctx);
-    assert(comp_ok == true);
+    DEBUG_ASSERT(comp_ok == true);
 
     const bool sys_ok = RegisterSystems(ctx);
-    assert(sys_ok == true);
+    DEBUG_ASSERT(sys_ok == true);
 
     Scry::ECS::RegisterDoubleBufferSync<Position>(ctx->ecs_world, id_DoubleBufferedPosition);
 
     const bool json_ok = Scry::JSON::LoadProjectConfig(ctx, "scry_project.json");
-    assert(json_ok == true);
+    DEBUG_ASSERT(json_ok == true);
 
     g_app_data.player_entity = ecs_lookup(ctx->ecs_world, "Player");
-    assert(g_app_data.player_entity != 0);
+    DEBUG_ASSERT(g_app_data.player_entity != 0);
 
-    const int print2 = printf("[ScryApp] AppInit: ECS world, components, systems, and Player entity registered.\n");
-    assert(print2 >= 0);
-    const int print3 = printf("[ScryApp] Play sandbox: Use W/A/S/D or arrow keys to move Player. Press ESC to quit.\n\n");
-    assert(print3 >= 0);
+    LOG_INFO("[ScryApp] AppInit: ECS world, components, systems, and Player entity registered.");
+    LOG_INFO("[ScryApp] Play sandbox: Use W/A/S/D or arrow keys to move Player. Press ESC to quit.\n");
 }
 
 static void AppUpdate(ScryContext* ctx, float delta_time) {
-    assert(ctx != nullptr);
-    assert(delta_time >= 0.0f);
+    DEBUG_ASSERT(ctx != nullptr);
+    DEBUG_ASSERT(delta_time >= 0.0f);
 
     g_app_data.frame_count++;
 
@@ -315,93 +298,95 @@ static void AppUpdate(ScryContext* ctx, float delta_time) {
     }
 
     const bool progress_ok = ecs_progress(ctx->ecs_world, delta_time);
-    assert(progress_ok == true || progress_ok == false);
+    DEBUG_ASSERT(progress_ok == true || progress_ok == false);
 
     if (g_app_data.frame_count % 120 == 0) {
         const void* ptr_raw = ecs_get_id(ctx->ecs_world, g_app_data.player_entity, id_DoubleBufferedPosition);
         const Scry::ECS::DoubleBuffered<Position>* db_pos = 
             static_cast<const Scry::ECS::DoubleBuffered<Position>*>(ptr_raw);
-        assert(db_pos != nullptr);
+        DEBUG_ASSERT(db_pos != nullptr);
         if (db_pos != nullptr) {
-            const int print1 = printf("[ScryApp] Frame %4u | dt: %.4fs | Player Pos (Read): (%.2f, %.2f) | (Write): (%.2f, %.2f)\n",
-                   g_app_data.frame_count, delta_time, db_pos->read.x, db_pos->read.y, db_pos->write.x, db_pos->write.y);
-            assert(print1 >= 0);
+            LOG_INFO("[ScryApp] Frame {:4} | dt: {:.4f}s | Player Pos (Read): ({:.2f}, {:.2f}) | (Write): ({:.2f}, {:.2f})",
+                   g_app_data.frame_count, delta_time, db_pos->read.pos.x(), db_pos->read.pos.y(), db_pos->write.pos.x(), db_pos->write.pos.y());
         }
     }
 
     if (g_app_data.frame_count >= 240) {
-        const int print2 = printf("[ScryApp] Auto-terminating sandbox at frame %u for verification...\n", g_app_data.frame_count);
-        assert(print2 >= 0);
+        LOG_INFO("[ScryApp] Auto-terminating sandbox at frame {} for verification...", g_app_data.frame_count);
         RequestEngineExit(ctx);
     }
 }
 
 static void AppShutdown(ScryContext* ctx) {
-    assert(ctx != nullptr);
-    assert(ctx->ecs_world != nullptr);
+    DEBUG_ASSERT(ctx != nullptr);
+    DEBUG_ASSERT(ctx->ecs_world != nullptr);
 
     Scry::Plugin::UnloadPlugins();
 
-    const int print1 = printf("[ScryApp] AppShutdown: ECS world destroyed. Final frame count: %u\n", g_app_data.frame_count);
-    assert(print1 >= 0);
+    LOG_INFO("[ScryApp] AppShutdown: ECS world destroyed. Final frame count: {}", g_app_data.frame_count);
 }
 
 // Global operator new/delete overrides to use mimalloc
 void* operator new(size_t size) {
-    assert(size > 0);
-    assert(true);
+    DEBUG_ASSERT(size > 0);
     void* ptr = mi_malloc(size);
+    DEBUG_ASSERT(ptr != nullptr);
     return ptr;
 }
 void* operator new[](size_t size) {
-    assert(size > 0);
-    assert(true);
+    DEBUG_ASSERT(size > 0);
     void* ptr = mi_malloc(size);
+    DEBUG_ASSERT(ptr != nullptr);
     return ptr;
 }
 void operator delete(void* p) noexcept {
-    assert(p != nullptr);
-    assert(true);
+    DEBUG_ASSERT(p != nullptr || p == nullptr);
+    DEBUG_ASSERT(true);
     mi_free(p);
 }
 void operator delete[](void* p) noexcept {
-    assert(p != nullptr);
-    assert(true);
+    DEBUG_ASSERT(p != nullptr || p == nullptr);
+    DEBUG_ASSERT(true);
     mi_free(p);
 }
 void operator delete(void* p, size_t size) noexcept {
-    assert(p != nullptr);
-    assert(size > 0);
+    DEBUG_ASSERT(p != nullptr || p == nullptr);
+    DEBUG_ASSERT(size >= 0);
+    (void)size;
     mi_free(p);
 }
 void operator delete[](void* p, size_t size) noexcept {
-    assert(p != nullptr);
-    assert(size > 0);
+    DEBUG_ASSERT(p != nullptr || p == nullptr);
+    DEBUG_ASSERT(size >= 0);
+    (void)size;
     mi_free(p);
 }
 
 int main(int argc, char* argv[]) {
-    assert(argc >= 1);
-    assert(argv != nullptr);
+    DEBUG_ASSERT(argc >= 1);
+    DEBUG_ASSERT(argv != nullptr);
 
-    const int print1 = printf("=== Scry Framework Engine Sandbox ===\n");
-    assert(print1 >= 0);
+    // Initial temporary initialization of Quill just for main phase 1
+    std::shared_ptr<quill::Handler> handler = quill::stdout_handler();
+    handler->set_pattern("%(message)");
+    quill::Config cfg;
+    cfg.default_handlers.push_back(handler);
+    quill::configure(cfg);
+    quill::start();
+
+    LOG_INFO("=== Scry Framework Engine Sandbox ===");
     const char* version = ScryGetVersion();
-    assert(version != nullptr);
-    const int print2 = printf("Engine Version: %s\n\n", version);
-    assert(print2 >= 0);
+    DEBUG_ASSERT(version != nullptr);
+    LOG_INFO("Engine Version: {}\n", version);
 
-    const int print3 = printf("--- PHASE 1: Core Memory Verification ---\n");
-    assert(print3 >= 0);
+    LOG_INFO("--- PHASE 1: Core Memory Verification ---");
     
     VerifyMemoryAllocations();
     VerifyArenaAllocator();
     VerifyPoolAllocator();
 
-    const int print4 = printf("\n--- PHASE 2: SDL3 Platform & ECS Engine Loop ---\n");
-    assert(print4 >= 0);
-    const int print5 = printf("Starting SDL3 lifecycle loop...\n");
-    assert(print5 >= 0);
+    LOG_INFO("\n--- PHASE 2: SDL3 Platform & ECS Engine Loop ---");
+    LOG_INFO("Starting SDL3 lifecycle loop...");
 
     ScryAppConfig config = {};
     config.OnInit = AppInit;
@@ -413,11 +398,9 @@ int main(int argc, char* argv[]) {
 
     const int res = ScryRun(&config);
     if (res == 0) {
-        const int print6 = printf("\nEngine loop execution completed successfully.\n");
-        assert(print6 >= 0);
+        LOG_INFO("\nEngine loop execution completed successfully.");
     } else {
-        const int print7 = printf("\nEngine loop failed to launch. Code: %d\n", res);
-        assert(print7 >= 0);
+        LOG_INFO("\nEngine loop failed to launch. Code: {}", res);
     }
 
     return 0;

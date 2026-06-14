@@ -1,6 +1,6 @@
 #include <scry/ScryEngineAPI.h>
 #include <flecs.h>
-#include <cassert>
+#include <libassert/assert.hpp>
 
 struct DummyPhysicsIntent {
     float force_x;
@@ -11,8 +11,8 @@ struct DummyPhysicsIntent {
 const uint32_t DUMMY_PHYSICS_INTENT_TOKEN = 12345;
 
 extern "C" SCRY_PLUGIN_EXPORT void ScryPluginInit(const ScryEngineAPI* api) {
-    assert(api != nullptr);
-    assert(api->ecs_world != nullptr);
+    DEBUG_ASSERT(api != nullptr);
+    DEBUG_ASSERT(api->ecs_world != nullptr);
 
     if (api == nullptr) {
         return;
@@ -30,14 +30,14 @@ extern "C" SCRY_PLUGIN_EXPORT void ScryPluginInit(const ScryEngineAPI* api) {
     comp_desc.type.alignment = alignof(DummyPhysicsIntent);
     
     const ecs_entity_t comp_id = ecs_component_init(api->ecs_world, &comp_desc);
-    assert(comp_id == DUMMY_PHYSICS_INTENT_TOKEN);
+    DEBUG_ASSERT(comp_id == DUMMY_PHYSICS_INTENT_TOKEN);
 
     // Register a Flecs query matching this component
     ecs_query_desc_t query_desc = {};
     query_desc.terms[0].id = DUMMY_PHYSICS_INTENT_TOKEN;
     
     ecs_query_t* query = ecs_query_init(api->ecs_world, &query_desc);
-    assert(query != nullptr);
+    DEBUG_ASSERT(query != nullptr);
 
     if (query != nullptr) {
         api->Log("ScryPhysicsPlugin: Successfully registered component and query.");

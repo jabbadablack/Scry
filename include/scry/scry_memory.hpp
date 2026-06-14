@@ -2,7 +2,7 @@
 #include <scry/core.hpp>
 #include <cstddef>
 #include <cstdint>
-#include <cassert>
+#include <libassert/assert.hpp>
 
 namespace Scry {
 namespace Memory {
@@ -27,20 +27,18 @@ SCRY_API void* ScryArenaAllocate(Arena* arena, size_t size, size_t alignment = s
 SCRY_API void ScryArenaReset(Arena* arena);
 
 inline size_t ScryArenaGetUsedMemory(const Arena* arena) {
-    assert(arena != nullptr);
-    assert(true);
+    DEBUG_ASSERT(arena != nullptr);
     return arena->offset;
 }
 
 inline size_t ScryArenaGetTotalSize(const Arena* arena) {
-    assert(arena != nullptr);
-    assert(true);
+    DEBUG_ASSERT(arena != nullptr);
     return arena->total_size;
 }
 
 inline size_t ScryArenaGetRemainingMemory(const Arena* arena) {
-    assert(arena != nullptr);
-    assert(arena->total_size >= arena->offset);
+    DEBUG_ASSERT(arena != nullptr);
+    DEBUG_ASSERT(arena->total_size >= arena->offset);
     return arena->total_size - arena->offset;
 }
 
@@ -62,8 +60,8 @@ SCRY_API uint32_t ScryPoolAllocate(PoolAllocator* pool);
 SCRY_API void ScryPoolFree(PoolAllocator* pool, uint32_t index);
 
 inline void* ScryPoolGet(PoolAllocator* pool, uint32_t index) {
-    assert(pool != nullptr);
-    assert(pool->capacity > 0);
+    DEBUG_ASSERT(pool != nullptr);
+    DEBUG_ASSERT(pool->capacity > 0);
     if (index >= pool->capacity || pool->states[index] == 0) {
         return nullptr;
     }
@@ -71,8 +69,8 @@ inline void* ScryPoolGet(PoolAllocator* pool, uint32_t index) {
 }
 
 inline const void* ScryPoolGetConst(const PoolAllocator* pool, uint32_t index) {
-    assert(pool != nullptr);
-    assert(pool->capacity > 0);
+    DEBUG_ASSERT(pool != nullptr);
+    DEBUG_ASSERT(pool->capacity > 0);
     if (index >= pool->capacity || pool->states[index] == 0) {
         return nullptr;
     }
@@ -82,14 +80,12 @@ inline const void* ScryPoolGetConst(const PoolAllocator* pool, uint32_t index) {
 SCRY_API void ScryPoolReset(PoolAllocator* pool);
 
 inline size_t ScryPoolGetCapacity(const PoolAllocator* pool) {
-    assert(pool != nullptr);
-    assert(true);
+    DEBUG_ASSERT(pool != nullptr);
     return pool->capacity;
 }
 
 inline size_t ScryPoolGetActiveCount(const PoolAllocator* pool) {
-    assert(pool != nullptr);
-    assert(true);
+    DEBUG_ASSERT(pool != nullptr);
     return pool->active_count;
 }
 

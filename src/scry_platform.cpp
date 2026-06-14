@@ -4,7 +4,8 @@
 #include <scry/scry_ecs.hpp>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
-#include <cassert>
+#include <quill/Quill.h>
+#include <libassert/assert.hpp>
 
 namespace Scry {
 namespace Input {
@@ -16,8 +17,8 @@ namespace Scry {
 namespace Platform {
 
 static void ProcessInputEvent(const SDL_Event& event, Scry::Input::InputState& write_state) {
-    assert(&event != nullptr);
-    assert(&write_state != nullptr);
+    DEBUG_ASSERT(&event != nullptr);
+    DEBUG_ASSERT(&write_state != nullptr);
 
     if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
         const bool is_down = (event.type == SDL_EVENT_KEY_DOWN);
@@ -57,8 +58,8 @@ static void ProcessInputEvent(const SDL_Event& event, Scry::Input::InputState& w
 }
 
 static void ProcessInputPass(ScryContext* ctx) {
-    assert(ctx != nullptr);
-    assert(ctx->initialized == 1);
+    DEBUG_ASSERT(ctx != nullptr);
+    DEBUG_ASSERT(ctx->initialized == 1);
 
     const uint8_t w_idx = Scry::Input::g_input_buffer.write_index;
     const uint8_t r_idx = Scry::Input::g_input_buffer.read_index;
@@ -86,12 +87,20 @@ static void ProcessInputPass(ScryContext* ctx) {
 extern "C" {
 
 SCRY_API int ScryRun(const ScryAppConfig* config) {
-    assert(config != nullptr);
-    assert(config->OnInit != nullptr);
-    assert(config->OnUpdate != nullptr);
-    assert(config->OnShutdown != nullptr);
-    assert(config->window_width > 0);
-    assert(config->window_height > 0);
+    DEBUG_ASSERT(config != nullptr);
+    DEBUG_ASSERT(config->OnInit != nullptr);
+    DEBUG_ASSERT(config->OnUpdate != nullptr);
+    DEBUG_ASSERT(config->OnShutdown != nullptr);
+    DEBUG_ASSERT(config->window_width > 0);
+    DEBUG_ASSERT(config->window_height > 0);
+
+    // Initialize Quill Asynchronous Logging
+    std::shared_ptr<quill::Handler> handler = quill::stdout_handler();
+    handler->set_pattern("%(ascii_time) [%(thread)] %(fileline:<28) LOG_%(level_name) %(message)");
+    quill::Config cfg;
+    cfg.default_handlers.push_back(handler);
+    quill::configure(cfg);
+    quill::start();
 
     SDL_SetMainReady();
     const bool init_ok = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
@@ -154,8 +163,8 @@ SCRY_API int ScryRun(const ScryAppConfig* config) {
 }
 
 SCRY_API void RequestEngineExit(ScryContext* ctx) {
-    assert(ctx != nullptr);
-    assert(ctx->initialized == 1);
+    DEBUG_ASSERT(ctx != nullptr);
+    DEBUG_ASSERT(ctx->initialized == 1);
 
     if (ctx != nullptr) {
         ctx->running = 0;

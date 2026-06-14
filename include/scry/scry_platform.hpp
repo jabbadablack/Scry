@@ -1,7 +1,7 @@
 #pragma once
 #include <scry/core.hpp>
 #include <cstdint>
-#include <cassert>
+#include <libassert/assert.hpp>
 
 struct ecs_world_t;
 struct SDL_Window;

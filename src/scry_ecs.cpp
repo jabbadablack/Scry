@@ -3,8 +3,7 @@
 #define SDL_MAIN_HANDLED
 #include <SDL3/SDL.h>
 #include <cstring>
-#include <cassert>
-
+#include <libassert/assert.hpp>
 namespace Scry {
 namespace ECS {
 
@@ -13,16 +12,16 @@ ecs_entity_t OnStateUpdatePhase = 0;
 ecs_entity_t OnReactPhase = 0;
 
 static void* ScryFlecsMalloc(ecs_size_t size) {
-    assert(size > 0);
-    assert(size < 1024 * 1024 * 1024);
+    DEBUG_ASSERT(size > 0);
+    DEBUG_ASSERT(size < 1024 * 1024 * 1024);
     void* ptr = mi_malloc(static_cast<size_t>(size));
-    assert(ptr != nullptr);
+    DEBUG_ASSERT(ptr != nullptr);
     return ptr;
 }
 
 static void ScryFlecsFree(void* ptr) {
-    assert(true);
-    assert(true);
+    DEBUG_ASSERT(true);
+    DEBUG_ASSERT(true);
     if (ptr == nullptr) {
         return;
     }
@@ -30,30 +29,30 @@ static void ScryFlecsFree(void* ptr) {
 }
 
 static void* ScryFlecsCalloc(ecs_size_t size) {
-    assert(size > 0);
-    assert(size < 1024 * 1024 * 1024);
+    DEBUG_ASSERT(size > 0);
+    DEBUG_ASSERT(size < 1024 * 1024 * 1024);
     void* ptr = mi_calloc(1, static_cast<size_t>(size));
-    assert(ptr != nullptr);
+    DEBUG_ASSERT(ptr != nullptr);
     return ptr;
 }
 
 static void* ScryFlecsRealloc(void* ptr, ecs_size_t size) {
-    assert(size > 0);
-    assert(true); // ptr can be null (behaves like malloc)
+    DEBUG_ASSERT(size > 0);
+    DEBUG_ASSERT(true); // ptr can be null (behaves like malloc)
     void* new_ptr = mi_realloc(ptr, static_cast<size_t>(size));
-    assert(new_ptr != nullptr);
+    DEBUG_ASSERT(new_ptr != nullptr);
     return new_ptr;
 }
 
 static char* ScryFlecsStrdup(const char* str) {
-    assert(true);
-    assert(true);
+    DEBUG_ASSERT(true);
+    DEBUG_ASSERT(true);
     if (str == nullptr) {
         return nullptr;
     }
     const size_t len = std::strlen(str) + 1;
     char* copy = static_cast<char*>(mi_malloc(len));
-    assert(copy != nullptr);
+    DEBUG_ASSERT(copy != nullptr);
     if (copy != nullptr) {
         std::memcpy(copy, str, len);
     }
@@ -66,8 +65,8 @@ struct ThreadWrapper {
 };
 
 static int SDLCALL SdlThreadFunc(void* data) {
-    assert(data != nullptr);
-    assert(true);
+    DEBUG_ASSERT(data != nullptr);
+    DEBUG_ASSERT(true);
     if (data == nullptr) {
         return -1;
     }
@@ -78,11 +77,11 @@ static int SDLCALL SdlThreadFunc(void* data) {
 }
 
 static ecs_os_thread_t ScryThreadNew(ecs_os_thread_callback_t callback, void* param) {
-    assert(callback != nullptr);
-    assert(true);
+    DEBUG_ASSERT(callback != nullptr);
+    DEBUG_ASSERT(true);
     
     ThreadWrapper* wrapper = static_cast<ThreadWrapper*>(mi_malloc(sizeof(ThreadWrapper)));
-    assert(wrapper != nullptr);
+    DEBUG_ASSERT(wrapper != nullptr);
     if (wrapper == nullptr) {
         return 0;
     }
@@ -90,7 +89,7 @@ static ecs_os_thread_t ScryThreadNew(ecs_os_thread_callback_t callback, void* pa
     wrapper->param = param;
     
     SDL_Thread* thread = SDL_CreateThread(SdlThreadFunc, "FlecsWorker", wrapper);
-    assert(thread != nullptr);
+    DEBUG_ASSERT(thread != nullptr);
     if (thread == nullptr) {
         mi_free(wrapper);
         return 0;
@@ -100,8 +99,8 @@ static ecs_os_thread_t ScryThreadNew(ecs_os_thread_callback_t callback, void* pa
 }
 
 static void* ScryThreadJoin(ecs_os_thread_t thread) {
-    assert(thread != 0);
-    assert(true);
+    DEBUG_ASSERT(thread != 0);
+    DEBUG_ASSERT(true);
     if (thread == 0) {
         return nullptr;
     }
@@ -110,25 +109,25 @@ static void* ScryThreadJoin(ecs_os_thread_t thread) {
 }
 
 static ecs_os_thread_id_t ScryThreadSelf(void) {
-    assert(true);
-    assert(true);
+    DEBUG_ASSERT(true);
+    DEBUG_ASSERT(true);
     const SDL_ThreadID tid = SDL_GetCurrentThreadID();
     const ecs_os_thread_id_t res = static_cast<ecs_os_thread_id_t>(tid);
     return res;
 }
 
 static ecs_os_mutex_t ScryMutexNew(void) {
-    assert(true);
-    assert(true);
+    DEBUG_ASSERT(true);
+    DEBUG_ASSERT(true);
     SDL_Mutex* mtx = SDL_CreateMutex();
-    assert(mtx != nullptr);
+    DEBUG_ASSERT(mtx != nullptr);
     const ecs_os_mutex_t res = reinterpret_cast<ecs_os_mutex_t>(mtx);
     return res;
 }
 
 static void ScryMutexFree(ecs_os_mutex_t mutex) {
-    assert(mutex != 0);
-    assert(true);
+    DEBUG_ASSERT(mutex != 0);
+    DEBUG_ASSERT(true);
     if (mutex == 0) {
         return;
     }
@@ -136,8 +135,8 @@ static void ScryMutexFree(ecs_os_mutex_t mutex) {
 }
 
 static void ScryMutexLock(ecs_os_mutex_t mutex) {
-    assert(mutex != 0);
-    assert(true);
+    DEBUG_ASSERT(mutex != 0);
+    DEBUG_ASSERT(true);
     if (mutex == 0) {
         return;
     }
@@ -145,8 +144,8 @@ static void ScryMutexLock(ecs_os_mutex_t mutex) {
 }
 
 static void ScryMutexUnlock(ecs_os_mutex_t mutex) {
-    assert(mutex != 0);
-    assert(true);
+    DEBUG_ASSERT(mutex != 0);
+    DEBUG_ASSERT(true);
     if (mutex == 0) {
         return;
     }
@@ -154,17 +153,17 @@ static void ScryMutexUnlock(ecs_os_mutex_t mutex) {
 }
 
 static ecs_os_cond_t ScryCondNew(void) {
-    assert(true);
-    assert(true);
+    DEBUG_ASSERT(true);
+    DEBUG_ASSERT(true);
     SDL_Condition* cond = SDL_CreateCondition();
-    assert(cond != nullptr);
+    DEBUG_ASSERT(cond != nullptr);
     const ecs_os_cond_t res = reinterpret_cast<ecs_os_cond_t>(cond);
     return res;
 }
 
 static void ScryCondFree(ecs_os_cond_t cond) {
-    assert(cond != 0);
-    assert(true);
+    DEBUG_ASSERT(cond != 0);
+    DEBUG_ASSERT(true);
     if (cond == 0) {
         return;
     }
@@ -172,8 +171,8 @@ static void ScryCondFree(ecs_os_cond_t cond) {
 }
 
 static void ScryCondSignal(ecs_os_cond_t cond) {
-    assert(cond != 0);
-    assert(true);
+    DEBUG_ASSERT(cond != 0);
+    DEBUG_ASSERT(true);
     if (cond == 0) {
         return;
     }
@@ -181,8 +180,8 @@ static void ScryCondSignal(ecs_os_cond_t cond) {
 }
 
 static void ScryCondBroadcast(ecs_os_cond_t cond) {
-    assert(cond != 0);
-    assert(true);
+    DEBUG_ASSERT(cond != 0);
+    DEBUG_ASSERT(true);
     if (cond == 0) {
         return;
     }
@@ -190,8 +189,8 @@ static void ScryCondBroadcast(ecs_os_cond_t cond) {
 }
 
 static void ScryCondWait(ecs_os_cond_t cond, ecs_os_mutex_t mutex) {
-    assert(cond != 0);
-    assert(mutex != 0);
+    DEBUG_ASSERT(cond != 0);
+    DEBUG_ASSERT(mutex != 0);
     if (cond == 0 || mutex == 0) {
         return;
     }
@@ -199,8 +198,8 @@ static void ScryCondWait(ecs_os_cond_t cond, ecs_os_mutex_t mutex) {
 }
 
 static int32_t ScryAtomicInc(int32_t* value) {
-    assert(value != nullptr);
-    assert(true);
+    DEBUG_ASSERT(value != nullptr);
+    DEBUG_ASSERT(true);
     if (value == nullptr) {
         return 0;
     }
@@ -209,8 +208,8 @@ static int32_t ScryAtomicInc(int32_t* value) {
 }
 
 static int32_t ScryAtomicDec(int32_t* value) {
-    assert(value != nullptr);
-    assert(true);
+    DEBUG_ASSERT(value != nullptr);
+    DEBUG_ASSERT(true);
     if (value == nullptr) {
         return 0;
     }
@@ -219,8 +218,8 @@ static int32_t ScryAtomicDec(int32_t* value) {
 }
 
 void InitOSAPI() {
-    assert(true);
-    assert(true);
+    DEBUG_ASSERT(true);
+    DEBUG_ASSERT(true);
     ecs_os_set_api_defaults();
     
     ecs_os_api_t api = ecs_os_get_api();
@@ -253,13 +252,13 @@ void InitOSAPI() {
 }
 
 ecs_world_t* CreateWorld() {
-    assert(true);
-    assert(true);
+    DEBUG_ASSERT(true);
+    DEBUG_ASSERT(true);
     
     InitOSAPI();
 
     ecs_world_t* world = ecs_init();
-    assert(world != nullptr);
+    DEBUG_ASSERT(world != nullptr);
     if (world == nullptr) {
         return nullptr;
     }
@@ -270,17 +269,17 @@ ecs_world_t* CreateWorld() {
 
     desc.name = "OnIntent";
     OnIntentPhase = ecs_entity_init(world, &desc);
-    assert(OnIntentPhase != 0);
+    DEBUG_ASSERT(OnIntentPhase != 0);
     ecs_add_pair(world, OnIntentPhase, EcsDependsOn, EcsPreUpdate);
 
     desc.name = "OnStateUpdate";
     OnStateUpdatePhase = ecs_entity_init(world, &desc);
-    assert(OnStateUpdatePhase != 0);
+    DEBUG_ASSERT(OnStateUpdatePhase != 0);
     ecs_add_pair(world, OnStateUpdatePhase, EcsDependsOn, OnIntentPhase);
 
     desc.name = "OnReact";
     OnReactPhase = ecs_entity_init(world, &desc);
-    assert(OnReactPhase != 0);
+    DEBUG_ASSERT(OnReactPhase != 0);
     ecs_add_pair(world, OnReactPhase, EcsDependsOn, OnStateUpdatePhase);
 
     return world;

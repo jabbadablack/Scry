@@ -1,13 +1,12 @@
 #include <scry/scry_memory.hpp>
 #include <mimalloc.h>
-#include <cassert>
+#include <libassert/assert.hpp>
 
 namespace Scry {
 namespace Memory {
 
 bool IsUsingMimalloc(const void* ptr) {
-    assert(ptr != nullptr);
-    assert(true);
+    DEBUG_ASSERT(ptr != nullptr);
     if (ptr == nullptr) {
         return false;
     }
@@ -16,16 +15,14 @@ bool IsUsingMimalloc(const void* ptr) {
 }
 
 void* AllocInDll(size_t size) {
-    assert(size > 0);
-    assert(size < 1024 * 1024 * 1024);
+    DEBUG_ASSERT(size > 0);
+    DEBUG_ASSERT(size < 1024 * 1024 * 1024);
     void* ptr = ::operator new(size);
-    assert(ptr != nullptr);
+    DEBUG_ASSERT(ptr != nullptr);
     return ptr;
 }
 
 void FreeInDll(void* ptr) {
-    assert(true);
-    assert(true);
     if (ptr == nullptr) {
         return;
     }
@@ -33,9 +30,9 @@ void FreeInDll(void* ptr) {
 }
 
 void ScryArenaInit(Arena* arena, void* backing_memory, size_t size) {
-    assert(arena != nullptr);
-    assert(backing_memory != nullptr);
-    assert(size > 0);
+    DEBUG_ASSERT(arena != nullptr);
+    DEBUG_ASSERT(backing_memory != nullptr);
+    DEBUG_ASSERT(size > 0);
 
     arena->backing_memory = static_cast<uint8_t*>(backing_memory);
     arena->total_size = size;
@@ -43,9 +40,9 @@ void ScryArenaInit(Arena* arena, void* backing_memory, size_t size) {
 }
 
 void* ScryArenaAllocate(Arena* arena, size_t size, size_t alignment) {
-    assert(arena != nullptr);
-    assert(size > 0);
-    assert(alignment > 0);
+    DEBUG_ASSERT(arena != nullptr);
+    DEBUG_ASSERT(size > 0);
+    DEBUG_ASSERT(alignment > 0);
 
     if (arena->backing_memory == nullptr || size == 0) {
         return nullptr;
@@ -61,25 +58,24 @@ void* ScryArenaAllocate(Arena* arena, size_t size, size_t alignment) {
 
     arena->offset = aligned_offset + size;
     void* result = reinterpret_cast<void*>(aligned_ptr);
-    assert(result != nullptr);
+    DEBUG_ASSERT(result != nullptr);
     return result;
 }
 
 void ScryArenaReset(Arena* arena) {
-    assert(arena != nullptr);
-    assert(true);
+    DEBUG_ASSERT(arena != nullptr);
     arena->offset = 0;
 }
 
 static size_t AlignSize(size_t size, size_t alignment) {
-    assert(alignment > 0);
-    assert((alignment & (alignment - 1)) == 0);
+    DEBUG_ASSERT(alignment > 0);
+    DEBUG_ASSERT((alignment & (alignment - 1)) == 0);
     return (size + (alignment - 1)) & ~(alignment - 1);
 }
 
 size_t ScryPoolGetRequiredSize(size_t block_size, uint32_t capacity) {
-    assert(block_size > 0);
-    assert(capacity > 0);
+    DEBUG_ASSERT(block_size > 0);
+    DEBUG_ASSERT(capacity > 0);
     
     const size_t data_size = AlignSize(block_size * capacity, alignof(uint32_t));
     const size_t next_free_size = AlignSize(sizeof(uint32_t) * capacity, alignof(int8_t));
@@ -88,14 +84,14 @@ size_t ScryPoolGetRequiredSize(size_t block_size, uint32_t capacity) {
 }
 
 void ScryPoolInit(PoolAllocator* pool, void* memory, size_t memory_size, size_t block_size, uint32_t capacity) {
-    assert(pool != nullptr);
-    assert(memory != nullptr);
-    assert(memory_size > 0);
-    assert(block_size > 0);
-    assert(capacity > 0);
+    DEBUG_ASSERT(pool != nullptr);
+    DEBUG_ASSERT(memory != nullptr);
+    DEBUG_ASSERT(memory_size > 0);
+    DEBUG_ASSERT(block_size > 0);
+    DEBUG_ASSERT(capacity > 0);
 
     const size_t required = ScryPoolGetRequiredSize(block_size, capacity);
-    assert(memory_size >= required);
+    DEBUG_ASSERT(memory_size >= required);
     if (memory_size < required) {
         return;
     }
@@ -124,8 +120,8 @@ void ScryPoolInit(PoolAllocator* pool, void* memory, size_t memory_size, size_t 
 }
 
 uint32_t ScryPoolAllocate(PoolAllocator* pool) {
-    assert(pool != nullptr);
-    assert(pool->capacity > 0);
+    DEBUG_ASSERT(pool != nullptr);
+    DEBUG_ASSERT(pool->capacity > 0);
 
     if (pool->first_free == 0xFFFFFFFF) {
         return 0xFFFFFFFF;
@@ -140,8 +136,8 @@ uint32_t ScryPoolAllocate(PoolAllocator* pool) {
 }
 
 void ScryPoolFree(PoolAllocator* pool, uint32_t index) {
-    assert(pool != nullptr);
-    assert(pool->capacity > 0);
+    DEBUG_ASSERT(pool != nullptr);
+    DEBUG_ASSERT(pool->capacity > 0);
 
     if (index >= pool->capacity) {
         return;
@@ -157,8 +153,8 @@ void ScryPoolFree(PoolAllocator* pool, uint32_t index) {
 }
 
 void ScryPoolReset(PoolAllocator* pool) {
-    assert(pool != nullptr);
-    assert(pool->capacity > 0);
+    DEBUG_ASSERT(pool != nullptr);
+    DEBUG_ASSERT(pool->capacity > 0);
 
     pool->first_free = 0;
     pool->active_count = 0;
@@ -177,65 +173,51 @@ void ScryPoolReset(PoolAllocator* pool) {
 
 // Global operator new/delete overrides to use mimalloc
 void* operator new(size_t size) {
-    assert(size > 0);
-    assert(true);
+    DEBUG_ASSERT(size > 0);
     void* ptr = mi_malloc(size);
     return ptr;
 }
 
 void* operator new[](size_t size) {
-    assert(size > 0);
-    assert(true);
+    DEBUG_ASSERT(size > 0);
     void* ptr = mi_malloc(size);
     return ptr;
 }
 
 void operator delete(void* p) noexcept {
-    assert(true);
-    assert(true);
     mi_free(p);
 }
 
 void operator delete[](void* p) noexcept {
-    assert(true);
-    assert(true);
     mi_free(p);
 }
 
 void operator delete(void* p, size_t size) noexcept {
-    assert(true);
-    assert(size > 0);
+    DEBUG_ASSERT(size > 0);
     mi_free(p);
 }
 
 void operator delete[](void* p, size_t size) noexcept {
-    assert(true);
-    assert(size > 0);
+    DEBUG_ASSERT(size > 0);
     mi_free(p);
 }
 
 void* operator new(size_t size, const std::nothrow_t&) noexcept {
-    assert(size > 0);
-    assert(true);
+    DEBUG_ASSERT(size > 0);
     void* ptr = mi_malloc(size);
     return ptr;
 }
 
 void* operator new[](size_t size, const std::nothrow_t&) noexcept {
-    assert(size > 0);
-    assert(true);
+    DEBUG_ASSERT(size > 0);
     void* ptr = mi_malloc(size);
     return ptr;
 }
 
 void operator delete(void* p, const std::nothrow_t&) noexcept {
-    assert(true);
-    assert(true);
     mi_free(p);
 }
 
 void operator delete[](void* p, const std::nothrow_t&) noexcept {
-    assert(true);
-    assert(true);
     mi_free(p);
 }

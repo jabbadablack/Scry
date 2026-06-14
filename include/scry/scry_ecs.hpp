@@ -1,7 +1,7 @@
 #pragma once
 #include <scry/core.hpp>
 #include <flecs.h>
-#include <cassert>
+#include <libassert/assert.hpp>
 
 namespace Scry {
 namespace ECS {
@@ -27,8 +27,8 @@ struct DoubleBuffered {
 // Helper to register a double-buffer sync system for component type T
 template <typename T>
 void RegisterDoubleBufferSync(ecs_world_t* world, ecs_entity_t component_id) {
-    assert(world != nullptr);
-    assert(component_id != 0);
+    DEBUG_ASSERT(world != nullptr);
+    DEBUG_ASSERT(component_id != 0);
 
     if (world == nullptr) {
         return;
@@ -38,7 +38,7 @@ void RegisterDoubleBufferSync(ecs_world_t* world, ecs_entity_t component_id) {
     ent_desc.name = "SyncDoubleBuffer";
     
     const ecs_entity_t sys_ent = ecs_entity_init(world, &ent_desc);
-    assert(sys_ent != 0);
+    DEBUG_ASSERT(sys_ent != 0);
 
     ecs_add_pair(world, sys_ent, EcsDependsOn, OnReactPhase);
 
@@ -46,15 +46,15 @@ void RegisterDoubleBufferSync(ecs_world_t* world, ecs_entity_t component_id) {
     sys_desc.entity = sys_ent;
     sys_desc.query.terms[0].id = component_id;
     sys_desc.callback = [](ecs_iter_t* it) {
-        assert(it != nullptr);
-        assert(it->count >= 0);
+        DEBUG_ASSERT(it != nullptr);
+        DEBUG_ASSERT(it->count >= 0);
 
         if (it == nullptr) {
             return;
         }
 
         DoubleBuffered<T>* db = ecs_field(it, DoubleBuffered<T>, 0);
-        assert(db != nullptr);
+        DEBUG_ASSERT(db != nullptr);
         if (db != nullptr) {
             for (int i = 0; i < it->count; ++i) {
                 db[i].read = db[i].write;
@@ -63,7 +63,7 @@ void RegisterDoubleBufferSync(ecs_world_t* world, ecs_entity_t component_id) {
     };
 
     const ecs_entity_t final_sys = ecs_system_init(world, &sys_desc);
-    assert(final_sys != 0);
+    DEBUG_ASSERT(final_sys != 0);
 }
 
 } // namespace ECS

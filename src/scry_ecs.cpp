@@ -286,11 +286,10 @@ ecs_world_t* CreateWorld() {
     // Build the 6-phase custom pipeline and register the intent cleanup system.
     Scry::Pipeline::InitPipeline(world);
 
-    // Bind Flecs parallel system execution to the enkiTS worker pool.
-    // task_new_/task_join_ are already wired; this tells Flecs how many
-    // concurrent workers to dispatch per parallel pipeline stage.
-    const int32_t worker_count = static_cast<int32_t>(Scry::Jobs::GetTotalThreadCount());
-    ecs_set_task_threads(world, worker_count);
+    // enkiTS task hooks (task_new_/task_join_) are wired in the OS API above
+    // and available for future parallel dispatch.  Flecs runs single-threaded
+    // by default; call ecs_set_task_threads() explicitly per-world when a
+    // specific set of systems opts into parallel execution.
 
     return world;
 }

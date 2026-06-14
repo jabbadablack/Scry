@@ -42,13 +42,11 @@ typedef struct ScryAppConfig {
     int32_t     window_width;   /* Initial window width  in pixels  (must > 0). */
     int32_t     window_height;  /* Initial window height in pixels  (must > 0). */
 
-    /* Lifecycle callbacks.
-       OnInit and OnShutdown must be non-NULL.
-       OnUpdate is optional (NULL is valid): games that drive all logic through
-       ECS systems can omit it. When provided it is called on the main thread
-       after each ecs_progress(), seeing fully-synced ECS state. */
+    /* Lifecycle callbacks. OnInit and OnShutdown must be non-NULL.
+       All per-frame game logic belongs in ECS systems registered during OnInit;
+       the ISR pipeline (Intent → State → React → Cleanup) runs automatically
+       inside ecs_progress on every frame. There is no OnUpdate callback. */
     void (*OnInit)(ScryContext* ctx);
-    void (*OnUpdate)(ScryContext* ctx, float dt); /* optional — may be NULL */
     void (*OnShutdown)(ScryContext* ctx);
 
     /* Opaque application state forwarded into the context at startup.
@@ -66,9 +64,12 @@ extern "C" {
  * ScryRun — start the engine.
  *
  * Initialises logging, the job scheduler, SDL, and the ECS world in that
- * order, then calls config->OnInit. Enters the main loop, calling
- * config->OnUpdate each frame, until RequestEngineExit() is called or the
- * window is closed. Calls config->OnShutdown before tearing down subsystems.
+ * order, then calls config->OnInit. Enters the main loop: each iteration pumps
+ * SDL events and calls ecs_progress, which runs the full ISR pipeline, until
+ * RequestEngineExit() is called or the window is closed. Calls
+ * config->OnShutdown before tearing down subsystems.
+ *
+ * All per-frame game logic runs as ECS systems registered during OnInit.
  *
  * Blocks until the application exits.
  * Returns 0 on a clean exit; a negative value on a startup failure.

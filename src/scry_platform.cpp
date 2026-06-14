@@ -153,8 +153,9 @@ SCRY_API int ScryRun(const ScryAppConfig* config) {
 
     // ── 5. Flecs ECS world ────────────────────────────────────────────────────
     // CreateWorld installs the custom OS-API (mimalloc allocator, enkiTS task
-    // hooks, SDL3 mutexes/condvars), imports FlecsMeta, builds the 6-phase
-    // custom pipeline, and calls ecs_set_task_threads to bind to enkiTS.
+    // hooks, SDL3 mutexes/condvars), imports FlecsMeta, and builds the 6-phase
+    // custom ISR pipeline. Flecs runs single-threaded by default; individual
+    // systems may opt into parallel dispatch via ecs_set_task_threads later.
     struct ecs_world_t* world = Scry::ECS::CreateWorld();
     DEBUG_ASSERT(world != nullptr);
     if (!world) {
@@ -164,8 +165,7 @@ SCRY_API int ScryRun(const ScryAppConfig* config) {
         Scry::Jobs::Shutdown();
         return -5;
     }
-    LOG_INFO("[Engine] Flecs world created and bound to enkiTS ({} total threads)",
-             static_cast<int32_t>(Scry::Jobs::GetTotalThreadCount()));
+    LOG_INFO("[Engine] Flecs world created");
 
     // ── 6. Context assembly ───────────────────────────────────────────────────
     // ScryContext is defined in scry_platform.hpp (internal only). External
@@ -192,10 +192,8 @@ SCRY_API int ScryRun(const ScryAppConfig* config) {
     // Each iteration:
     //   a) SDL event pump → fills the double-buffered input state
     //   b) Escape / window-close quick exit
-    //   c) ecs_progress — runs the full 6-phase pipeline:
+    //   c) ecs_progress — runs the full 6-phase ISR pipeline:
     //        ScryPhase_Input → Intent → StateUpdate → StateSync → React → Cleanup
-    //   d) config->OnUpdate (optional) — per-frame user code that sees the
-    //        fully-ticked ECS state (double buffers synced, Intents cleaned up)
     while (ctx.running) {
         Scry::Platform::ProcessInputPass(&ctx);
 
@@ -217,13 +215,6 @@ SCRY_API int ScryRun(const ScryAppConfig* config) {
         if (!ecs_progress(world, dt)) {
             ctx.running = 0;
             break;
-        }
-
-        // Per-frame user callback — executes after the full ECS pipeline tick
-        // so it observes stable, synced state. OnUpdate is optional; games that
-        // drive all logic through ECS systems may leave it null.
-        if (config->OnUpdate) {
-            config->OnUpdate(&ctx, dt);
         }
 
         SDL_Delay(1);

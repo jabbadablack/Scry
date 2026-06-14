@@ -267,4 +267,19 @@ SCRY_API void* ScryGetUserData(const ScryContext* ctx) {
     return ctx->user_data;
 }
 
+SCRY_API struct ecs_world_t* ScryGetWorld(const ScryContext* ctx) {
+    DEBUG_ASSERT(ctx != nullptr);
+    if (ctx == nullptr) {
+        return nullptr;
+    }
+    return ctx->ecs_world;
+}
+
+SCRY_API void ScryLog(const char* msg) {
+    DEBUG_ASSERT(msg != nullptr);
+    if (msg != nullptr) {
+        LOG_INFO("{}", msg);
+    }
+}
+
 } // extern "C"

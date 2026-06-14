@@ -171,10 +171,10 @@ target_link_libraries(scry
         libassert::assert
         eigen
         quill::quill
+        flecs           # public headers expose ecs_entity_t / ecs_world_t
     PRIVATE
         mimalloc-static
         SDL3-static
-        flecs
         yyjson
         foonathan_string_id
         enkiTS

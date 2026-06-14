@@ -90,6 +90,23 @@ SCRY_API void* ScryGetUserData(const ScryContext* ctx);
 /* Engine version as a null-terminated semver string (e.g. "0.1.0"). */
 SCRY_API const char* ScryGetVersion(void);
 
+/* ScryGetWorld — returns the raw Flecs world pointer stored in ctx.
+ * The caller must include <flecs.h> to use any ECS functions on the result.
+ * Returns NULL if ctx is NULL. */
+struct ecs_world_t;
+SCRY_API struct ecs_world_t* ScryGetWorld(const ScryContext* ctx);
+
+/* ScryLog — route a pre-formatted message through the engine's async Quill
+ * logger (the one initialised in ScryRun).  Thread-safe; safe to call from
+ * ECS system callbacks, observers, and plugin code.
+ *
+ * Game code must use this instead of LOG_INFO directly because Quill is
+ * statically linked into the engine DLL.  Each binary (DLL, EXE, plugin)
+ * carries its own copy of the Quill globals; only the DLL's copy is
+ * initialised by ScryRun.  Calling LOG_INFO from a different binary before
+ * its own quill::start() fires the _g_root_logger nullptr assertion. */
+SCRY_API void ScryLog(const char* msg);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1,4 +1,4 @@
-#include <scry/core.hpp>
+#include <scry/scry.h>
 #include <libassert/assert.hpp>
 
 extern "C" SCRY_API const char* ScryGetVersion() {

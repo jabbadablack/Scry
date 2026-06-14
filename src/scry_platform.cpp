@@ -110,10 +110,11 @@ SCRY_API int ScryRun(const ScryAppConfig* config) {
         return -1;
     }
 
-    SDL_Window* window = SDL_CreateWindow(config->app_name ? config->app_name : "Scry Engine",
-                                         config->window_width,
-                                         config->window_height,
-                                         0);
+    SDL_Window* window = SDL_CreateWindow(
+                             config->title ? config->title : "Scry Engine",
+                             config->window_width,
+                             config->window_height,
+                             0);
     if (!window) {
         SDL_Quit();
         return -2;
@@ -138,13 +139,14 @@ SCRY_API int ScryRun(const ScryAppConfig* config) {
              static_cast<int32_t>(Scry::Jobs::GetTotalThreadCount()));
 
     ScryContext ctx = {};
-    ctx.ecs_world = world;
-    ctx.window = window;
-    ctx.start_time = SDL_GetTicks();
-    ctx.window_width = config->window_width;
+    ctx.ecs_world    = world;
+    ctx.window       = window;
+    ctx.user_data    = config->user_data;
+    ctx.start_time   = SDL_GetTicks();
+    ctx.window_width  = config->window_width;
     ctx.window_height = config->window_height;
-    ctx.initialized = 1;
-    ctx.running = 1;
+    ctx.initialized  = 1;
+    ctx.running      = 1;
 
     config->OnInit(&ctx);
 
@@ -183,6 +185,14 @@ SCRY_API void RequestEngineExit(ScryContext* ctx) {
     if (ctx != nullptr) {
         ctx->running = 0;
     }
+}
+
+SCRY_API void* ScryGetUserData(const ScryContext* ctx) {
+    DEBUG_ASSERT(ctx != nullptr);
+    if (ctx == nullptr) {
+        return nullptr;
+    }
+    return ctx->user_data;
 }
 
 } // extern "C"

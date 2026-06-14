@@ -1,7 +1,6 @@
 #pragma once
-#include <scry/core.hpp>
+#include <scry/scry.h>
 #include <scry/ScryEngineAPI.h>
-#include <scry/scry_platform.hpp>
 
 namespace Scry {
 namespace Plugin {

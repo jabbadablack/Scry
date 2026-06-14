@@ -1,5 +1,5 @@
 #pragma once
-#include <scry/core.hpp>
+#include <scry/scry.h>
 #include <flecs.h>
 #include <libassert/assert.hpp>
 

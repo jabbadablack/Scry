@@ -1,6 +1,5 @@
 #pragma once
-#include <scry/core.hpp>
-#include <scry/scry_platform.hpp>
+#include <scry/scry.h>
 
 namespace Scry {
 namespace JSON {

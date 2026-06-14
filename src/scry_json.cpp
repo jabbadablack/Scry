@@ -1,4 +1,5 @@
 #include <scry/scry_json.hpp>
+#include <scry/scry_platform.hpp>
 #include <scry/scry_math.hpp>
 #include <scry/scry_memory.hpp>
 #include <scry/scry_plugin.hpp>

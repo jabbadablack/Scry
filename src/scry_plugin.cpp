@@ -1,4 +1,5 @@
 #include <scry/scry_plugin.hpp>
+#include <scry/scry_platform.hpp>
 #include <scry/scry_memory.hpp>
 #include <scry/scry_job_system.hpp>
 #include <SDL3/SDL.h>

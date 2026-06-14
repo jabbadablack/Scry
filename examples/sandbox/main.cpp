@@ -1,17 +1,20 @@
-// Standalone Scry Framework example.
-// This file intentionally imports only the public umbrella header — it has no
-// knowledge of mimalloc, SDL3, Flecs, or Eigen internals.  Linking against the
-// scry shared library is the only build-time dependency.
+/*
+ * Standalone Scry Framework example.
+ *
+ * Only <scry/scry.h> is needed to drive the engine lifecycle.
+ * Additional subsystem headers are included explicitly for JSON loading
+ * and plugin management — they are optional engine features, not core API.
+ */
 #include <scry/scry.h>
+#include <scry/scry_json.hpp>
+#include <scry/scry_plugin.hpp>
+#include <libassert/assert.hpp>
 
 static uint32_t g_frame = 0;
 
 static void OnInit(ScryContext* ctx) {
     DEBUG_ASSERT(ctx != nullptr);
 
-    // Load runtime plugin manifest.  The CMake JSON parser already built
-    // ScryInputPlugin by reading project.json at configure time; here we prove
-    // the engine loads it at runtime from the same declaration.
     const bool ok = Scry::JSON::LoadProjectConfig(ctx, "scry_project.json");
     DEBUG_ASSERT(ok == true);
     (void)ok;
@@ -23,8 +26,6 @@ static void OnUpdate(ScryContext* ctx, float delta_time) {
 
     ++g_frame;
 
-    // Auto-exit after a few frames so the example finishes cleanly when run
-    // headlessly (e.g. in CI).
     if (g_frame >= 10) {
         RequestEngineExit(ctx);
     }
@@ -40,13 +41,14 @@ int main(int argc, char* argv[]) {
     DEBUG_ASSERT(argc >= 1);
     DEBUG_ASSERT(argv != nullptr);
 
-    ScryAppConfig config    = {};
-    config.OnInit           = OnInit;
-    config.OnUpdate         = OnUpdate;
-    config.OnShutdown       = OnShutdown;
-    config.window_width     = 800;
-    config.window_height    = 600;
-    config.app_name         = "Scry Standalone Example";
+    ScryAppConfig config   = {};
+    config.title           = "Scry Standalone Example";
+    config.window_width    = 800;
+    config.window_height   = 600;
+    config.OnInit          = OnInit;
+    config.OnUpdate        = OnUpdate;
+    config.OnShutdown      = OnShutdown;
+    config.user_data       = nullptr;
 
     return ScryRun(&config);
 }

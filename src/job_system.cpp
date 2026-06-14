@@ -41,6 +41,8 @@ bool Init() {
     size_t req_size = Memory::PoolGetRequiredSize(sizeof(FlecsTask), MAX_FLECS_TASKS);
     g_task_pool_mem = mi_malloc(req_size);
     DEBUG_ASSERT(g_task_pool_mem != nullptr);
+    if (g_task_pool_mem == nullptr) return false;
+
     Memory::PoolInit(&g_task_pool, g_task_pool_mem, req_size, sizeof(FlecsTask), MAX_FLECS_TASKS);
     
     return true;
@@ -51,21 +53,11 @@ void Shutdown() {
 
     // NASA Rule Check for both pools
     if (Memory::PoolGetActiveCount(&g_task_pool) > 0) {
-        printf("[Engine] CRITICAL MEMORY LEAK: FlecsTask pool has active allocations!\n");
-        for (uint32_t i = 0; i < g_task_pool.capacity; ++i) {
-            if (g_task_pool.states[i] != 0) {
-                printf("[Engine]   Leaked task at index %u\n", i);
-            }
-        }
+        fprintf(stderr, "[Engine] CRITICAL MEMORY LEAK: FlecsTask pool has active allocations!\n");
     }
     
     if (Memory::PoolGetActiveCount(&Engine::ECS::g_thread_wrapper_pool) > 0) {
-        printf("[Engine] CRITICAL MEMORY LEAK: ThreadWrapper pool has active allocations!\n");
-        for (uint32_t i = 0; i < Engine::ECS::g_thread_wrapper_pool.capacity; ++i) {
-            if (Engine::ECS::g_thread_wrapper_pool.states[i] != 0) {
-                printf("[Engine]   Leaked thread wrapper at index %u\n", i);
-            }
-        }
+        fprintf(stderr, "[Engine] CRITICAL MEMORY LEAK: ThreadWrapper pool has active allocations!\n");
     }
 
     if (g_task_pool_mem) {
@@ -99,6 +91,8 @@ void* SubmitFlecsTask(FlecsTaskFn callback, void* param) {
     DEBUG_ASSERT(callback != nullptr);
     uint32_t idx = Memory::PoolAllocate(&g_task_pool);
     DEBUG_ASSERT(idx != 0xFFFFFFFF);
+    if (idx == 0xFFFFFFFF) return nullptr;
+
     void* mem = Memory::PoolGet(&g_task_pool, idx);
     FlecsTask* task = new (mem) FlecsTask(callback, param, idx);
     g_scheduler.AddTaskSetToPipe(task);

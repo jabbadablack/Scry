@@ -63,6 +63,9 @@ typedef struct AppConfig {
        Retrieve it at any time with GetUserData(ctx). */
     void* user_data;
 
+    /* Application-provided logging callback. If NULL, engine prints to stdout. */
+    void (*OnLog)(const char* msg);
+
     /* NASA Rule #3: The engine must pre-allocate this exact amount of memory
        at the very start of EngineRun. */
     size_t global_memory_pool_size;

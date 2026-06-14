@@ -4,12 +4,12 @@
 #include <engine/input.hpp>
 #include <engine/ecs.hpp>
 #include <engine/job_system.hpp>
+#include <engine/plugin.hpp>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
-#define QUILL_ROOT_LOGGER_ONLY
-#include <quill/Quill.h>
 #include <mimalloc.h>
 #include <libassert/assert.hpp>
+#include <cstdio>
 
 namespace Engine {
 namespace Input {
@@ -109,16 +109,18 @@ void DestroyWindow(void* window_handle) {
 
 extern "C" {
 
-enum class Subsystem { None, Mimalloc, Quill, EnkiTS, SDL3, Flecs };
+static void (*g_app_log)(const char*) = nullptr;
+
+enum class Subsystem { None, Mimalloc, EnkiTS, SDL3, Flecs };
 
 ENGINE_API EngineError EngineRun(const AppConfig* config) {
-    DEBUG_ASSERT(config != nullptr);
-    DEBUG_ASSERT(config->OnInit != nullptr);
-    DEBUG_ASSERT(config->OnShutdown != nullptr);
-    DEBUG_ASSERT(config->window_width > 0);
-    DEBUG_ASSERT(config->window_height > 0);
+    if (config == nullptr) return ERR_PLATFORM_INIT;
+    if (config->OnInit == nullptr || config->OnShutdown == nullptr) return ERR_PLATFORM_INIT;
 
-    Subsystem init_checklist[16] = { Subsystem::None };
+    g_app_log = config->OnLog;
+
+    Subsystem init_checklist[16];
+    for(int i=0; i<16; ++i) init_checklist[i] = Subsystem::None;
     int init_count = 0;
     EngineError ret_code = SUCCESS;
     
@@ -126,58 +128,40 @@ ENGINE_API EngineError EngineRun(const AppConfig* config) {
     void* window = nullptr;
     struct ecs_world_t* world = nullptr;
     Context ctx = {};
-
+    
     // ── 1. mimalloc ──────────────────────────────────────────────────────────
     mi_process_init();
     init_checklist[init_count++] = Subsystem::Mimalloc;
 
     if (config->global_memory_pool_size > 0) {
         global_memory_pool = mi_malloc(config->global_memory_pool_size);
-        DEBUG_ASSERT(global_memory_pool != nullptr);
     }
 
-    // ── 2. Quill async logging ────────────────────────────────────────────────
-    std::shared_ptr<quill::Handler> log_handler = quill::stdout_handler();
-    log_handler->set_pattern("%(ascii_time) [%(thread)] %(fileline:<28) LOG_%(level_name) %(message)");
-    quill::Config log_cfg;
-    log_cfg.default_handlers.push_back(log_handler);
-    quill::configure(log_cfg);
-    quill::start();
-    init_checklist[init_count++] = Subsystem::Quill;
-
-    LOG_INFO("[Engine] mimalloc active, Quill logging started");
-
-    // ── 3. enkiTS task scheduler ──────────────────────────────────────────────
+    // ── 2. enkiTS task scheduler ──────────────────────────────────────────────
     const bool jobs_ok = Engine::Jobs::Init();
     if (!jobs_ok) {
-        LOG_INFO("[Engine] FATAL: enkiTS scheduler failed to initialize");
         ret_code = ERR_JOB_SYSTEM_INIT;
         goto shutdown;
     }
     init_checklist[init_count++] = Subsystem::EnkiTS;
-    LOG_INFO("[Engine] enkiTS initialized ({} task threads)", Engine::Jobs::GetTotalThreadCount() - 1u);
 
-    // ── 4. Platform (SDL3) ────────────────────────────────────────────────
+    // ── 3. Platform (SDL3) ────────────────────────────────────────────────
     window = Engine::Platform::InitWindow(config->title, config->window_width, config->window_height);
     if (!window) {
-        LOG_INFO("[Engine] FATAL: Window creation failed");
         ret_code = ERR_PLATFORM_INIT;
         goto shutdown;
     }
     init_checklist[init_count++] = Subsystem::SDL3;
-    LOG_INFO("[Engine] Window '{}' created ({}x{})", config->title ? config->title : "Engine", config->window_width, config->window_height);
 
-    // ── 5. Flecs ECS world ────────────────────────────────────────────────────
+    // ── 4. Flecs ECS world ────────────────────────────────────────────────────
     world = Engine::ECS::CreateWorld();
     if (!world) {
-        LOG_INFO("[Engine] FATAL: Flecs world creation failed");
         ret_code = ERR_ECS_INIT;
         goto shutdown;
     }
     init_checklist[init_count++] = Subsystem::Flecs;
-    LOG_INFO("[Engine] Flecs world created");
 
-    // ── 6. Context assembly ───────────────────────────────────────────────────
+    // ── 5. Context assembly ───────────────────────────────────────────────────
     ctx.ecs_world       = world;
     ctx.window_handle   = window;
     ctx.scheduler       = Engine::Jobs::GetScheduler();
@@ -188,15 +172,13 @@ ENGINE_API EngineError EngineRun(const AppConfig* config) {
     ctx.initialized     = 1;
     ctx.running         = 1;
 
-    // ── 7. User init ──────────────────────────────────────────────────────────
-    LOG_INFO("[Engine] Calling OnInit");
+    // ── 6. User init ──────────────────────────────────────────────────────────
     config->OnInit(&ctx);
-    LOG_INFO("[Engine] OnInit complete — entering main loop");
 
     {
         uint64_t last_tick = Engine::Platform::GetTime();
 
-        // ── 8. Main loop ──────────────────────────────────────────────────────────
+        // ── 7. Main loop ──────────────────────────────────────────────────────────
         while (ctx.running) {
             Engine::Platform::PumpEvents(&ctx);
 
@@ -220,8 +202,7 @@ ENGINE_API EngineError EngineRun(const AppConfig* config) {
         }
     }
 
-    // ── 9. Teardown ───────────────────────────────────────────────────────────
-    LOG_INFO("[Engine] Main loop exited — calling OnShutdown");
+    // ── 8. Teardown ───────────────────────────────────────────────────────────
     if (config->OnShutdown) {
         config->OnShutdown(&ctx);
     }
@@ -232,18 +213,12 @@ shutdown:
         switch (init_checklist[i]) {
             case Subsystem::Flecs:
                 if (world) ecs_fini(world);
-                LOG_INFO("[Engine] Flecs world destroyed");
                 break;
             case Subsystem::SDL3:
                 if (window) Engine::Platform::DestroyWindow(window);
-                LOG_INFO("[Engine] Platform window shut down");
                 break;
             case Subsystem::EnkiTS:
                 Engine::Jobs::Shutdown();
-                LOG_INFO("[Engine] enkiTS shut down — all worker threads joined");
-                break;
-            case Subsystem::Quill:
-                quill::flush();
                 break;
             case Subsystem::Mimalloc:
                 if (global_memory_pool) {
@@ -257,7 +232,7 @@ shutdown:
         }
     }
 
-    return ret_code;
+    return static_cast<EngineError>(ret_code);
 }
 
 ENGINE_API void RequestExit(Context* ctx) {
@@ -287,7 +262,11 @@ ENGINE_API struct ecs_world_t* GetWorld(const Context* ctx) {
 ENGINE_API void EngineLog(const char* msg) {
     DEBUG_ASSERT(msg != nullptr);
     if (msg != nullptr) {
-        LOG_INFO("{}", msg);
+        if (g_app_log) {
+            g_app_log(msg);
+        } else {
+            printf("[Engine] %s\n", msg); fflush(stdout);
+        }
     }
 }
 

@@ -35,56 +35,33 @@ static const uint64_t HASH_MOVE_INTENT = GetStringIdHash("MoveIntent");
 
 // Custom mimalloc allocators for yyjson
 static void* YyjsonMalloc(void* ctx, size_t size) {
-    DEBUG_ASSERT(size > 0);
-    DEBUG_ASSERT(true);
     (void)ctx;
-    void* ptr = mi_malloc(size);
-    return ptr;
+    return mi_malloc(size);
 }
 
 static void* YyjsonRealloc(void* ctx, void* ptr, size_t old_size, size_t new_size) {
-    DEBUG_ASSERT(new_size > 0);
-    DEBUG_ASSERT(true);
-    (void)ctx;
-    (void)old_size;
-    void* new_ptr = mi_realloc(ptr, new_size);
-    return new_ptr;
+    (void)ctx; (void)old_size;
+    return mi_realloc(ptr, new_size);
 }
 
 static void YyjsonFree(void* ctx, void* ptr) {
-    DEBUG_ASSERT(true);
-    DEBUG_ASSERT(true);
     (void)ctx;
-    if (ptr == nullptr) {
-        return;
-    }
-    mi_free(ptr);
+    if (ptr) mi_free(ptr);
 }
 
 // Contiguous file reader using custom allocator
 static char* ReadFileToContiguousBuffer(const char* filepath, size_t* out_size) {
     DEBUG_ASSERT(filepath != nullptr);
     DEBUG_ASSERT(out_size != nullptr);
-    if (filepath == nullptr || out_size == nullptr) {
-        return nullptr;
-    }
 
     std::FILE* f = std::fopen(filepath, "rb");
-    if (f == nullptr) {
-        return nullptr;
-    }
+    if (f == nullptr) return nullptr;
 
-    const int seek_end_res = std::fseek(f, 0, SEEK_END);
-    DEBUG_ASSERT(seek_end_res == 0);
-    (void)seek_end_res;
+    std::fseek(f, 0, SEEK_END);
     const long file_size = std::ftell(f);
-    DEBUG_ASSERT(file_size >= 0);
-    const int seek_set_res = std::fseek(f, 0, SEEK_SET);
-    DEBUG_ASSERT(seek_set_res == 0);
-    (void)seek_set_res;
+    std::fseek(f, 0, SEEK_SET);
 
     char* buffer = static_cast<char*>(mi_malloc(static_cast<size_t>(file_size) + 1));
-    DEBUG_ASSERT(buffer != nullptr);
     if (buffer == nullptr) {
         std::fclose(f);
         return nullptr;
@@ -108,13 +85,8 @@ struct MoveIntent {
 };
 
 static void ParseDoubleBufferedPosition(ecs_world_t* world, ecs_entity_t entity, ecs_entity_t comp_id, yyjson_val* comp_val) {
-    DEBUG_ASSERT(world != nullptr);
-    DEBUG_ASSERT(comp_val != nullptr);
-
     yyjson_val* read_obj = yyjson_obj_get(comp_val, "read");
     yyjson_val* write_obj = yyjson_obj_get(comp_val, "write");
-    DEBUG_ASSERT(read_obj != nullptr);
-    DEBUG_ASSERT(write_obj != nullptr);
 
     if (read_obj != nullptr && write_obj != nullptr) {
         Engine::ECS::DoubleBuffered<Position> pos = {};
@@ -128,9 +100,6 @@ static void ParseDoubleBufferedPosition(ecs_world_t* world, ecs_entity_t entity,
 }
 
 static void ParseMoveIntent(ecs_world_t* world, ecs_entity_t entity, ecs_entity_t comp_id, yyjson_val* comp_val) {
-    DEBUG_ASSERT(world != nullptr);
-    DEBUG_ASSERT(comp_val != nullptr);
-
     MoveIntent intent = {};
     intent.dir.x() = static_cast<float>(yyjson_get_real(yyjson_obj_get(comp_val, "dx")));
     intent.dir.y() = static_cast<float>(yyjson_get_real(yyjson_obj_get(comp_val, "dy")));
@@ -139,41 +108,26 @@ static void ParseMoveIntent(ecs_world_t* world, ecs_entity_t entity, ecs_entity_
 }
 
 static void ParseState(ecs_world_t* world, yyjson_val* state_obj) {
-    DEBUG_ASSERT(world != nullptr);
-    DEBUG_ASSERT(state_obj != nullptr);
-
-    // Look up component IDs that were pre-registered by the application.
-    // Either or both may be absent — the loop body skips unknowns anyway,
-    // so we only need to bail if neither type is registered at all.
     const ecs_entity_t id_DoubleBufferedPosition = ecs_lookup(world, "DoubleBufferedPosition");
     const ecs_entity_t id_MoveIntent = ecs_lookup(world, "MoveIntent");
-    if (id_DoubleBufferedPosition == 0 && id_MoveIntent == 0) {
-        return;
-    }
+    if (id_DoubleBufferedPosition == 0 && id_MoveIntent == 0) return;
 
     size_t ent_idx, ent_max;
     yyjson_val *ent_key, *ent_val;
     yyjson_obj_foreach(state_obj, ent_idx, ent_max, ent_key, ent_val) {
         const char* entity_name = yyjson_get_str(ent_key);
-        DEBUG_ASSERT(entity_name != nullptr);
 
         ecs_entity_desc_t player_desc = {};
         player_desc.name = entity_name;
         const ecs_entity_t entity = ecs_entity_init(world, &player_desc);
-        DEBUG_ASSERT(entity != 0);
 
         yyjson_val* components_obj = yyjson_obj_get(ent_val, "components");
-        DEBUG_ASSERT(components_obj != nullptr);
-        if (components_obj == nullptr) {
-            continue;
-        }
+        if (components_obj == nullptr) continue;
 
         size_t comp_idx, comp_max;
         yyjson_val *comp_key, *comp_val;
         yyjson_obj_foreach(components_obj, comp_idx, comp_max, comp_key, comp_val) {
             const char* comp_name = yyjson_get_str(comp_key);
-            DEBUG_ASSERT(comp_name != nullptr);
-
             const uint64_t hash = GetStringIdHash(comp_name);
             if (hash == HASH_DOUBLE_BUFFERED_POSITION) {
                 ParseDoubleBufferedPosition(world, entity, id_DoubleBufferedPosition, comp_val);
@@ -185,31 +139,19 @@ static void ParseState(ecs_world_t* world, yyjson_val* state_obj) {
 }
 
 bool LoadProjectConfig(Context* ctx, const char* filepath) {
-    DEBUG_ASSERT(ctx != nullptr);
-    DEBUG_ASSERT(ctx->ecs_world != nullptr);
-    DEBUG_ASSERT(filepath != nullptr);
-    if (ctx == nullptr || ctx->ecs_world == nullptr || filepath == nullptr) {
-        return false;
-    }
+    if (ctx == nullptr || ctx->ecs_world == nullptr || filepath == nullptr) return false;
 
     ecs_world_t* world = ctx->ecs_world;
 
     const char* base_path = SDL_GetBasePath();
-    DEBUG_ASSERT(base_path != nullptr);
-    if (base_path == nullptr) {
-        return false;
-    }
+    if (base_path == nullptr) return false;
 
     char full_path[512] = {0};
-    const int path_len = std::snprintf(full_path, sizeof(full_path), "%s%s", base_path, filepath);
-    DEBUG_ASSERT(path_len > 0 && path_len < 512);
-    (void)path_len;
+    std::snprintf(full_path, sizeof(full_path), "%s%s", base_path, filepath);
 
     size_t size = 0;
     char* buffer = ReadFileToContiguousBuffer(full_path, &size);
-    if (buffer == nullptr) {
-        return false;
-    }
+    if (buffer == nullptr) return false;
 
     yyjson_alc alc;
     alc.malloc = YyjsonMalloc;
@@ -218,14 +160,12 @@ bool LoadProjectConfig(Context* ctx, const char* filepath) {
     alc.ctx = nullptr;
 
     yyjson_doc* doc = yyjson_read_opts(buffer, size, YYJSON_READ_INSITU, &alc, nullptr);
-    DEBUG_ASSERT(doc != nullptr);
     if (doc == nullptr) {
         mi_free(buffer);
         return false;
     }
 
     yyjson_val* root = yyjson_doc_get_root(doc);
-    DEBUG_ASSERT(root != nullptr);
 
     // 1. Load Plugins
     yyjson_val* plugins_arr = yyjson_obj_get(root, "plugins");
@@ -234,11 +174,8 @@ bool LoadProjectConfig(Context* ctx, const char* filepath) {
         yyjson_val* val;
         yyjson_arr_foreach(plugins_arr, idx, max, val) {
             const char* plugin_path = yyjson_get_str(val);
-            DEBUG_ASSERT(plugin_path != nullptr);
             if (plugin_path != nullptr) {
-                const bool loaded = Engine::Plugin::LoadSinglePlugin(ctx, plugin_path);
-                DEBUG_ASSERT(loaded == true);
-                (void)loaded;
+                Engine::Plugin::LoadSinglePlugin(ctx, plugin_path);
             }
         }
     }

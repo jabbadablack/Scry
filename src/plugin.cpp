@@ -6,9 +6,8 @@
 #include <SDL3/SDL.h>
 #include <mimalloc.h>
 #include <libassert/assert.hpp>
-#define QUILL_ROOT_LOGGER_ONLY
-#include <quill/Quill.h>
 #include <cstring>
+#include <cstdio>
 
 namespace Engine {
 namespace Plugin {
@@ -16,12 +15,12 @@ namespace Plugin {
 static SDL_SharedObject* g_plugin_handles[16] = {nullptr};
 static uint32_t g_plugin_count = 0;
 
-static void EngineLog(const char* msg) {
-    DEBUG_ASSERT(msg != nullptr);
-    if (msg == nullptr) {
-        return;
-    }
-    LOG_INFO("[Engine] {}", msg);
+void SetQuillActive(bool active) {
+    (void)active;
+}
+
+static void EngineLogInternal(const char* msg) {
+    EngineLog(msg);
 }
 
 static void* EngineAlloc(size_t size) {
@@ -113,7 +112,7 @@ bool LoadPlugins(Context* ctx) {
 
     static PluginAPI api;
     api.ecs_world  = ctx->ecs_world;
-    api.Log        = EngineLog;
+    api.Log        = EngineLogInternal;
     api.Alloc      = EngineAlloc;
     api.Free       = EngineFree;
     api.SubmitTask = Engine::Jobs::SubmitTask;
@@ -148,13 +147,12 @@ bool LoadSinglePlugin(Context* ctx, const char* filepath) {
 
     static PluginAPI api;
     api.ecs_world  = ctx->ecs_world;
-    api.Log        = EngineLog;
+    api.Log        = EngineLogInternal;
     api.Alloc      = EngineAlloc;
     api.Free       = EngineFree;
     api.SubmitTask = Engine::Jobs::SubmitTask;
 
     const char* base_path = SDL_GetBasePath();
-    DEBUG_ASSERT(base_path != nullptr);
     if (base_path == nullptr) {
         return false;
     }

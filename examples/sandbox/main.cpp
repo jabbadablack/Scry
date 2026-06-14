@@ -26,6 +26,10 @@
 #include <flecs.h>
 #include <cstdio>                // snprintf
 
+// Quill logging (application layer)
+#define QUILL_ROOT_LOGGER_ONLY
+#include <quill/Quill.h>
+
 // ── Component types ───────────────────────────────────────────────────────────
 
 struct Health       { float value; };
@@ -36,14 +40,18 @@ struct Target {};
 
 static constexpr float k_damage_amount = 10.0f;
 
+// ── Logging callback ──────────────────────────────────────────────────────────
+
+static void AppLog(const char* msg) {
+    LOG_INFO("{}", msg);
+}
+
 // ── Lifecycle callbacks ───────────────────────────────────────────────────────
 
 static void OnInit(Context* ctx) {
     DEBUG_ASSERT(ctx != nullptr);
 
-    const bool proj_ok = Engine::JSON::LoadProjectConfig(ctx, "scry_project.json");
-    DEBUG_ASSERT(proj_ok);
-    (void)proj_ok;
+    Engine::JSON::LoadProjectConfig(ctx, "scry_project.json");
 
     ecs_world_t* world = GetWorld(ctx);
 
@@ -99,12 +107,11 @@ static void OnInit(Context* ctx) {
         s.callback = [](ecs_iter_t* it) {
             const Engine::ECS::DoubleBuffered<Health>* hp = ecs_field(it, Engine::ECS::DoubleBuffered<Health>, 0);
             const ecs_entity_t id_dmg = ecs_lookup(it->world, "DamageIntent");
-            const ecs_entity_t id_trg = ecs_lookup(it->world, "Target");
             const ecs_entity_t id_isi = ecs_lookup(it->world, "IsIntent");
+            const ecs_entity_t id_trg = ecs_lookup(it->world, "Target");
 
             for (int i = 0; i < it->count; ++i) {
                 if (hp[i].read.value > 0.0f) {
-                    // Create a separate intent entity
                     ecs_entity_t intent = ecs_new(it->world);
                     ecs_add_id(it->world, intent, id_isi);
                     DamageIntent dmg = { k_damage_amount };
@@ -114,9 +121,7 @@ static void OnInit(Context* ctx) {
             }
         };
 
-        const ecs_entity_t sys = ecs_system_init(world, &s);
-        DEBUG_ASSERT(sys != 0);
-        (void)sys;
+        ecs_system_init(world, &s);
     }
 
     // ── DamageSystem — State phase ────────────────────────────────────────────
@@ -128,22 +133,18 @@ static void OnInit(Context* ctx) {
 
         ecs_system_desc_t s    = {};
         s.entity               = sys_ent;
-        // Query matches entities with DamageIntent and Target relationship to Health
         s.query.terms[0].id    = id_Damage;
         s.query.terms[1].id    = ecs_pair(id_Target, id_Health);
-        s.query.terms[1].src.id = EcsCascade; // Join with target entity
+        s.query.terms[1].src.id = EcsCascade;
         s.callback = [](ecs_iter_t* it) {
             const DamageIntent* dmg = ecs_field(it, DamageIntent, 0);
             Engine::ECS::DoubleBuffered<Health>* hp = ecs_field(it, Engine::ECS::DoubleBuffered<Health>, 1);
             for (int i = 0; i < it->count; ++i) {
-                // Mutate directly via raw pointer math.
                 hp[i].write.value -= dmg[i].amount;
             }
         };
 
-        const ecs_entity_t sys = ecs_system_init(world, &s);
-        DEBUG_ASSERT(sys != 0);
-        (void)sys;
+        ecs_system_init(world, &s);
     }
 
     // ── HealthReactorSystem — React phase ─────────────────────────────────────
@@ -170,9 +171,7 @@ static void OnInit(Context* ctx) {
             }
         };
 
-        const ecs_entity_t sys = ecs_system_init(world, &s);
-        DEBUG_ASSERT(sys != 0);
-        (void)sys;
+        ecs_system_init(world, &s);
     }
 
     // ── Spawn Player with Health = 100 ────────────────────────────────────────
@@ -199,15 +198,30 @@ static void OnShutdown(Context* ctx) {
 int main(int argc, char* argv[]) {
     (void)argc; (void)argv;
 
+    // 1. Initialize Quill in the application layer
+    std::shared_ptr<quill::Handler> log_handler = quill::stdout_handler();
+    log_handler->set_pattern("%(ascii_time) [%(thread)] %(fileline:<28) LOG_%(level_name) %(message)");
+    quill::Config log_cfg;
+    log_cfg.default_handlers.push_back(log_handler);
+    quill::configure(log_cfg);
+    quill::start();
+
     AppConfig config = {};
     config.title         = "Engine ISR Demo";
     config.window_width  = 800;
     config.window_height = 600;
     config.OnInit        = OnInit;
     config.OnShutdown    = OnShutdown;
+    config.OnLog         = AppLog;
     config.global_memory_pool_size = 1024 * 1024; // 1 MB pool for NASA Rule 3
 
     const EngineError err = EngineRun(&config);
-    DEBUG_ASSERT(err == SUCCESS);
-    return (err == SUCCESS) ? 0 : 1;
+    if (err != SUCCESS) {
+        fprintf(stderr, "[Main] Engine failed to start with error code: %d\n", (int)err);
+        return 1;
+    }
+
+    printf("[Main] Process exiting cleanly.\n");
+    fflush(stdout);
+    return 0;
 }

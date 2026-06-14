@@ -5,6 +5,9 @@
 namespace Engine {
 namespace Plugin {
 
+// Internal helper to signal if Quill is ready for logging.
+ENGINE_API void SetQuillActive(bool active);
+
 // Scans the "plugins/" directory, loading and initializing all plugins.
 ENGINE_API bool LoadPlugins(Context* ctx);
 

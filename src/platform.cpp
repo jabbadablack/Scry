@@ -39,8 +39,10 @@ static void ProcessInputEvent(const SDL_Event& event, Engine::Input::InputState&
             }
         }
     } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
-        write_state.mouse_x = static_cast<int16_t>(event.motion.x);
-        write_state.mouse_y = static_cast<int16_t>(event.motion.y);
+        write_state.mouse_x  = static_cast<int16_t>(event.motion.x);
+        write_state.mouse_y  = static_cast<int16_t>(event.motion.y);
+        write_state.mouse_dx = event.motion.xrel;
+        write_state.mouse_dy = event.motion.yrel;
     } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
         const bool is_down = (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN);
         uint32_t scancode = 0;
@@ -49,6 +51,10 @@ static void ProcessInputEvent(const SDL_Event& event, Engine::Input::InputState&
             scancode = 510;
         } else if (event.button.button == SDL_BUTTON_RIGHT) {
             scancode = 511;
+            SDL_Window* window = SDL_GetWindowFromID(event.button.windowID);
+            if (window) {
+                SDL_SetWindowRelativeMouseMode(window, is_down);
+            }
         }
 
         if (scancode != 0) {

@@ -11,6 +11,18 @@
 #define SDL_MAIN_HANDLED
 #include <SDL3/SDL.h>
 
+#ifdef _WIN32
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  include <windows.h>
+#else
+#  include <sys/mman.h>
+#  include <sys/stat.h>
+#  include <fcntl.h>
+#  include <unistd.h>
+#endif
+
 /* ── Platform-specific Diligent backend ──────────────────────────────────────
  * MSVC on Windows → D3D12.  GCC/MinGW on Windows or Linux → Vulkan.
  * Controlled by compile-time definitions set in CMakeLists.txt.
@@ -23,13 +35,6 @@
 #  include <Graphics/GraphicsEngineVulkan/interface/EngineFactoryVk.h>
 #else
 #  error "Define SCRY_BACKEND_DX12 or SCRY_BACKEND_VULKAN via CMake."
-#endif
-
-#ifdef _WIN32
-#  ifndef WIN32_LEAN_AND_MEAN
-#    define WIN32_LEAN_AND_MEAN
-#  endif
-#  include <windows.h>
 #endif
 
 using namespace Diligent;
@@ -163,9 +168,6 @@ void Shutdown() {
 }
 
 // ── BeginFrame ────────────────────────────────────────────────────────────────
-// Called once per frame from platform.cpp before ecs_progress.
-// Acquires the back buffer and clears colour + depth so the swap chain image
-// is always in a valid state before Present(), even when no mesh entities exist.
 
 void BeginFrame() {
     if (!g_swap_chain || !g_ctx) return;
@@ -188,6 +190,58 @@ void Present() {
     }
 }
 
+// ── OS Mapping Helpers ────────────────────────────────────────────────────────
+
+struct MappedFile {
+    void*  data;
+    size_t size;
+#ifdef _WIN32
+    HANDLE hFile;
+    HANDLE hMap;
+#else
+    int fd;
+#endif
+};
+
+static bool MapFileReadOnly(const char* path, MappedFile& out) {
+#ifdef _WIN32
+    out.hFile = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (out.hFile == INVALID_HANDLE_VALUE) return false;
+
+    LARGE_INTEGER li;
+    GetFileSizeEx(out.hFile, &li);
+    out.size = static_cast<size_t>(li.QuadPart);
+
+    out.hMap = CreateFileMappingA(out.hFile, NULL, PAGE_READONLY, 0, 0, NULL);
+    if (out.hMap == NULL) { CloseHandle(out.hFile); return false; }
+
+    out.data = MapViewOfFile(out.hMap, FILE_MAP_READ, 0, 0, 0);
+    if (out.data == NULL) { CloseHandle(out.hMap); CloseHandle(out.hFile); return false; }
+#else
+    out.fd = open(path, O_RDONLY);
+    if (out.fd < 0) return false;
+
+    struct stat st;
+    fstat(out.fd, &st);
+    out.size = static_cast<size_t>(st.st_size);
+
+    out.data = mmap(NULL, out.size, PROT_READ, MAP_PRIVATE, out.fd, 0);
+    if (out.data == MAP_FAILED) { close(out.fd); return false; }
+#endif
+    return true;
+}
+
+static void UnmapFile(MappedFile& mf) {
+#ifdef _WIN32
+    UnmapViewOfFile(mf.data);
+    CloseHandle(mf.hMap);
+    CloseHandle(mf.hFile);
+#else
+    munmap(mf.data, mf.size);
+    close(mf.fd);
+#endif
+}
+
 // ── LoadMesh ──────────────────────────────────────────────────────────────────
 
 uint32_t LoadMesh(const char* filepath) {
@@ -200,43 +254,19 @@ uint32_t LoadMesh(const char* filepath) {
         return INVALID_MESH;
     }
 
-    // ── Single fread into a temporary arena ──────────────────────────────────
-    FILE* f = std::fopen(filepath, "rb");
-    if (!f) {
+    MappedFile mf;
+    if (!MapFileReadOnly(filepath, mf)) {
         char err_buf[256];
         std::snprintf(err_buf, sizeof(err_buf), "[Graphics] LoadMesh: file not found: %s", filepath);
         EngineLog(err_buf);
         return INVALID_MESH;
     }
 
-    std::fseek(f, 0, SEEK_END);
-    const size_t file_size = static_cast<size_t>(std::ftell(f));
-    std::rewind(f);
-
-    void* blob = mi_malloc(file_size);
-    DEBUG_ASSERT(blob != nullptr);
-    if (!blob) { std::fclose(f); return INVALID_MESH; }
-
-    const size_t read = std::fread(blob, 1, file_size, f);
-    std::fclose(f);
-    DEBUG_ASSERT(read == file_size);
-
-    if (read != file_size) {
-        mi_free(blob);
-        EngineLog("[Graphics] LoadMesh: read error");
-        return INVALID_MESH;
-    }
-
     // ── Validate header ───────────────────────────────────────────────────────
-    const auto* hdr = static_cast<const ScryMeshHeader*>(blob);
-    DEBUG_ASSERT(hdr->magic   == SCRY_MESH_MAGIC);
-    DEBUG_ASSERT(hdr->version == SCRY_MESH_VERSION);
-    DEBUG_ASSERT(hdr->vertex_count > 0);
-    DEBUG_ASSERT(hdr->index_count  > 0);
-
-    if (hdr->magic != SCRY_MESH_MAGIC || hdr->version != SCRY_MESH_VERSION) {
+    const auto* hdr = static_cast<const ScryMeshHeader*>(mf.data);
+    if (mf.size < sizeof(ScryMeshHeader) || hdr->magic != SCRY_MESH_MAGIC || hdr->version != SCRY_MESH_VERSION) {
         EngineLog("[Graphics] LoadMesh: invalid .scrymesh header");
-        mi_free(blob);
+        UnmapFile(mf);
         return INVALID_MESH;
     }
 
@@ -283,12 +313,12 @@ uint32_t LoadMesh(const char* filepath) {
 
 #ifndef NDEBUG
     char buf[128];
-    std::snprintf(buf, sizeof(buf), "[Graphics] Mesh loaded: %s (v=%u i=%u handle=%u)",
+    std::snprintf(buf, sizeof(buf), "[Graphics] Mesh loaded (mapped): %s (v=%u i=%u handle=%u)",
         filepath, hdr->vertex_count, hdr->index_count, slot);
     EngineLog(buf);
 #endif
 
-    mi_free(blob);
+    UnmapFile(mf);
 
     return slot;
 }

@@ -1,12 +1,15 @@
 /* scry_cooker — offline asset pipeline
  * Usage: scry_cooker <input_dir> <output_dir>
  *
- * Processes every .gltf / .glb / .obj in input_dir into a .scrymesh binary,
+ * Processes every .gltf / .glb / .obj / .fbx in input_dir into a .scrymesh binary,
  * and every .png into a .scrytex binary.  Writes into output_dir (created if
- * it does not exist).  Links ONLY against assimp + stb — no Scry runtime.
+ * it does not exist).  Links ONLY against assimp + stb + meshoptimizer — no Scry runtime.
  */
 
 #include <engine/CookedAsset.h>
+
+/* ── MeshOptimizer ───────────────────────────────────────────────────────── */
+#include <meshoptimizer.h>
 
 /* ── Assimp ──────────────────────────────────────────────────────────────── */
 #include <assimp/Importer.hpp>
@@ -94,6 +97,17 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
         std::fprintf(stderr, "[cooker] WARN: %s produced no geometry — skipped\n",
             input.string().c_str());
         return false;
+    }
+
+    /* ── Optimization ── */
+    {
+        // 1. Reorder indices for post-transform cache locality
+        meshopt_optimizeVertexCache(idxs.data(), idxs.data(), idxs.size(), verts.size());
+
+        // 2. Reorder vertices for vertex fetch locality
+        std::vector<ScryVertex> optimized_verts(verts.size());
+        meshopt_optimizeVertexFetch(optimized_verts.data(), idxs.data(), idxs.size(), verts.data(), verts.size(), sizeof(ScryVertex));
+        verts = std::move(optimized_verts);
     }
 
     /* Write .scrymesh */

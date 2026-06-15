@@ -1,6 +1,7 @@
 #include <engine/ecs.hpp>
 #include <engine/pipeline.hpp>
 #include <engine/transform.hpp>
+#include <engine/camera.hpp>
 #include <engine/job_system.hpp>
 #include <engine/memory.hpp>
 #include <mimalloc.h>
@@ -200,6 +201,7 @@ ecs_world_t* CreateWorld() {
 #endif
 
     Transform::Init(world);
+    Camera::Init(world);
 
     return world;
 }

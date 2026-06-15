@@ -1,5 +1,6 @@
 #include <engine/renderer.hpp>
 #include <engine/transform.hpp>
+#include <engine/camera.hpp>
 #include <engine/pipeline.hpp>
 #include <engine/math.hpp>
 #include "graphics_internal.hpp"
@@ -325,8 +326,11 @@ void Init(ecs_world_t* world) {
 
         ecs_system_desc_t s = {};
         s.entity = sys_ent;
+        s.query.terms[0].id = Engine::Camera::id_Camera;
+        s.query.terms[0].inout = EcsIn;
         s.callback = [](ecs_iter_t* it) {
             (void)it;
+            const Engine::Camera::Camera* cam = ecs_field(it, Engine::Camera::Camera, 0);
             IDeviceContext* ctx = Graphics::GetContext();
 
             ctx->UnmapBuffer(g_StateBuffer, MAP_WRITE);
@@ -334,12 +338,12 @@ void Init(ecs_world_t* world) {
             g_MappedStateBuffer  = nullptr;
             g_MappedIntentBuffer = nullptr;
 
-            // Update ViewProj (Identity for now)
-            {
+            // Update ViewProj from Camera
+            if (cam) {
                 void* pVP = nullptr;
                 ctx->MapBuffer(g_ViewProjCB, MAP_WRITE, MAP_FLAG_DISCARD, pVP);
                 if (pVP) {
-                    *static_cast<Math::ScryMat4*>(pVP) = Math::ScryMat4::Identity();
+                    *static_cast<Math::ScryMat4*>(pVP) = cam[0].view_proj;
                     ctx->UnmapBuffer(g_ViewProjCB, MAP_WRITE);
                 }
             }

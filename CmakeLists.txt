@@ -150,6 +150,11 @@ FetchContent_Declare(stb
     GIT_TAG        master
 )
 
+FetchContent_Declare(meshoptimizer
+    GIT_REPOSITORY https://github.com/zeux/meshoptimizer.git
+    GIT_TAG        v0.21
+)
+
 # SOURCE_DIR is set so the parent dir (_deps) resolves #include <DiligentCore/...>
 FetchContent_Declare(DiligentCore
     GIT_REPOSITORY https://github.com/DiligentGraphics/DiligentCore.git
@@ -162,7 +167,7 @@ FetchContent_Declare(DiligentCore
 # duplicate add_library error in CMake < 3.24 (no double-add-subdirectory guard).
 # By letting DiligentCore "own" mimalloc we avoid the conflict; the if(NOT TARGET)
 # guard below makes sure we don't create a second mimalloc-static on our side.
-FetchContent_MakeAvailable(assimp stb DiligentCore)
+FetchContent_MakeAvailable(assimp stb DiligentCore meshoptimizer)
 
 if(NOT TARGET mimalloc-static)
     FetchContent_MakeAvailable(mimalloc)
@@ -285,9 +290,10 @@ target_include_directories(scry_cooker PRIVATE
     "${stb_SOURCE_DIR}"                     # for stb_image.h
     "${assimp_SOURCE_DIR}/include"
     "${assimp_BINARY_DIR}/include"          # for generated assimp/config.h
+    "${meshoptimizer_SOURCE_DIR}/src"
 )
 
-target_link_libraries(scry_cooker PRIVATE assimp::assimp)
+target_link_libraries(scry_cooker PRIVATE assimp::assimp meshoptimizer)
 
 # ─── cook_assets custom target ───────────────────────────────────────────────
 # Runs scry_cooker over assets/raw → bin/assets/cooked before scry is linked.

@@ -6,6 +6,7 @@
 #include <engine/graphics.hpp>
 #include <engine/renderer.hpp>
 #include <engine/transform.hpp>
+#include <engine/camera.hpp>
 #include <libassert/assert.hpp>
 #include <flecs.h>
 #include <cstdio>
@@ -83,6 +84,19 @@ static void OnInit(Context* ctx) {
 
     Engine::Renderer::Intent intent = { Engine::Renderer::INTENT_VISIBLE };
     ecs_set_id(world, player, Engine::Renderer::id_EntityIntent, sizeof(intent), &intent);
+
+    // ── Create Camera ────────────────────────────────────────────────────────
+    {
+        ecs_entity_desc_t ed = {};
+        ed.name = "MainCamera";
+        ecs_entity_t cam_ent = ecs_entity_init(world, &ed);
+        
+        Engine::Camera::Camera cam = {};
+        cam.position  = {0, 2, 5};
+        cam.pitch     = -0.3f;
+        cam.yaw       = 0.0f;
+        ecs_set_id(world, cam_ent, Engine::Camera::id_Camera, sizeof(cam), &cam);
+    }
 
     // 3. Rotation system
     {

@@ -38,9 +38,10 @@ enum class Key : uint32_t {
 
 struct ENGINE_API InputState {
     uint8_t keys[64] = {};  // 64 bytes - 512 bits; uint8_t enables SIMD block-reads without endianness concerns
-    int16_t mouse_x = 0;   // 2 bytes
-    int16_t mouse_y = 0;   // 2 bytes
-    // Total size: 68 bytes (alignment 2, no tail padding).
+    int16_t mouse_x  = 0;
+    int16_t mouse_y  = 0;
+    float   mouse_dx = 0.0f;
+    float   mouse_dy = 0.0f;
 };
 
 struct ENGINE_API InputBuffer {

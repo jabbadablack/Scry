@@ -110,19 +110,19 @@ static void UnmapFile(MappedFile& mf) {
 bool Init(void* glfw_window_handle) {
     EngineLog("[Graphics] Initializing BGFX...");
     DEBUG_ASSERT(glfw_window_handle != nullptr);
-    
+
     GLFWwindow* window = static_cast<GLFWwindow*>(glfw_window_handle);
     DEBUG_ASSERT(window != nullptr);
 
     bgfx::Init init;
-    
+
 #if defined(_WIN32) && !defined(_MSC_VER)
     init.type = bgfx::RendererType::Vulkan;
     EngineLog("[Graphics] Forcing Vulkan renderer backend.");
 #else
     init.type = bgfx::RendererType::Count; // Auto
 #endif
-    
+
     bgfx::PlatformData pd = {};
 #if defined(_WIN32)
     pd.nwh = glfwGetWin32Window(window);
@@ -162,7 +162,7 @@ bool Init(void* glfw_window_handle) {
 
     {
         char log_buf[128];
-        std::snprintf(log_buf, sizeof(log_buf), "[Graphics] BGFX initialized. Selected Renderer: %s (%dx%d)", 
+        std::snprintf(log_buf, sizeof(log_buf), "[Graphics] BGFX initialized. Selected Renderer: %s (%dx%d)",
             bgfx::getRendererName(bgfx::getRendererType()), width, height);
         EngineLog(log_buf);
     }
@@ -220,14 +220,13 @@ uint32_t LoadMesh(const char* filepath) {
 
     const uint32_t slot = g_mesh_count++;
 
-    // Zero-copy ref to memory, but we copy into BGFX to allow unmapping
     const bgfx::Memory* vmem = bgfx::copy(vertices, hdr->vertex_count * sizeof(ScryVertex));
-    const bgfx::Memory* imem = bgfx::copy(indices, hdr->index_count * sizeof(uint32_t));
+    const bgfx::Memory* imem = bgfx::copy(indices,  hdr->index_count  * sizeof(uint32_t));
     DEBUG_ASSERT(vmem != nullptr);
     DEBUG_ASSERT(imem != nullptr);
 
-    g_meshes[slot].vbh = bgfx::createVertexBuffer(vmem, g_vertex_layout);
-    // BGFX_BUFFER_INDEX32 is required — cooker writes uint32_t indices
+    // BGFX_BUFFER_COMPUTE_READ: exposes this buffer as an SSBO for vertex pulling
+    g_meshes[slot].vbh = bgfx::createVertexBuffer(vmem, g_vertex_layout, BGFX_BUFFER_COMPUTE_READ);
     g_meshes[slot].ibh = bgfx::createIndexBuffer(imem, BGFX_BUFFER_INDEX32);
     DEBUG_ASSERT(bgfx::isValid(g_meshes[slot].vbh));
     DEBUG_ASSERT(bgfx::isValid(g_meshes[slot].ibh));
@@ -270,6 +269,11 @@ bgfx::VertexBufferHandle GetVertexBuffer(uint32_t handle) {
 bgfx::IndexBufferHandle GetIndexBuffer(uint32_t handle) {
     if (handle < MAX_MESHES && g_meshes[handle].in_use) return g_meshes[handle].ibh;
     return BGFX_INVALID_HANDLE;
+}
+
+uint32_t GetIndexCount(uint32_t handle) {
+    if (handle < MAX_MESHES && g_meshes[handle].in_use) return g_meshes[handle].index_count;
+    return 0;
 }
 
 } // namespace Graphics

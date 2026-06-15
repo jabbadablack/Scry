@@ -25,10 +25,6 @@ set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(CMAKE_SKIP_INSTALL_RULES ON CACHE BOOL "" FORCE)
 set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 
-# enkiTS
-set(ENKITS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(ENKITS_INSTALL OFF CACHE BOOL "" FORCE)
-
 # mimalloc
 set(MI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(MI_BUILD_OBJECT OFF CACHE BOOL "" FORCE)
@@ -41,10 +37,11 @@ set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 
-# BGFX
+# BGFX — single-threaded to eliminate ring-buffer RAM (30-50 MB savings)
 set(BGFX_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(BGFX_BUILD_TOOLS ON CACHE BOOL "" FORCE)
-set(BGFX_CONFIG_MAX_VIEWS 16 CACHE BOOL "" FORCE)
+set(BGFX_CONFIG_MAX_VIEWS 4 CACHE STRING "" FORCE)
+set(BGFX_CONFIG_MULTITHREADED 0 CACHE STRING "" FORCE)
 
 # Flecs
 set(FLECS_STATIC OFF CACHE BOOL "" FORCE)
@@ -127,11 +124,6 @@ FetchContent_Declare(string_id
     GIT_TAG        master
 )
 
-FetchContent_Declare(enkiTS
-    GIT_REPOSITORY https://github.com/dougbinks/enkiTS.git
-    GIT_TAG        master
-)
-
 FetchContent_Declare(eigen
     GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
     GIT_TAG        master
@@ -152,7 +144,13 @@ FetchContent_Declare(meshoptimizer
     GIT_TAG        v0.21
 )
 
-FetchContent_MakeAvailable(mimalloc glfw bgfx_cmake assimp stb meshoptimizer flecs yyjson Catch2 cpptrace libassert string_id enkiTS eigen)
+FetchContent_MakeAvailable(mimalloc glfw bgfx_cmake assimp stb meshoptimizer flecs yyjson Catch2 cpptrace libassert string_id eigen)
+
+# Force bgfx single-threaded mode as a compile definition (belt-and-suspenders
+# alongside the BGFX_CONFIG_MULTITHREADED cache variable above)
+if(TARGET bgfx)
+    target_compile_definitions(bgfx PRIVATE BGFX_CONFIG_MULTITHREADED=0)
+endif()
 
 if(MSVC)
     set(SCRY_WARNING_FLAGS /W4 /WX)
@@ -202,7 +200,6 @@ target_link_libraries(scry
         yyjson
         libassert::assert
         foonathan_string_id
-        enkiTS
 )
 
 # ─── Tests ───────────────────────────────────────────────────────────────────
@@ -212,7 +209,7 @@ if(SCRY_BUILD_TESTS)
 
     # Exclude tests from ALL builds by default
     set_target_properties(scry_tests PROPERTIES EXCLUDE_FROM_ALL TRUE)
-    
+
     # Re-enable for Debug in Multi-Config generators
     if(CMAKE_CONFIGURATION_TYPES)
         foreach(cfg ${CMAKE_CONFIGURATION_TYPES})
@@ -230,7 +227,7 @@ if(SCRY_BUILD_TESTS)
         COMMENT "Running Scry test suite"
         VERBATIM
     )
-    
+
     set_target_properties(run_tests PROPERTIES EXCLUDE_FROM_ALL TRUE)
     if(CMAKE_CONFIGURATION_TYPES)
         foreach(cfg ${CMAKE_CONFIGURATION_TYPES})

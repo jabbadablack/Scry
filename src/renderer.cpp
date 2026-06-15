@@ -21,6 +21,7 @@ namespace Engine {
 namespace Graphics {
     bgfx::VertexBufferHandle GetVertexBuffer(uint32_t handle);
     bgfx::IndexBufferHandle  GetIndexBuffer(uint32_t handle);
+    uint32_t                 GetIndexCount(uint32_t handle);
 }
 }
 
@@ -34,7 +35,7 @@ ecs_entity_t id_Material     = 0;
 static constexpr uint32_t MAX_ENTITIES = 4096u;
 static constexpr uint32_t MAX_MESHES   = Engine::Graphics::MAX_MESHES;
 
-// Instance record: mat4 (64 B) + RGBA color (16 B) = 80 B = 5 × vec4 (i_data0-4)
+// Instance record: mat4 (64 B) + RGBA color (16 B) = 80 B = 5 × vec4
 struct alignas(16) InstanceRecord {
     float mat[16];
     float color[4];
@@ -43,27 +44,36 @@ static_assert(sizeof(InstanceRecord) == 80u, "stride must be 80");
 
 // ── Programs ─────────────────────────────────────────────────────────────────
 static bgfx::ProgramHandle g_default_program = BGFX_INVALID_HANDLE;
-// cs_indirect compiled but wired up in a future pass
-static bgfx::ProgramHandle g_compute_program = BGFX_INVALID_HANDLE;
+static bgfx::ProgramHandle g_compute_program  = BGFX_INVALID_HANDLE;
+
+// ── SSBO handles (single-threaded BGFX, zero-allocation per frame) ─────────
+static bgfx::DynamicVertexBufferHandle g_matrixSSBO  = BGFX_INVALID_HANDLE;
+static bgfx::DynamicVertexBufferHandle g_intentSSBO  = BGFX_INVALID_HANDLE;
+static bgfx::IndirectBufferHandle      g_indirectCmd = BGFX_INVALID_HANDLE;
+static bgfx::VertexLayout              g_vec4_layout;
+static bgfx::VertexLayout              g_uint_layout;
+
+// ── Uniforms ─────────────────────────────────────────────────────────────────
+static bgfx::UniformHandle g_u_drawParams  = BGFX_INVALID_HANDLE;
+static bgfx::UniformHandle g_u_meshParams  = BGFX_INVALID_HANDLE;
 
 // ── Queries ──────────────────────────────────────────────────────────────────
 static ecs_query_t* g_render_query = nullptr;
 static ecs_query_t* g_camera_query = nullptr;
 
 // ── Per-frame scratch (static = zero heap allocation per frame) ────────────
-// Flat ECS arrays (entity order)
 static Math::ScryMat4 s_entity_mat   [MAX_ENTITIES];
 static float          s_entity_color [MAX_ENTITIES][4];
 static uint32_t       s_entity_meshId[MAX_ENTITIES];
 static uint32_t       s_entity_intent[MAX_ENTITIES];
 static uint32_t       s_entity_count;
 
-// Counting-sort workspace (per mesh)
-static uint32_t       s_mesh_count [MAX_MESHES];
-static uint32_t       s_mesh_base  [MAX_MESHES];
-static uint32_t       s_mesh_cursor[MAX_MESHES];
+// Counting-sort workspace
+static uint32_t s_mesh_count [MAX_MESHES];
+static uint32_t s_mesh_base  [MAX_MESHES];
+static uint32_t s_mesh_cursor[MAX_MESHES];
 
-// Sorted instance buffer (written by counting sort, then memcpy'd per mesh)
+// Sorted instance records (by mesh id), uploaded as flat SSBO each frame
 static InstanceRecord s_sorted[MAX_ENTITIES];
 
 static bool g_logged_first_draw = false;
@@ -107,7 +117,7 @@ void Init(ecs_world_t* world) {
     EngineLog("[Renderer] Initializing...");
     DEBUG_ASSERT(world != nullptr);
 
-    // ── Load draw program ────────────────────────────────────────────────────
+    // ── Load draw program ─────────────────────────────────────────────────
     bgfx::ShaderHandle vsh = BGFX_INVALID_HANDLE;
     bgfx::ShaderHandle fsh = BGFX_INVALID_HANDLE;
     DEBUG_ASSERT(DiscoverShader("vs_mesh.bin", vsh));
@@ -115,14 +125,45 @@ void Init(ecs_world_t* world) {
     g_default_program = bgfx::createProgram(vsh, fsh, true);
     DEBUG_ASSERT(bgfx::isValid(g_default_program));
 
-    // ── Load compute program (cs_indirect — wired up in a future pass) ───────
+    // ── Load compute program (cs_indirect) ───────────────────────────────
     bgfx::ShaderHandle csh = BGFX_INVALID_HANDLE;
     if (DiscoverShader("cs_indirect.bin", csh)) {
         g_compute_program = bgfx::createProgram(csh, true);
-        EngineLog("[Renderer] cs_indirect loaded (ready for future GPU-cull pass)");
+        EngineLog("[Renderer] cs_indirect loaded");
     }
 
-    // ── Register Components ───────────────────────────────────────────────────
+    // ── SSBO layouts ─────────────────────────────────────────────────────
+    g_vec4_layout.begin()
+        .add(bgfx::Attrib::TexCoord0, 4, bgfx::AttribType::Float)
+        .end();  // stride = 16 bytes
+
+    g_uint_layout.begin()
+        .add(bgfx::Attrib::TexCoord0, 1, bgfx::AttribType::Float)
+        .end();  // stride = 4 bytes (reinterpreted as uint in shader)
+
+    // Instance SSBO: MAX_ENTITIES × 5 vec4 elements (mat4 + color per instance)
+    g_matrixSSBO = bgfx::createDynamicVertexBuffer(
+        MAX_ENTITIES * 5u, g_vec4_layout,
+        BGFX_BUFFER_COMPUTE_READ | BGFX_BUFFER_ALLOW_RESIZE);
+    DEBUG_ASSERT(bgfx::isValid(g_matrixSSBO));
+
+    // Intent SSBO: MAX_ENTITIES uint32 flags for future GPU culling pass
+    g_intentSSBO = bgfx::createDynamicVertexBuffer(
+        MAX_ENTITIES, g_uint_layout,
+        BGFX_BUFFER_COMPUTE_READ | BGFX_BUFFER_ALLOW_RESIZE);
+    DEBUG_ASSERT(bgfx::isValid(g_intentSSBO));
+
+    // Indirect draw buffer: one 5-uint slot per mesh (GPU culling future pass)
+    g_indirectCmd = bgfx::createIndirectBuffer(MAX_MESHES);
+    DEBUG_ASSERT(bgfx::isValid(g_indirectCmd));
+
+    // Uniforms
+    g_u_drawParams = bgfx::createUniform("u_drawParams",  bgfx::UniformType::Vec4);
+    g_u_meshParams = bgfx::createUniform("u_meshParams",  bgfx::UniformType::Vec4);
+    DEBUG_ASSERT(bgfx::isValid(g_u_drawParams));
+    DEBUG_ASSERT(bgfx::isValid(g_u_meshParams));
+
+    // ── Register Components ───────────────────────────────────────────────
     {
         auto reg = [&](const char* name, size_t sz, size_t align) -> ecs_entity_t {
             ecs_entity_desc_t ed = {}; ed.name = name;
@@ -137,7 +178,7 @@ void Init(ecs_world_t* world) {
         DEBUG_ASSERT(id_MeshInstance && id_EntityIntent && id_Material);
     }
 
-    // ── Queries ──────────────────────────────────────────────────────────────
+    // ── Queries ──────────────────────────────────────────────────────────
     {
         ecs_query_desc_t cq = {};
         cq.terms[0].id = Engine::Camera::id_Camera;
@@ -153,7 +194,7 @@ void Init(ecs_world_t* world) {
         DEBUG_ASSERT(g_render_query != nullptr);
     }
 
-    // ── Render System (Phase_React) ───────────────────────────────────────────
+    // ── Render System (Phase_React) ───────────────────────────────────────
     {
         ecs_entity_desc_t ed = {};
         ed.name = "RenderSystem";
@@ -178,7 +219,7 @@ void Init(ecs_world_t* world) {
                 }
             }
 
-            // ── Phase 1: Collect entities into flat arrays ────────────────
+            // ── Phase 1: Collect entities ─────────────────────────────────
             s_entity_count = 0;
             if (g_render_query) {
                 ecs_iter_t ri = ecs_query_iter(it->world, g_render_query);
@@ -213,8 +254,7 @@ void Init(ecs_world_t* world) {
             for (uint32_t m = 1; m < MAX_MESHES; ++m)
                 s_mesh_base[m] = s_mesh_base[m-1] + s_mesh_count[m-1];
 
-            uint32_t total =
-                s_mesh_base[MAX_MESHES-1] + s_mesh_count[MAX_MESHES-1];
+            uint32_t total = s_mesh_base[MAX_MESHES-1] + s_mesh_count[MAX_MESHES-1];
             if (total == 0) return;
 
             // ── Phase 4: Scatter — build sorted InstanceRecord array ──────
@@ -231,11 +271,16 @@ void Init(ecs_world_t* world) {
                 std::memcpy(rec.color, s_entity_color[i],      16);
             }
 
-            // ── Phase 5: Draw — O(MAX_MESHES), not O(entities) ───────────
+            // ── Phase 5a: Upload sorted instances + intents to SSBOs ──────
+            bgfx::update(g_matrixSSBO, 0,
+                bgfx::makeRef(s_sorted,        total         * sizeof(InstanceRecord)));
+            bgfx::update(g_intentSSBO, 0,
+                bgfx::makeRef(s_entity_intent, s_entity_count * sizeof(uint32_t)));
+
+            // ── Phase 5b: Draw — SSBO vertex pulling, zero alloc ──────────
             constexpr uint64_t kState =
                 BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z |
                 BGFX_STATE_DEPTH_TEST_LESS | BGFX_STATE_CULL_CCW | BGFX_STATE_MSAA;
-            constexpr uint16_t kStride = static_cast<uint16_t>(sizeof(InstanceRecord)); // 80
 
             for (uint32_t meshId = 0; meshId < MAX_MESHES; ++meshId) {
                 uint32_t count = s_mesh_count[meshId];
@@ -245,15 +290,16 @@ void Init(ecs_world_t* world) {
                 bgfx::IndexBufferHandle  ibh = Graphics::GetIndexBuffer(meshId);
                 if (!bgfx::isValid(vbh) || !bgfx::isValid(ibh)) continue;
 
-                if (count > bgfx::getAvailInstanceDataBuffer(count, kStride)) continue;
+                // Instance base offset in g_matrixSSBO for this mesh
+                float dp[4] = { float(s_mesh_base[meshId]), 0.0f, 0.0f, 0.0f };
+                bgfx::setUniform(g_u_drawParams, dp);
 
-                bgfx::InstanceDataBuffer idb;
-                bgfx::allocInstanceDataBuffer(&idb, count, kStride);
-                std::memcpy(idb.data, &s_sorted[s_mesh_base[meshId]], count * kStride);
-
-                bgfx::setVertexBuffer(0, vbh);
+                // Bind vertex data SSBO (VBH created with BGFX_BUFFER_COMPUTE_READ)
+                bgfx::setBuffer(0, vbh,          bgfx::Access::Read);
+                // Bind instance data SSBO (sorted mat4+color, 5 vec4 per instance)
+                bgfx::setBuffer(1, g_matrixSSBO, bgfx::Access::Read);
                 bgfx::setIndexBuffer(ibh);
-                bgfx::setInstanceDataBuffer(&idb);
+                bgfx::setInstanceCount(count);
                 bgfx::setState(kState);
                 bgfx::submit(0, g_default_program);
             }
@@ -261,8 +307,8 @@ void Init(ecs_world_t* world) {
             if (!g_logged_first_draw) {
                 char buf[128];
                 std::snprintf(buf, sizeof(buf),
-                    "[Renderer] First draw: %u visible instances across %u entity slots",
-                    total, s_entity_count);
+                    "[Renderer] First draw: %u visible instances (SSBO path)",
+                    total);
                 EngineLog(buf);
                 g_logged_first_draw = true;
             }
@@ -277,6 +323,11 @@ void Shutdown() {
     EngineLog("[Renderer] Shutting down...");
     if (bgfx::isValid(g_default_program)) bgfx::destroy(g_default_program);
     if (bgfx::isValid(g_compute_program)) bgfx::destroy(g_compute_program);
+    if (bgfx::isValid(g_matrixSSBO))      bgfx::destroy(g_matrixSSBO);
+    if (bgfx::isValid(g_intentSSBO))      bgfx::destroy(g_intentSSBO);
+    if (bgfx::isValid(g_indirectCmd))     bgfx::destroy(g_indirectCmd);
+    if (bgfx::isValid(g_u_drawParams))    bgfx::destroy(g_u_drawParams);
+    if (bgfx::isValid(g_u_meshParams))    bgfx::destroy(g_u_meshParams);
     if (g_camera_query) ecs_query_fini(g_camera_query);
     if (g_render_query) ecs_query_fini(g_render_query);
     EngineLog("[Renderer] Shutdown complete");

@@ -2,7 +2,6 @@
 #include <engine/pipeline.hpp>
 #include <engine/transform.hpp>
 #include <engine/camera.hpp>
-#include <engine/job_system.hpp>
 #include <engine/memory.hpp>
 #include <mimalloc.h>
 #include <cstring>
@@ -35,15 +34,6 @@ static char* FlecsStrdup(const char* str) {
     return copy;
 }
 
-static ecs_os_thread_t TaskNew(ecs_os_thread_callback_t callback, void* param) {
-    return reinterpret_cast<ecs_os_thread_t>(Engine::Jobs::SubmitFlecsTask(
-        reinterpret_cast<Engine::Jobs::FlecsTaskFn>(callback), param));
-}
-
-static void* TaskJoin(ecs_os_thread_t handle) {
-    return Engine::Jobs::WaitFlecsTask(reinterpret_cast<void*>(handle));
-}
-
 void InitOSAPI() {
     ecs_os_set_api_defaults();
     ecs_os_api_t api = ecs_os_api;
@@ -53,9 +43,6 @@ void InitOSAPI() {
     api.calloc_  = FlecsCalloc;
     api.realloc_ = FlecsRealloc;
     api.strdup_  = FlecsStrdup;
-
-    api.task_new_  = TaskNew;
-    api.task_join_ = TaskJoin;
 
     ecs_os_set_api(&api);
 }

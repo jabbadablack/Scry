@@ -2,7 +2,6 @@
 #include <engine/platform.hpp>
 #include <engine/input.hpp>
 #include <engine/ecs.hpp>
-#include <engine/job_system.hpp>
 #include <engine/graphics.hpp>
 #include <engine/renderer.hpp>
 #include <engine/plugin.hpp>
@@ -28,7 +27,7 @@ namespace Platform {
 static void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     (void)window; (void)scancode; (void)mods;
     if (key < 0 || key >= 512) return;
-    
+
     const uint8_t w_idx = Engine::Input::g_input_buffer.write_index;
     auto& write_state = Engine::Input::g_input_buffer.states[w_idx];
 
@@ -78,7 +77,6 @@ static void CursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
     const uint8_t w_idx = Engine::Input::g_input_buffer.write_index;
     auto& write_state = Engine::Input::g_input_buffer.states[w_idx];
 
-    // Note: When cursor is disabled, xpos/ypos are virtual and unbounded
     static double last_x = xpos;
     static double last_y = ypos;
 
@@ -101,7 +99,7 @@ void* InitWindow(const char* title, int32_t width, int32_t height) {
     if (!glfwInit()) {
         return nullptr;
     }
-    
+
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
@@ -120,8 +118,7 @@ void PumpEvents(Context* ctx) {
 
     const uint8_t w_idx = Engine::Input::g_input_buffer.write_index;
     const uint8_t r_idx = Engine::Input::g_input_buffer.read_index;
-    
-    // mouse_dx/dy are cumulative across callbacks, reset only when swapped
+
     Engine::Input::g_input_buffer.states[w_idx] = Engine::Input::g_input_buffer.states[r_idx];
     Engine::Input::g_input_buffer.states[w_idx].mouse_dx = 0.0f;
     Engine::Input::g_input_buffer.states[w_idx].mouse_dy = 0.0f;
@@ -153,7 +150,7 @@ extern "C" {
 
 static void (*g_app_log)(const char*) = nullptr;
 
-enum class Subsystem { None, Mimalloc, EnkiTS, Platform, Graphics, Flecs, Renderer };
+enum class Subsystem { None, Mimalloc, Platform, Graphics, Flecs, Renderer };
 
 ENGINE_API EngineError EngineRun(const AppConfig* config) {
     if (config == nullptr) return ERR_PLATFORM_INIT;
@@ -165,12 +162,12 @@ ENGINE_API EngineError EngineRun(const AppConfig* config) {
     for(int i=0; i<16; ++i) init_checklist[i] = Subsystem::None;
     int init_count = 0;
     EngineError ret_code = SUCCESS;
-    
+
     void* global_memory_pool = nullptr;
     void* window = nullptr;
     struct ecs_world_t* world = nullptr;
     Context ctx = {};
-    
+
     // ── 1. mimalloc ──────────────────────────────────────────────────────────
     mi_option_set(mi_option_show_errors, 0);
     mi_process_init();
@@ -180,15 +177,7 @@ ENGINE_API EngineError EngineRun(const AppConfig* config) {
         global_memory_pool = mi_malloc(config->global_memory_pool_size);
     }
 
-    // ── 2. enkiTS task scheduler ──────────────────────────────────────────────
-    const bool jobs_ok = Engine::Jobs::Init(config->thread_count);
-    if (!jobs_ok) {
-        ret_code = ERR_JOB_SYSTEM_INIT;
-        goto shutdown;
-    }
-    init_checklist[init_count++] = Subsystem::EnkiTS;
-
-    // ── 3. Platform (GLFW) ────────────────────────────────────────────────
+    // ── 2. Platform (GLFW) ────────────────────────────────────────────────
     window = Engine::Platform::InitWindow(config->title, config->window_width, config->window_height);
     if (!window) {
         ret_code = ERR_PLATFORM_INIT;
@@ -196,14 +185,14 @@ ENGINE_API EngineError EngineRun(const AppConfig* config) {
     }
     init_checklist[init_count++] = Subsystem::Platform;
 
-    // ── 4. Graphics (BGFX) ────────────────────────────────────────────────
+    // ── 3. Graphics (BGFX) ────────────────────────────────────────────────
     if (!Engine::Graphics::Init(window)) {
         ret_code = ERR_GRAPHICS_INIT;
         goto shutdown;
     }
     init_checklist[init_count++] = Subsystem::Graphics;
 
-    // ── 5. Flecs ECS world ────────────────────────────────────────────────────
+    // ── 4. Flecs ECS world ────────────────────────────────────────────────────
     world = Engine::ECS::CreateWorld();
     if (!world) {
         ret_code = ERR_ECS_INIT;
@@ -211,14 +200,13 @@ ENGINE_API EngineError EngineRun(const AppConfig* config) {
     }
     init_checklist[init_count++] = Subsystem::Flecs;
 
-    // ── 6. Renderer ───────────────────────────────────────────────────────────
+    // ── 5. Renderer ───────────────────────────────────────────────────────────
     Engine::Renderer::Init(world);
     init_checklist[init_count++] = Subsystem::Renderer;
 
-    // ── 7. Context assembly ───────────────────────────────────────────────────
+    // ── 6. Context assembly ───────────────────────────────────────────────────
     ctx.ecs_world       = world;
     ctx.window_handle   = window;
-    ctx.scheduler       = Engine::Jobs::GetScheduler();
     ctx.user_data       = config->user_data;
     ctx.start_time      = Engine::Platform::GetTime();
     ctx.window_width    = config->window_width;
@@ -226,13 +214,12 @@ ENGINE_API EngineError EngineRun(const AppConfig* config) {
     ctx.initialized     = 1;
     ctx.running         = 1;
 
-    // ── 6. User init ──────────────────────────────────────────────────────────
+    // ── 7. User init ──────────────────────────────────────────────────────────
     config->OnInit(&ctx);
 
     {
         uint64_t last_tick = Engine::Platform::GetTime();
 
-        // ── 7. Main loop ──────────────────────────────────────────────────────────
         while (ctx.running) {
             Engine::Platform::PumpEvents(&ctx);
 
@@ -280,9 +267,6 @@ shutdown:
                 break;
             case Subsystem::Platform:
                 if (window) Engine::Platform::DestroyWindow(window);
-                break;
-            case Subsystem::EnkiTS:
-                Engine::Jobs::Shutdown();
                 break;
             case Subsystem::Mimalloc:
                 if (global_memory_pool) {

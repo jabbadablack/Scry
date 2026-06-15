@@ -15,6 +15,7 @@ ENGINE_API void     Present();
 
 ENGINE_API uint32_t LoadMesh(const char* filepath);
 ENGINE_API void     FreeMesh(uint32_t handle);
+ENGINE_API uint32_t GetIndexCount(uint32_t handle);
 
 } // namespace Graphics
 } // namespace Engine

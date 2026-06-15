@@ -2,7 +2,6 @@
 #include <engine/engine_context.hpp>
 #include <engine/platform.hpp>
 #include <engine/memory.hpp>
-#include <engine/job_system.hpp>
 #include <mimalloc.h>
 #include <libassert/assert.hpp>
 #include <yyjson.h>
@@ -164,7 +163,7 @@ bool LoadSinglePlugin(Context* ctx, const char* name) {
     api.Log        = EngineLogInternal;
     api.Alloc      = EngineAlloc;
     api.Free       = EngineFree;
-    api.SubmitTask = Engine::Jobs::SubmitTask;
+    api.SubmitTask = nullptr;
 
 #ifdef _WIN32
     HMODULE handle = LoadLibraryA(found->library_path.c_str());

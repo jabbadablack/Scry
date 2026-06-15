@@ -3,6 +3,7 @@
 #include <engine/math.hpp>
 #include <cstdint>
 #include <flecs.h>
+#include <bgfx/bgfx.h>
 
 namespace Engine {
 namespace Renderer {
@@ -32,6 +33,8 @@ enum EntityIntent : uint32_t {
 
 ENGINE_API void Init(ecs_world_t* world);
 ENGINE_API void Shutdown();
+
+ENGINE_API extern bgfx::UniformHandle u_drawParams;
 
 } // namespace Renderer
 } // namespace Engine

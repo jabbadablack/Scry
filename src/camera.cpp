@@ -91,9 +91,8 @@ void Init(ecs_world_t* world) {
                     cam[i].position.z() + fwd.z() 
                 };
                 
-                // Explicitly use Right-Handedness for BGFX consistency
-                bx::mtxLookAt(cam[i].view, eye, at, {0,1,0}, bx::Handedness::Right);
-                bx::mtxProj(cam[i].proj, 60.0f, 1280.0f/720.0f, 0.1f, 1000.0f, bgfx::getCaps()->homogeneousDepth, bx::Handedness::Right);
+                bx::mtxLookAt(cam[i].view, eye, at, {0,1,0}, bx::Handedness::Left);
+                bx::mtxProj(cam[i].proj, 60.0f, 1280.0f/720.0f, 0.1f, 1000.0f, bgfx::getCaps()->homogeneousDepth, bx::Handedness::Left);
             }
         };
         ecs_system_init(world, &s);

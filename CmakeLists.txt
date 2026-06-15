@@ -284,14 +284,17 @@ if(MSVC)
     set(BGFX_PLATFORM "windows")
     set(BGFX_VS_PROFILE "vs_5_0")
     set(BGFX_FS_PROFILE "ps_5_0")
+    set(BGFX_CS_PROFILE "cs_5_0")
 elseif(APPLE)
     set(BGFX_PLATFORM "osx")
     set(BGFX_VS_PROFILE "metal")
     set(BGFX_FS_PROFILE "metal")
+    set(BGFX_CS_PROFILE "metal")
 else()
     set(BGFX_PLATFORM "linux")
     set(BGFX_VS_PROFILE "spirv")
     set(BGFX_FS_PROFILE "spirv")
+    set(BGFX_CS_PROFILE "spirv")
 endif()
 
 set(SHADER_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/raw/shaders")
@@ -299,12 +302,14 @@ set(SHADER_BIN_DIR "${CMAKE_BINARY_DIR}/bin/assets/cooked/shaders")
 
 file(MAKE_DIRECTORY ${SHADER_BIN_DIR})
 
-compile_bgfx_shader("${SHADER_SRC_DIR}/vs_mesh.sc" "vertex"   ${BGFX_PLATFORM} ${BGFX_VS_PROFILE} "${SHADER_BIN_DIR}/vs_mesh.bin")
-compile_bgfx_shader("${SHADER_SRC_DIR}/fs_mesh.sc" "fragment" ${BGFX_PLATFORM} ${BGFX_FS_PROFILE} "${SHADER_BIN_DIR}/fs_mesh.bin")
+compile_bgfx_shader("${SHADER_SRC_DIR}/vs_mesh.sc"       "vertex"   ${BGFX_PLATFORM} ${BGFX_VS_PROFILE} "${SHADER_BIN_DIR}/vs_mesh.bin")
+compile_bgfx_shader("${SHADER_SRC_DIR}/fs_mesh.sc"       "fragment" ${BGFX_PLATFORM} ${BGFX_FS_PROFILE} "${SHADER_BIN_DIR}/fs_mesh.bin")
+compile_bgfx_shader("${SHADER_SRC_DIR}/cs_indirect.sc"   "compute"  ${BGFX_PLATFORM} ${BGFX_CS_PROFILE} "${SHADER_BIN_DIR}/cs_indirect.bin")
 
 add_custom_target(cook_shaders DEPENDS
     "${SHADER_BIN_DIR}/vs_mesh.bin"
     "${SHADER_BIN_DIR}/fs_mesh.bin"
+    "${SHADER_BIN_DIR}/cs_indirect.bin"
 )
 
 # ─── cook_assets custom target ───────────────────────────────────────────────

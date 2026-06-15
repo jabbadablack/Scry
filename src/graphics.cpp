@@ -152,10 +152,9 @@ bool Init(void* glfw_window_handle) {
     bgfx::setViewRect(0, 0, 0, (uint16_t)width, (uint16_t)height);
     bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x111111FF, 1.0f, 0);
 
-    // Setup vertex layout matching ScryVertex
     g_vertex_layout.begin()
-        .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
-        .add(bgfx::Attrib::Normal,   3, bgfx::AttribType::Float)
+        .add(bgfx::Attrib::Position,  3, bgfx::AttribType::Float)
+        .add(bgfx::Attrib::Normal,    3, bgfx::AttribType::Float)
         .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
         .end();
 
@@ -228,7 +227,8 @@ uint32_t LoadMesh(const char* filepath) {
     DEBUG_ASSERT(imem != nullptr);
 
     g_meshes[slot].vbh = bgfx::createVertexBuffer(vmem, g_vertex_layout);
-    g_meshes[slot].ibh = bgfx::createIndexBuffer(imem);
+    // BGFX_BUFFER_INDEX32 is required — cooker writes uint32_t indices
+    g_meshes[slot].ibh = bgfx::createIndexBuffer(imem, BGFX_BUFFER_INDEX32);
     DEBUG_ASSERT(bgfx::isValid(g_meshes[slot].vbh));
     DEBUG_ASSERT(bgfx::isValid(g_meshes[slot].ibh));
 

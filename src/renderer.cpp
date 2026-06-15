@@ -3,6 +3,7 @@
 #include <engine/camera.hpp>
 #include <engine/pipeline.hpp>
 #include <engine/math.hpp>
+#include <engine/graphics.hpp>
 
 #include <bgfx/bgfx.h>
 #include <bx/math.h>
@@ -10,9 +11,6 @@
 #include <cstring>
 #include <cstdio>
 #include <filesystem>
-#include <fstream>
-#include <vector>
-#include <map>
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -22,7 +20,7 @@ namespace fs = std::filesystem;
 namespace Engine {
 namespace Graphics {
     bgfx::VertexBufferHandle GetVertexBuffer(uint32_t handle);
-    bgfx::IndexBufferHandle GetIndexBuffer(uint32_t handle);
+    bgfx::IndexBufferHandle  GetIndexBuffer(uint32_t handle);
 }
 }
 
@@ -33,112 +31,113 @@ ecs_entity_t id_MeshInstance = 0;
 ecs_entity_t id_EntityIntent = 0;
 ecs_entity_t id_Material     = 0;
 
+static constexpr uint32_t MAX_ENTITIES = 4096u;
+static constexpr uint32_t MAX_MESHES   = Engine::Graphics::MAX_MESHES;
+
+// Instance record: mat4 (64 B) + RGBA color (16 B) = 80 B = 5 × vec4 (i_data0-4)
+struct alignas(16) InstanceRecord {
+    float mat[16];
+    float color[4];
+};
+static_assert(sizeof(InstanceRecord) == 80u, "stride must be 80");
+
+// ── Programs ─────────────────────────────────────────────────────────────────
 static bgfx::ProgramHandle g_default_program = BGFX_INVALID_HANDLE;
-static bgfx::UniformHandle u_baseColor       = BGFX_INVALID_HANDLE;
-static ecs_query_t*        g_render_query    = nullptr;
-static ecs_query_t*        g_camera_query    = nullptr;
-static bool g_first_frame_submitted = false;
+// cs_indirect compiled but wired up in a future pass
+static bgfx::ProgramHandle g_compute_program = BGFX_INVALID_HANDLE;
 
-static const bgfx::Memory* LoadShaderFile(const char* filepath) {
-    DEBUG_ASSERT(filepath != nullptr);
-    DEBUG_ASSERT(std::strlen(filepath) > 0);
+// ── Queries ──────────────────────────────────────────────────────────────────
+static ecs_query_t* g_render_query = nullptr;
+static ecs_query_t* g_camera_query = nullptr;
 
-    FILE* file = std::fopen(filepath, "rb");
-    if (!file) {
-        std::fprintf(stderr, "[Renderer] ERROR: Could not open shader file %s\n", filepath);
-        return nullptr;
-    }
-    std::fseek(file, 0, SEEK_END);
-    long size = std::ftell(file);
-    DEBUG_ASSERT(size > 0);
-    std::fseek(file, 0, SEEK_SET);
+// ── Per-frame scratch (static = zero heap allocation per frame) ────────────
+// Flat ECS arrays (entity order)
+static Math::ScryMat4 s_entity_mat   [MAX_ENTITIES];
+static float          s_entity_color [MAX_ENTITIES][4];
+static uint32_t       s_entity_meshId[MAX_ENTITIES];
+static uint32_t       s_entity_intent[MAX_ENTITIES];
+static uint32_t       s_entity_count;
 
-    const bgfx::Memory* mem = bgfx::alloc(static_cast<uint32_t>(size));
-    DEBUG_ASSERT(mem != nullptr);
-    DEBUG_ASSERT(mem->data != nullptr);
+// Counting-sort workspace (per mesh)
+static uint32_t       s_mesh_count [MAX_MESHES];
+static uint32_t       s_mesh_base  [MAX_MESHES];
+static uint32_t       s_mesh_cursor[MAX_MESHES];
 
-    size_t read_bytes = std::fread(mem->data, 1, static_cast<size_t>(size), file);
-    DEBUG_ASSERT(read_bytes == static_cast<size_t>(size));
-    (void)read_bytes;
-    std::fclose(file);
+// Sorted instance buffer (written by counting sort, then memcpy'd per mesh)
+static InstanceRecord s_sorted[MAX_ENTITIES];
+
+static bool g_logged_first_draw = false;
+
+// ── Shader discovery ─────────────────────────────────────────────────────────
+
+static const bgfx::Memory* LoadShaderFile(const char* path) {
+    FILE* f = std::fopen(path, "rb");
+    if (!f) return nullptr;
+    std::fseek(f, 0, SEEK_END);
+    long sz = std::ftell(f);
+    std::fseek(f, 0, SEEK_SET);
+    const bgfx::Memory* mem = bgfx::alloc(static_cast<uint32_t>(sz));
+    std::fread(mem->data, 1, static_cast<size_t>(sz), f);
+    std::fclose(f);
     return mem;
 }
 
-static uint32_t DiscoverAndLoadShader(const char* filename, bgfx::ShaderHandle& out_handle) {
-    DEBUG_ASSERT(filename != nullptr);
-    std::string paths[] = {
-        std::string("assets/cooked/shaders/") + filename,
-        std::string("../assets/cooked/shaders/") + filename,
-        std::string("../../assets/cooked/shaders/") + filename,
-        std::string("bin/assets/cooked/shaders/") + filename,
-        std::string("build/bin/assets/cooked/shaders/") + filename,
-        std::string("../build/bin/assets/cooked/shaders/") + filename
+static bool DiscoverShader(const char* filename, bgfx::ShaderHandle& out) {
+    const char* dirs[] = {
+        "assets/cooked/shaders/",
+        "../assets/cooked/shaders/",
+        "bin/assets/cooked/shaders/",
+        "build/bin/assets/cooked/shaders/",
+        "../build/bin/assets/cooked/shaders/"
     };
-
-    for (const auto& path : paths) {
+    char path[512];
+    for (const char* d : dirs) {
+        std::snprintf(path, sizeof(path), "%s%s", d, filename);
         if (fs::exists(path)) {
-            const bgfx::Memory* mem = LoadShaderFile(path.c_str());
-            if (mem) {
-                out_handle = bgfx::createShader(mem);
-                DEBUG_ASSERT(bgfx::isValid(out_handle));
-                return 1;
-            }
+            const bgfx::Memory* mem = LoadShaderFile(path);
+            if (mem) { out = bgfx::createShader(mem); return bgfx::isValid(out); }
         }
     }
-    return 0;
+    return false;
 }
 
+// ── Init ─────────────────────────────────────────────────────────────────────
+
 void Init(ecs_world_t* world) {
-    EngineLog("[Renderer] Initializing material system...");
+    EngineLog("[Renderer] Initializing...");
     DEBUG_ASSERT(world != nullptr);
 
-    // ── Load Shaders ─────────────────────────────────────────────────────────
+    // ── Load draw program ────────────────────────────────────────────────────
     bgfx::ShaderHandle vsh = BGFX_INVALID_HANDLE;
     bgfx::ShaderHandle fsh = BGFX_INVALID_HANDLE;
-    
-    uint32_t vs_ok = DiscoverAndLoadShader("vs_mesh.bin", vsh);
-    uint32_t fs_ok = DiscoverAndLoadShader("fs_mesh.bin", fsh);
-    DEBUG_ASSERT(vs_ok == 1);
-    DEBUG_ASSERT(fs_ok == 1);
-
-    if (bgfx::isValid(vsh) && bgfx::isValid(fsh)) {
-        g_default_program = bgfx::createProgram(vsh, fsh, true);
-    }
+    DEBUG_ASSERT(DiscoverShader("vs_mesh.bin", vsh));
+    DEBUG_ASSERT(DiscoverShader("fs_mesh.bin", fsh));
+    g_default_program = bgfx::createProgram(vsh, fsh, true);
     DEBUG_ASSERT(bgfx::isValid(g_default_program));
 
-    u_baseColor = bgfx::createUniform("u_baseColor", bgfx::UniformType::Vec4);
-    DEBUG_ASSERT(bgfx::isValid(u_baseColor));
-
-    // ── Register Components ──────────────────────────────────────────────────
-    {
-        ecs_entity_desc_t ed = {};
-        ed.name = "MeshInstance";
-        ecs_entity_t ent = ecs_entity_init(world, &ed);
-        ecs_component_desc_t cd = {};
-        cd.entity = ent;
-        cd.type.size = sizeof(MeshInstance);
-        cd.type.alignment = alignof(MeshInstance);
-        id_MeshInstance = ecs_component_init(world, &cd);
-        DEBUG_ASSERT(id_MeshInstance != 0);
-
-        ed.name = "EntityIntent";
-        ent = ecs_entity_init(world, &ed);
-        cd.entity = ent;
-        cd.type.size = sizeof(Intent);
-        cd.type.alignment = alignof(Intent);
-        id_EntityIntent = ecs_component_init(world, &cd);
-        DEBUG_ASSERT(id_EntityIntent != 0);
-
-        ed.name = "Material";
-        ent = ecs_entity_init(world, &ed);
-        cd.entity = ent;
-        cd.type.size = sizeof(Material);
-        cd.type.alignment = alignof(Material);
-        id_Material = ecs_component_init(world, &cd);
-        DEBUG_ASSERT(id_Material != 0);
+    // ── Load compute program (cs_indirect — wired up in a future pass) ───────
+    bgfx::ShaderHandle csh = BGFX_INVALID_HANDLE;
+    if (DiscoverShader("cs_indirect.bin", csh)) {
+        g_compute_program = bgfx::createProgram(csh, true);
+        EngineLog("[Renderer] cs_indirect loaded (ready for future GPU-cull pass)");
     }
 
-    // ── Initialize queries ──────────────────────────────────────────────
+    // ── Register Components ───────────────────────────────────────────────────
+    {
+        auto reg = [&](const char* name, size_t sz, size_t align) -> ecs_entity_t {
+            ecs_entity_desc_t ed = {}; ed.name = name;
+            ecs_entity_t e = ecs_entity_init(world, &ed);
+            ecs_component_desc_t cd = {};
+            cd.entity = e; cd.type.size = sz; cd.type.alignment = align;
+            return ecs_component_init(world, &cd);
+        };
+        id_MeshInstance = reg("MeshInstance", sizeof(MeshInstance), alignof(MeshInstance));
+        id_EntityIntent = reg("EntityIntent",  sizeof(Intent),       alignof(Intent));
+        id_Material     = reg("Material",      sizeof(Material),     alignof(Material));
+        DEBUG_ASSERT(id_MeshInstance && id_EntityIntent && id_Material);
+    }
+
+    // ── Queries ──────────────────────────────────────────────────────────────
     {
         ecs_query_desc_t cq = {};
         cq.terms[0].id = Engine::Camera::id_Camera;
@@ -154,7 +153,7 @@ void Init(ecs_world_t* world) {
         DEBUG_ASSERT(g_render_query != nullptr);
     }
 
-    // ── Render System (Phase_React) ──────────────────────────────────────────
+    // ── Render System (Phase_React) ───────────────────────────────────────────
     {
         ecs_entity_desc_t ed = {};
         ed.name = "RenderSystem";
@@ -166,102 +165,118 @@ void Init(ecs_world_t* world) {
         s.callback = [](ecs_iter_t* it) {
             DEBUG_ASSERT(it != nullptr);
 
+            // ── View / camera ─────────────────────────────────────────────
             const bgfx::Stats* stats = bgfx::getStats();
-            DEBUG_ASSERT(stats != nullptr);
             bgfx::setViewRect(0, 0, 0, (uint16_t)stats->width, (uint16_t)stats->height);
             bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x111111FF, 1.0f, 0);
 
             if (g_camera_query) {
-                ecs_iter_t cam_it = ecs_query_iter(it->world, g_camera_query);
-                while (ecs_query_next(&cam_it)) { 
-                    const Engine::Camera::Camera* cam = ecs_field(&cam_it, Engine::Camera::Camera, 0);
-                    DEBUG_ASSERT(cam != nullptr);
+                ecs_iter_t ci = ecs_query_iter(it->world, g_camera_query);
+                while (ecs_query_next(&ci)) {
+                    const Engine::Camera::Camera* cam = ecs_field(&ci, Engine::Camera::Camera, 0);
                     bgfx::setViewTransform(0, cam[0].view, cam[0].proj);
                 }
             }
 
-            struct Batch {
-                uint32_t mesh_id;
-                uint16_t program;
-                float    color[4];
-                std::vector<const Math::ScryMat4*> matrices;
-            };
-            std::map<std::pair<uint32_t, uint16_t>, Batch> batches;
+            // ── Phase 1: Collect entities into flat arrays ────────────────
+            s_entity_count = 0;
+            if (g_render_query) {
+                ecs_iter_t ri = ecs_query_iter(it->world, g_render_query);
+                while (ecs_query_next(&ri)) {
+                    const Engine::Transform::WorldMatrix* wm  = ecs_field(&ri, Engine::Transform::WorldMatrix, 0);
+                    const MeshInstance*                   mi  = ecs_field(&ri, MeshInstance, 1);
+                    const Material*                       mat = ecs_field(&ri, Material, 2);
+                    const Intent*                         ent = ecs_field(&ri, Intent, 3);
 
-            ecs_iter_t render_it = ecs_query_iter(it->world, g_render_query);
-            while (ecs_query_next(&render_it)) {
-                const Engine::Transform::WorldMatrix* wm = ecs_field(&render_it, Engine::Transform::WorldMatrix, 0);
-                const MeshInstance*                   mi = ecs_field(&render_it, MeshInstance, 1);
-                const Material*                       mat = ecs_field(&render_it, Material, 2);
-                const Intent*                         intent = ecs_field(&render_it, Intent, 3);
-
-                DEBUG_ASSERT(wm != nullptr && mi != nullptr && mat != nullptr && intent != nullptr);
-
-                for (int i = 0; i < render_it.count; ++i) {
-                    if ((intent[i].mask & INTENT_VISIBLE) && !(intent[i].mask & INTENT_DESTROYED)) {
-                        auto key = std::make_pair(mi[i].mesh_id, mat[i].program_handle);
-                        auto& b = batches[key];
-                        b.mesh_id = mi[i].mesh_id;
-                        b.program = mat[i].program_handle;
-                        std::memcpy(b.color, mat[i].base_color, sizeof(float)*4);
-                        b.matrices.push_back(&wm[i].value);
+                    for (int i = 0; i < ri.count && s_entity_count < MAX_ENTITIES; ++i) {
+                        s_entity_mat   [s_entity_count] = wm[i].value;
+                        s_entity_meshId[s_entity_count] = mi[i].mesh_id;
+                        s_entity_intent[s_entity_count] = ent[i].mask;
+                        std::memcpy(s_entity_color[s_entity_count], mat[i].base_color, 4 * sizeof(float));
+                        ++s_entity_count;
                     }
                 }
             }
 
-            for (auto& pair : batches) {
-                auto& b = pair.second;
-                uint32_t count = static_cast<uint32_t>(b.matrices.size());
-                DEBUG_ASSERT(count > 0);
+            // ── Phase 2: Count visible instances per mesh ─────────────────
+            std::memset(s_mesh_count, 0, sizeof(s_mesh_count));
+            for (uint32_t i = 0; i < s_entity_count; ++i) {
+                uint32_t m = s_entity_intent[i];
+                if ((m & INTENT_VISIBLE) && !(m & INTENT_DESTROYED)) {
+                    uint32_t mid = s_entity_meshId[i];
+                    if (mid < MAX_MESHES) ++s_mesh_count[mid];
+                }
+            }
+
+            // ── Phase 3: Prefix sum → base instance offset per mesh ───────
+            s_mesh_base[0] = 0;
+            for (uint32_t m = 1; m < MAX_MESHES; ++m)
+                s_mesh_base[m] = s_mesh_base[m-1] + s_mesh_count[m-1];
+
+            uint32_t total =
+                s_mesh_base[MAX_MESHES-1] + s_mesh_count[MAX_MESHES-1];
+            if (total == 0) return;
+
+            // ── Phase 4: Scatter — build sorted InstanceRecord array ──────
+            std::memset(s_mesh_cursor, 0, sizeof(s_mesh_cursor));
+            for (uint32_t i = 0; i < s_entity_count; ++i) {
+                uint32_t m = s_entity_intent[i];
+                if (!((m & INTENT_VISIBLE) && !(m & INTENT_DESTROYED))) continue;
+                uint32_t mid = s_entity_meshId[i];
+                if (mid >= MAX_MESHES) continue;
+
+                uint32_t dst = s_mesh_base[mid] + s_mesh_cursor[mid]++;
+                InstanceRecord& rec = s_sorted[dst];
+                std::memcpy(rec.mat,   s_entity_mat[i].data(), 64);
+                std::memcpy(rec.color, s_entity_color[i],      16);
+            }
+
+            // ── Phase 5: Draw — O(MAX_MESHES), not O(entities) ───────────
+            constexpr uint64_t kState =
+                BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z |
+                BGFX_STATE_DEPTH_TEST_LESS | BGFX_STATE_CULL_CCW | BGFX_STATE_MSAA;
+            constexpr uint16_t kStride = static_cast<uint16_t>(sizeof(InstanceRecord)); // 80
+
+            for (uint32_t meshId = 0; meshId < MAX_MESHES; ++meshId) {
+                uint32_t count = s_mesh_count[meshId];
+                if (count == 0) continue;
+
+                bgfx::VertexBufferHandle vbh = Graphics::GetVertexBuffer(meshId);
+                bgfx::IndexBufferHandle  ibh = Graphics::GetIndexBuffer(meshId);
+                if (!bgfx::isValid(vbh) || !bgfx::isValid(ibh)) continue;
+
+                if (count > bgfx::getAvailInstanceDataBuffer(count, kStride)) continue;
 
                 bgfx::InstanceDataBuffer idb;
-                const uint16_t stride = 64; 
-                if (count <= bgfx::getAvailInstanceDataBuffer(count, stride)) {
-                    bgfx::allocInstanceDataBuffer(&idb, count, stride);
+                bgfx::allocInstanceDataBuffer(&idb, count, kStride);
+                std::memcpy(idb.data, &s_sorted[s_mesh_base[meshId]], count * kStride);
 
-                    uint8_t* data = idb.data;
-                    for (const auto* mtx : b.matrices) {
-                        std::memcpy(data, mtx->data(), stride);
-                        data += stride;
-                    }
+                bgfx::setVertexBuffer(0, vbh);
+                bgfx::setIndexBuffer(ibh);
+                bgfx::setInstanceDataBuffer(&idb);
+                bgfx::setState(kState);
+                bgfx::submit(0, g_default_program);
+            }
 
-                    bgfx::VertexBufferHandle vbh = Graphics::GetVertexBuffer(b.mesh_id);
-                    bgfx::IndexBufferHandle  ibh = Graphics::GetIndexBuffer(b.mesh_id);
-                    bgfx::ProgramHandle      prog = { b.program };
-
-                    if (!bgfx::isValid(prog)) prog = g_default_program;
-
-                    if (bgfx::isValid(vbh) && bgfx::isValid(ibh) && bgfx::isValid(prog)) {
-                        bgfx::setVertexBuffer(0, vbh);
-                        bgfx::setIndexBuffer(ibh);
-                        bgfx::setInstanceDataBuffer(&idb);
-                        bgfx::setUniform(u_baseColor, b.color);
-                        
-                        // RESTORE SOLID CULLING AND DEPTH WRITING
-                        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z | 
-                                       BGFX_STATE_DEPTH_TEST_LESS | BGFX_STATE_CULL_CCW | BGFX_STATE_MSAA);
-                        
-                        bgfx::submit(0, prog);
-
-                        if (!g_first_frame_submitted) {
-                            char log[128];
-                            std::snprintf(log, sizeof(log), "[Renderer] First draw submitted: %u instances of mesh %u", count, b.mesh_id);
-                            EngineLog(log);
-                            g_first_frame_submitted = true;
-                        }
-                    }
-                }
+            if (!g_logged_first_draw) {
+                char buf[128];
+                std::snprintf(buf, sizeof(buf),
+                    "[Renderer] First draw: %u visible instances across %u entity slots",
+                    total, s_entity_count);
+                EngineLog(buf);
+                g_logged_first_draw = true;
             }
         };
         ecs_system_init(world, &s);
     }
-    EngineLog("[Renderer] Material system and RenderSystem ready");
+
+    EngineLog("[Renderer] Init complete");
 }
 
 void Shutdown() {
-    EngineLog("[Renderer] Cleaning up...");
+    EngineLog("[Renderer] Shutting down...");
     if (bgfx::isValid(g_default_program)) bgfx::destroy(g_default_program);
-    if (bgfx::isValid(u_baseColor))       bgfx::destroy(u_baseColor);
+    if (bgfx::isValid(g_compute_program)) bgfx::destroy(g_compute_program);
     if (g_camera_query) ecs_query_fini(g_camera_query);
     if (g_render_query) ecs_query_fini(g_render_query);
     EngineLog("[Renderer] Shutdown complete");

@@ -48,11 +48,12 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
     Assimp::Importer imp;
     const aiScene* scene = imp.ReadFile(
         input.string().c_str(),
-        aiProcess_Triangulate       |
-        aiProcess_JoinIdenticalVertices |
-        aiProcess_GenSmoothNormals  |
-        aiProcess_FlipUVs           |
-        aiProcess_CalcTangentSpace);
+        aiProcess_Triangulate            |
+        aiProcess_JoinIdenticalVertices  |
+        aiProcess_GenSmoothNormals       |
+        aiProcess_CalcTangentSpace       |
+        aiProcess_ConvertToLeftHanded    |   // fixes winding order + UV flips for BGFX
+        aiProcess_PreTransformVertices);     // bakes root-node rotation, fixing sideways models
 
     if (!scene || !scene->HasMeshes()) {
         std::fprintf(stderr, "[cooker] ERROR: assimp failed on %s: %s\n",
@@ -99,14 +100,31 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
         return false;
     }
 
+    /* ── Deduplication ── */
+    {
+        // generateVertexRemap strips duplicate verts Assimp leaves behind
+        std::vector<unsigned int> remap(idxs.size());
+        size_t total_verts = meshopt_generateVertexRemap(
+            remap.data(),
+            idxs.data(), idxs.size(),
+            verts.data(), verts.size(), sizeof(ScryVertex));
+
+        std::vector<ScryVertex> dedup_verts(total_verts);
+        std::vector<uint32_t>   dedup_idxs(idxs.size());
+        meshopt_remapIndexBuffer (dedup_idxs.data(),  idxs.data(),  idxs.size(),  remap.data());
+        meshopt_remapVertexBuffer(dedup_verts.data(), verts.data(), verts.size(), sizeof(ScryVertex), remap.data());
+
+        verts = std::move(dedup_verts);
+        idxs  = std::move(dedup_idxs);
+    }
+
     /* ── Optimization ── */
     {
-        // 1. Reorder indices for post-transform cache locality
         meshopt_optimizeVertexCache(idxs.data(), idxs.data(), idxs.size(), verts.size());
 
-        // 2. Reorder vertices for vertex fetch locality
         std::vector<ScryVertex> optimized_verts(verts.size());
-        meshopt_optimizeVertexFetch(optimized_verts.data(), idxs.data(), idxs.size(), verts.data(), verts.size(), sizeof(ScryVertex));
+        meshopt_optimizeVertexFetch(optimized_verts.data(), idxs.data(), idxs.size(),
+            verts.data(), verts.size(), sizeof(ScryVertex));
         verts = std::move(optimized_verts);
     }
 

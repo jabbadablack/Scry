@@ -43,7 +43,7 @@ void Init(ecs_world_t* world) {
             for (int i = 0; i < it->count; ++i) {
                 if (Input::g_input_buffer.IsKeyDown(Input::Key::MouseR)) {
                     // Fix: Flip signs for standard FPS-style "natural" look
-                    cam[i].yaw   -= Input::g_input_buffer.states[Input::g_input_buffer.read_index].mouse_dx * sensitivity;
+                    cam[i].yaw   += Input::g_input_buffer.states[Input::g_input_buffer.read_index].mouse_dx * sensitivity;
                     cam[i].pitch -= Input::g_input_buffer.states[Input::g_input_buffer.read_index].mouse_dy * sensitivity;
                     cam[i].pitch = std::clamp(cam[i].pitch, -1.5f, 1.5f);
                 }
@@ -52,7 +52,7 @@ void Init(ecs_world_t* world) {
                     Eigen::AngleAxisf(cam[i].yaw, Eigen::Vector3f::UnitY()) *
                     Eigen::AngleAxisf(cam[i].pitch, Eigen::Vector3f::UnitX());
                 
-                Eigen::Vector3f forward = q * -Eigen::Vector3f::UnitZ();
+                Eigen::Vector3f forward = q * Eigen::Vector3f::UnitZ();
                 Eigen::Vector3f right   = q * Eigen::Vector3f::UnitX();
 
                 if (Input::g_input_buffer.IsKeyDown(Input::Key::W)) cam[i].position += forward * speed;
@@ -83,7 +83,7 @@ void Init(ecs_world_t* world) {
                 Eigen::Quaternionf q = 
                     Eigen::AngleAxisf(cam[i].yaw, Eigen::Vector3f::UnitY()) *
                     Eigen::AngleAxisf(cam[i].pitch, Eigen::Vector3f::UnitX());
-                Eigen::Vector3f fwd = q * -Eigen::Vector3f::UnitZ();
+                Eigen::Vector3f fwd = q * Eigen::Vector3f::UnitZ();
                 
                 bx::Vec3 at = { 
                     cam[i].position.x() + fwd.x(), 

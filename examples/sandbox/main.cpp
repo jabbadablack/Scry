@@ -135,8 +135,8 @@ static void OnInit(Context* ctx) {
         ecs_entity_t cam_ent = ecs_entity_init(world, &ed);
         
         Engine::Camera::Camera cam = {};
-        cam.position  = {0, 5, 10};
-        cam.pitch     = -0.4f;
+        cam.position  = {0, 5, -15};
+        cam.pitch     = 0.2f;
         cam.yaw       = 0.0f;
         for(int i=0; i<16; ++i) { cam.view[i] = cam.proj[i] = 0.0f; }
         cam.view[0] = cam.view[5] = cam.view[10] = cam.view[15] = 1.0f;

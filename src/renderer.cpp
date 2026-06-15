@@ -280,7 +280,7 @@ void Init(ecs_world_t* world) {
             // ── Phase 5b: Draw — SSBO vertex pulling, zero alloc ──────────
             constexpr uint64_t kState =
                 BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z |
-                BGFX_STATE_DEPTH_TEST_LESS | BGFX_STATE_CULL_CCW | BGFX_STATE_MSAA;
+                BGFX_STATE_DEPTH_TEST_LESS | BGFX_STATE_CULL_CW | BGFX_STATE_MSAA;
 
             for (uint32_t meshId = 0; meshId < MAX_MESHES; ++meshId) {
                 uint32_t count = s_mesh_count[meshId];

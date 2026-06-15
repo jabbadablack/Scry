@@ -169,7 +169,7 @@ bool LoadSinglePlugin(Context* ctx, const char* name) {
     HMODULE handle = LoadLibraryA(found->library_path.c_str());
     if (handle == nullptr) return false;
     typedef void (*PluginInitFn)(const PluginAPI*);
-    PluginInitFn init_fn = reinterpret_cast<PluginInitFn>(GetProcAddress(handle, "PluginInit"));
+    PluginInitFn init_fn = reinterpret_cast<PluginInitFn>(reinterpret_cast<void*>(GetProcAddress(handle, "PluginInit")));
     if (init_fn == nullptr) {
         FreeLibrary(handle);
         return false;

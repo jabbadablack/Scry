@@ -19,8 +19,11 @@ uniform vec4 u_drawParams;
 void main()
 {
     uint vBase = uint(gl_VertexID) * 2u;
-    vec4 v0 = b_vertices[vBase];        // {px, py, pz, u}
-    vec4 v1 = b_vertices[vBase + 1u];   // {nx, ny, nz, v}
+    vec4 v0 = b_vertices[vBase];        // {px, py, pz, nx}  — first  4 floats of ScryVertex
+    vec4 v1 = b_vertices[vBase + 1u];   // {ny, nz, u,  v }  — second 4 floats of ScryVertex
+
+    vec3 position = v0.xyz;
+    vec3 normal   = vec3(v0.w, v1.x, v1.y);
 
     uint iBase = (uint(gl_InstanceID) + uint(u_drawParams.x)) * 5u;
     mat4 world = mtxFromCols(
@@ -31,7 +34,7 @@ void main()
     );
     v_color = b_instances[iBase + 4u];
 
-    vec4 worldPos = mul(world, vec4(v0.xyz, 1.0));
+    vec4 worldPos = mul(world, vec4(position, 1.0));
     gl_Position   = mul(u_viewProj, worldPos);
-    v_normal = normalize(mul(world, vec4(v1.xyz, 0.0)).xyz);
+    v_normal = normalize(mul(world, vec4(normal, 0.0)).xyz);
 }

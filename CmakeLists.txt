@@ -144,6 +144,11 @@ FetchContent_Declare(meshoptimizer
     GIT_TAG        v0.21
 )
 
+# Suppress third-party C++20 deprecation noise before fetching deps
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated -Wno-return-type -Wno-unknown-pragmas")
+endif()
+
 FetchContent_MakeAvailable(mimalloc glfw bgfx_cmake assimp stb meshoptimizer flecs yyjson Catch2 cpptrace libassert string_id eigen)
 
 # Force bgfx single-threaded mode as a compile definition (belt-and-suspenders

@@ -10,7 +10,8 @@ struct Camera {
     Math::ScryVec3 position;
     float          pitch;
     float          yaw;
-    Math::ScryMat4 view_proj;
+    float          view[16];
+    float          proj[16];
 };
 
 ENGINE_API extern ecs_entity_t id_Camera;

@@ -81,11 +81,18 @@ static void OnInit(Context* ctx) {
         tf.scale    = {1, 1, 1};
         ecs_set_id(world, player, Engine::Transform::id_Transform, sizeof(tf), &tf);
 
+        // Explicitly add WorldMatrix (required by RenderSystem and TransformSystem)
+        Engine::Transform::WorldMatrix wm = { Engine::Math::ScryMat4::Identity() };
+        ecs_set_id(world, player, Engine::Transform::id_WorldMatrix, sizeof(wm), &wm);
+
         Engine::Renderer::MeshInstance mi = { suzanne_handle };
         ecs_set_id(world, player, Engine::Renderer::id_MeshInstance, sizeof(mi), &mi);
 
         Engine::Renderer::Intent intent = { Engine::Renderer::INTENT_VISIBLE };
         ecs_set_id(world, player, Engine::Renderer::id_EntityIntent, sizeof(intent), &intent);
+
+        Engine::Renderer::Material mat = { 0, {1.0f, 1.0f, 1.0f, 1.0f} };
+        ecs_set_id(world, player, Engine::Renderer::id_Material, sizeof(mat), &mat);
     }
 
     // 3. Create Grid of Markers at (0,0,0)
@@ -105,11 +112,19 @@ static void OnInit(Context* ctx) {
             tf.scale    = { 0.2f, 0.2f, 0.2f };
             ecs_set_id(world, marker, Engine::Transform::id_Transform, sizeof(tf), &tf);
 
+            // Explicitly add WorldMatrix
+            Engine::Transform::WorldMatrix wm = { Engine::Math::ScryMat4::Identity() };
+            ecs_set_id(world, marker, Engine::Transform::id_WorldMatrix, sizeof(wm), &wm);
+
             Engine::Renderer::MeshInstance mi = { suzanne_handle };
             ecs_set_id(world, marker, Engine::Renderer::id_MeshInstance, sizeof(mi), &mi);
 
             Engine::Renderer::Intent intent = { Engine::Renderer::INTENT_VISIBLE };
             ecs_set_id(world, marker, Engine::Renderer::id_EntityIntent, sizeof(intent), &intent);
+
+            // Grid markers are cyan
+            Engine::Renderer::Material mat = { 0, {0.0f, 1.0f, 1.0f, 1.0f} };
+            ecs_set_id(world, marker, Engine::Renderer::id_Material, sizeof(mat), &mat);
         }
     }
 
@@ -123,10 +138,14 @@ static void OnInit(Context* ctx) {
         cam.position  = {0, 5, 10};
         cam.pitch     = -0.4f;
         cam.yaw       = 0.0f;
+        for(int i=0; i<16; ++i) { cam.view[i] = cam.proj[i] = 0.0f; }
+        cam.view[0] = cam.view[5] = cam.view[10] = cam.view[15] = 1.0f;
+        cam.proj[0] = cam.proj[5] = cam.proj[10] = cam.proj[15] = 1.0f;
+
         ecs_set_id(world, cam_ent, Engine::Camera::id_Camera, sizeof(cam), &cam);
     }
 
-    // 5. Rotation system (using a tag or direct entity handle)
+    // 5. Rotation system
     {
         ecs_entity_desc_t ed = {};
         ed.name = "RotateSystem";
@@ -139,7 +158,7 @@ static void OnInit(Context* ctx) {
         s.query.terms[0].inout = EcsInOut;
         s.query.terms[1].id = player;
         s.query.terms[1].inout = EcsIn;
-        s.query.terms[1].src.id = player; // Match only the player entity
+        s.query.terms[1].src.id = player; 
 
         s.callback = [](ecs_iter_t* it) {
             Engine::Transform::TransformComp* tf = ecs_field(it, Engine::Transform::TransformComp, 0);

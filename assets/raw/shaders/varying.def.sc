@@ -8,3 +8,4 @@ vec4 i_data2    : i_data2;
 vec4 i_data3    : i_data3;
 
 vec3 v_normal   : NORMAL;
+vec4 v_color    : COLOR0;

@@ -1,5 +1,6 @@
 #pragma once
 #include <engine/engine.h>
+#include <engine/math.hpp>
 #include <cstdint>
 #include <flecs.h>
 
@@ -8,6 +9,7 @@ namespace Renderer {
 
 ENGINE_API extern ecs_entity_t id_MeshInstance;
 ENGINE_API extern ecs_entity_t id_EntityIntent;
+ENGINE_API extern ecs_entity_t id_Material;
 
 struct MeshInstance {
     uint32_t mesh_id;
@@ -15,6 +17,11 @@ struct MeshInstance {
 
 struct Intent {
     uint32_t mask;
+};
+
+struct Material {
+    uint16_t program_handle; // bgfx::ProgramHandle raw value
+    float    base_color[4];
 };
 
 enum EntityIntent : uint32_t {

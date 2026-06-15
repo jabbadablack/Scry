@@ -1,5 +1,6 @@
 #include <engine/graphics.hpp>
 #include <engine/CookedAsset.h>
+#include <engine/renderer.hpp>
 
 #include <bgfx/bgfx.h>
 #include <bgfx/platform.h>
@@ -49,17 +50,20 @@ static bgfx::VertexLayout g_vertex_layout;
 // ── OS Mapping Helpers ────────────────────────────────────────────────────────
 
 struct MappedFile {
-    void*  data;
-    size_t size;
+    void*  data = nullptr;
+    size_t size = 0;
 #ifdef _WIN32
-    HANDLE hFile;
-    HANDLE hMap;
+    HANDLE hFile = INVALID_HANDLE_VALUE;
+    HANDLE hMap = NULL;
 #else
-    int fd;
+    int fd = -1;
 #endif
 };
 
 static bool MapFileReadOnly(const char* path, MappedFile& out) {
+    DEBUG_ASSERT(path != nullptr);
+    DEBUG_ASSERT(std::strlen(path) > 0);
+
 #ifdef _WIN32
     out.hFile = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (out.hFile == INVALID_HANDLE_VALUE) return false;
@@ -84,6 +88,9 @@ static bool MapFileReadOnly(const char* path, MappedFile& out) {
     out.data = mmap(NULL, out.size, PROT_READ, MAP_PRIVATE, out.fd, 0);
     if (out.data == MAP_FAILED) { close(out.fd); return false; }
 #endif
+
+    DEBUG_ASSERT(out.data != nullptr);
+    DEBUG_ASSERT(out.size > 0);
     return true;
 }
 
@@ -101,25 +108,21 @@ static void UnmapFile(MappedFile& mf) {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 bool Init(void* glfw_window_handle) {
+    EngineLog("[Graphics] Initializing BGFX...");
     DEBUG_ASSERT(glfw_window_handle != nullptr);
-    if (!glfw_window_handle) {
-        EngineLog("[Graphics] FATAL: null GLFW window handle");
-        return false;
-    }
-
+    
     GLFWwindow* window = static_cast<GLFWwindow*>(glfw_window_handle);
+    DEBUG_ASSERT(window != nullptr);
 
     bgfx::Init init;
     
-    // Explicitly select backend matching our offline shaders (SPIRV)
-    // For non-MSVC builds, we use SPIRV shaders, which require Vulkan.
 #if defined(_WIN32) && !defined(_MSC_VER)
     init.type = bgfx::RendererType::Vulkan;
+    EngineLog("[Graphics] Forcing Vulkan renderer backend.");
 #else
     init.type = bgfx::RendererType::Count; // Auto
 #endif
     
-    // Set platform data
     bgfx::PlatformData pd = {};
 #if defined(_WIN32)
     pd.nwh = glfwGetWin32Window(window);
@@ -129,11 +132,14 @@ bool Init(void* glfw_window_handle) {
     pd.nwh = (void*)(uintptr_t)glfwGetX11Window(window);
     pd.ndt = glfwGetX11Display();
 #endif
+    DEBUG_ASSERT(pd.nwh != nullptr);
     init.platformData = pd;
 
     int width, height;
-    // Use Framebuffer size for pixel-perfect viewport
     glfwGetFramebufferSize(window, &width, &height);
+    DEBUG_ASSERT(width > 0);
+    DEBUG_ASSERT(height > 0);
+
     init.resolution.width  = (uint32_t)width;
     init.resolution.height = (uint32_t)height;
     init.resolution.reset  = BGFX_RESET_VSYNC;
@@ -143,7 +149,6 @@ bool Init(void* glfw_window_handle) {
         return false;
     }
 
-    // Explicitly set viewport to avoid 0x0 rendering
     bgfx::setViewRect(0, 0, 0, (uint16_t)width, (uint16_t)height);
     bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x111111FF, 1.0f, 0);
 
@@ -154,20 +159,24 @@ bool Init(void* glfw_window_handle) {
         .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
         .end();
 
+    DEBUG_ASSERT(g_vertex_layout.getStride() == sizeof(ScryVertex));
+
     {
         char log_buf[128];
-        std::snprintf(log_buf, sizeof(log_buf), "[Graphics] BGFX ready. Renderer: %s", bgfx::getRendererName(bgfx::getRendererType()));
+        std::snprintf(log_buf, sizeof(log_buf), "[Graphics] BGFX initialized. Selected Renderer: %s (%dx%d)", 
+            bgfx::getRendererName(bgfx::getRendererType()), width, height);
         EngineLog(log_buf);
     }
     return true;
 }
 
 void Shutdown() {
+    EngineLog("[Graphics] Shutting down BGFX...");
     for (uint32_t i = 0; i < MAX_MESHES; ++i) {
         if (g_meshes[i].in_use) FreeMesh(i);
     }
     bgfx::shutdown();
-    EngineLog("[Graphics] Shutdown complete");
+    EngineLog("[Graphics] BGFX shutdown complete");
 }
 
 void BeginFrame() {
@@ -181,6 +190,7 @@ void Present() {
 
 uint32_t LoadMesh(const char* filepath) {
     DEBUG_ASSERT(filepath != nullptr);
+    DEBUG_ASSERT(g_mesh_count < MAX_MESHES);
 
     if (!filepath) return INVALID_MESH;
     if (g_mesh_count >= MAX_MESHES) {
@@ -189,12 +199,6 @@ uint32_t LoadMesh(const char* filepath) {
     }
 
     MappedFile mf = {};
-#ifdef _WIN32
-    mf.hFile = INVALID_HANDLE_VALUE;
-#else
-    mf.fd = -1;
-#endif
-
     if (!MapFileReadOnly(filepath, mf)) {
         char err_buf[256];
         std::snprintf(err_buf, sizeof(err_buf), "[Graphics] LoadMesh: file not found: %s", filepath);
@@ -203,6 +207,9 @@ uint32_t LoadMesh(const char* filepath) {
     }
 
     const auto* hdr = static_cast<const ScryMeshHeader*>(mf.data);
+    DEBUG_ASSERT(hdr != nullptr);
+    DEBUG_ASSERT(hdr->magic == SCRY_MESH_MAGIC);
+
     if (mf.size < sizeof(ScryMeshHeader) || hdr->magic != SCRY_MESH_MAGIC || hdr->version != SCRY_MESH_VERSION) {
         EngineLog("[Graphics] LoadMesh: invalid .scrymesh header");
         UnmapFile(mf);
@@ -214,25 +221,28 @@ uint32_t LoadMesh(const char* filepath) {
 
     const uint32_t slot = g_mesh_count++;
 
-    // BGFX buffers - Use copy for static data
+    // Zero-copy ref to memory, but we copy into BGFX to allow unmapping
     const bgfx::Memory* vmem = bgfx::copy(vertices, hdr->vertex_count * sizeof(ScryVertex));
     const bgfx::Memory* imem = bgfx::copy(indices, hdr->index_count * sizeof(uint32_t));
+    DEBUG_ASSERT(vmem != nullptr);
+    DEBUG_ASSERT(imem != nullptr);
 
     g_meshes[slot].vbh = bgfx::createVertexBuffer(vmem, g_vertex_layout);
     g_meshes[slot].ibh = bgfx::createIndexBuffer(imem);
+    DEBUG_ASSERT(bgfx::isValid(g_meshes[slot].vbh));
+    DEBUG_ASSERT(bgfx::isValid(g_meshes[slot].ibh));
 
     g_meshes[slot].index_count = hdr->index_count;
     g_meshes[slot].in_use      = true;
 
-#ifndef NDEBUG
-    char buf[128];
-    std::snprintf(buf, sizeof(buf), "[Graphics] Mesh loaded (mapped, bgfx): %s (v=%u i=%u handle=%u)",
-        filepath, hdr->vertex_count, hdr->index_count, slot);
-    EngineLog(buf);
-#endif
+    {
+        char buf[128];
+        std::snprintf(buf, sizeof(buf), "[Graphics] Mesh loaded: %s (v=%u i=%u slot=%u)",
+            filepath, hdr->vertex_count, hdr->index_count, slot);
+        EngineLog(buf);
+    }
 
     UnmapFile(mf);
-
     return slot;
 }
 
@@ -252,7 +262,6 @@ void FreeMesh(uint32_t handle) {
     g_meshes[handle].in_use      = false;
 }
 
-// Accessor for renderer
 bgfx::VertexBufferHandle GetVertexBuffer(uint32_t handle) {
     if (handle < MAX_MESHES && g_meshes[handle].in_use) return g_meshes[handle].vbh;
     return BGFX_INVALID_HANDLE;

@@ -1,5 +1,5 @@
 #include <engine/pipeline.hpp>
-#include <libassert/assert.hpp>
+#include <cassert>
 #include <cstring>
 #include <cstdio>
 
@@ -18,7 +18,7 @@ static ecs_entity_t MakePhase(ecs_world_t* world, const char* name, ecs_entity_t
     ecs_entity_desc_t desc = {};
     desc.name = name;
     const ecs_entity_t ent = ecs_entity_init(world, &desc);
-    DEBUG_ASSERT(ent != 0);
+    assert(ent != 0);
 
     ecs_add_id(world, ent, EcsPhase);
     if (depends_on != 0) {
@@ -35,7 +35,7 @@ static ecs_entity_t MakePhase(ecs_world_t* world, const char* name, ecs_entity_t
 }
 
 void InitPipeline(ecs_world_t* world) {
-    DEBUG_ASSERT(world != nullptr);
+    assert(world != nullptr);
 
     Phase_Input       = MakePhase(world, "Phase_Input",       0);
     Phase_Intent      = MakePhase(world, "Phase_Intent",      Phase_Input);
@@ -44,17 +44,17 @@ void InitPipeline(ecs_world_t* world) {
     Phase_StateSync   = MakePhase(world, "Phase_StateSync",   Phase_React);
     Phase_Cleanup     = MakePhase(world, "Phase_Cleanup",     Phase_StateSync);
 
-    DEBUG_ASSERT(Phase_Input       != 0);
-    DEBUG_ASSERT(Phase_Intent      != 0);
-    DEBUG_ASSERT(Phase_StateUpdate != 0);
-    DEBUG_ASSERT(Phase_React       != 0);
-    DEBUG_ASSERT(Phase_StateSync   != 0);
-    DEBUG_ASSERT(Phase_Cleanup     != 0);
+    assert(Phase_Input       != 0);
+    assert(Phase_Intent      != 0);
+    assert(Phase_StateUpdate != 0);
+    assert(Phase_React       != 0);
+    assert(Phase_StateSync   != 0);
+    assert(Phase_Cleanup     != 0);
 
     ecs_entity_desc_t intent_desc = {};
     intent_desc.name = "IsIntent";
     IsIntent = ecs_entity_init(world, &intent_desc);
-    DEBUG_ASSERT(IsIntent != 0);
+    assert(IsIntent != 0);
 
 #ifndef NDEBUG
     EngineLog("[Pipeline] IsIntent tag created");
@@ -63,7 +63,7 @@ void InitPipeline(ecs_world_t* world) {
     ecs_entity_desc_t pip_ent_desc = {};
     pip_ent_desc.name = "EnginePipeline";
     const ecs_entity_t pip_entity = ecs_entity_init(world, &pip_ent_desc);
-    DEBUG_ASSERT(pip_entity != 0);
+    assert(pip_entity != 0);
 
     ecs_pipeline_desc_t pip_desc = {};
     pip_desc.entity                     = pip_entity;
@@ -73,7 +73,7 @@ void InitPipeline(ecs_world_t* world) {
     pip_desc.query.terms[1].src.id      = EcsCascade;
 
     const ecs_entity_t pipeline = ecs_pipeline_init(world, &pip_desc);
-    DEBUG_ASSERT(pipeline != 0);
+    assert(pipeline != 0);
     if (pipeline == 0) {
         EngineLog("[Pipeline] FATAL: ecs_pipeline_init() returned 0");
         return;
@@ -87,14 +87,14 @@ void InitPipeline(ecs_world_t* world) {
 }
 
 void RegisterIntentComponent(ecs_world_t* world, ecs_entity_t comp_id) {
-    DEBUG_ASSERT(world != nullptr);
-    DEBUG_ASSERT(comp_id != 0);
+    assert(world != nullptr);
+    assert(comp_id != 0);
 
     ecs_add_id(world, comp_id, IsIntent);
 
     ecs_entity_desc_t ent_desc = {};
     const ecs_entity_t sys_ent = ecs_entity_init(world, &ent_desc);
-    DEBUG_ASSERT(sys_ent != 0);
+    assert(sys_ent != 0);
 
     ecs_add_pair(world, sys_ent, EcsDependsOn, Phase_Cleanup);
 
@@ -104,16 +104,16 @@ void RegisterIntentComponent(ecs_world_t* world, ecs_entity_t comp_id) {
     sys_desc.query.terms[0].inout     = EcsInOut;
     sys_desc.callback = [](ecs_iter_t* it) {
         const ecs_size_t sz = it->sizes[0];
-        DEBUG_ASSERT(sz > 0);
+        assert(sz > 0);
         void* data = ecs_field_w_size(it, static_cast<size_t>(sz), 0);
-        DEBUG_ASSERT(data != nullptr);
+        assert(data != nullptr);
         if (data && sz > 0) {
             std::memset(data, 0, static_cast<size_t>(sz) * static_cast<size_t>(it->count));
         }
     };
 
     const ecs_entity_t final_sys = ecs_system_init(world, &sys_desc);
-    DEBUG_ASSERT(final_sys != 0);
+    assert(final_sys != 0);
 
 #ifndef NDEBUG
     char buf[96];

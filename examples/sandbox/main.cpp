@@ -7,7 +7,7 @@
 #include <engine/renderer.hpp>
 #include <engine/transform.hpp>
 #include <engine/camera.hpp>
-#include <libassert/assert.hpp>
+#include <cassert>
 #include <flecs.h>
 #include <cstdio>
 #include <exception>
@@ -57,7 +57,7 @@ static uint32_t DiscoverAndLoadMesh(const char* filename) {
 // ── Lifecycle callbacks ───────────────────────────────────────────────────────
 
 static void OnInit(Context* ctx) {
-    DEBUG_ASSERT(ctx != nullptr);
+    assert(ctx != nullptr);
     Engine::JSON::LoadProjectConfig(ctx, nullptr);
 
     ecs_world_t* world = GetWorld(ctx);

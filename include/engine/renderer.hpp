@@ -3,7 +3,6 @@
 #include <engine/math.hpp>
 #include <cstdint>
 #include <flecs.h>
-#include <bgfx/bgfx.h>
 
 namespace Engine {
 namespace Renderer {
@@ -12,16 +11,12 @@ ENGINE_API extern ecs_entity_t id_MeshInstance;
 ENGINE_API extern ecs_entity_t id_EntityIntent;
 ENGINE_API extern ecs_entity_t id_Material;
 
-struct MeshInstance {
-    uint32_t mesh_id;
-};
+struct MeshInstance { uint32_t mesh_id; };
 
-struct Intent {
-    uint32_t mask;
-};
+struct Intent { uint32_t mask; };
 
 struct Material {
-    uint16_t program_handle; // bgfx::ProgramHandle raw value
+    uint16_t program_handle;
     float    base_color[4];
 };
 
@@ -33,8 +28,6 @@ enum EntityIntent : uint32_t {
 
 ENGINE_API void Init(ecs_world_t* world);
 ENGINE_API void Shutdown();
-
-ENGINE_API extern bgfx::UniformHandle u_drawParams;
 
 } // namespace Renderer
 } // namespace Engine

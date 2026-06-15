@@ -239,7 +239,7 @@ void Init(ecs_world_t* world) {
             if (!g_logged_first_draw) {
                 char buf[128];
                 std::snprintf(buf, sizeof(buf),
-                    "[Renderer] First draw: %u visible entities → SSBO instanced", s_entity_count);
+                    "[Renderer] First draw: %u visible entities -> SSBO instanced", s_entity_count);
                 EngineLog(buf);
                 g_logged_first_draw = true;
             }

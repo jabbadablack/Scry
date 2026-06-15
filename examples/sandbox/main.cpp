@@ -68,67 +68,37 @@ static void OnInit(Context* ctx) {
         return;
     }
 
-    // 2. Create Player
-    ecs_entity_t player;
-    {
+    // 2. Create 100 entities in a 10×10 grid
+    for (int i = 0; i < 1000; ++i) {
+        int row = i / 10;
+        int col = i % 10;
+
+        char name[32];
+        std::snprintf(name, sizeof(name), "Entity_%d", i);
         ecs_entity_desc_t e = {};
-        e.name = "Player";
-        player = ecs_entity_init(world, &e);
+        e.name = name;
+        ecs_entity_t ent = ecs_entity_init(world, &e);
 
         Engine::Transform::TransformComp tf = {};
-        tf.position = {0, 0, 0};
-        tf.rotation = {0, 0, 0};
-        tf.scale    = {1, 1, 1};
-        ecs_set_id(world, player, Engine::Transform::id_Transform, sizeof(tf), &tf);
+        tf.position = { (float)(col - 5) * 3.0f, 0.0f, (float)(row - 5) * 3.0f };
+        tf.rotation = { 0, 0, 0 };
+        tf.scale    = { 1, 1, 1 };
+        ecs_set_id(world, ent, Engine::Transform::id_Transform, sizeof(tf), &tf);
 
-        // Explicitly add WorldMatrix (required by RenderSystem and TransformSystem)
         Engine::Transform::WorldMatrix wm = { Engine::Math::ScryMat4::Identity() };
-        ecs_set_id(world, player, Engine::Transform::id_WorldMatrix, sizeof(wm), &wm);
+        ecs_set_id(world, ent, Engine::Transform::id_WorldMatrix, sizeof(wm), &wm);
 
         Engine::Renderer::MeshInstance mi = { suzanne_handle };
-        ecs_set_id(world, player, Engine::Renderer::id_MeshInstance, sizeof(mi), &mi);
+        ecs_set_id(world, ent, Engine::Renderer::id_MeshInstance, sizeof(mi), &mi);
 
         Engine::Renderer::Intent intent = { Engine::Renderer::INTENT_VISIBLE };
-        ecs_set_id(world, player, Engine::Renderer::id_EntityIntent, sizeof(intent), &intent);
+        ecs_set_id(world, ent, Engine::Renderer::id_EntityIntent, sizeof(intent), &intent);
 
         Engine::Renderer::Material mat = { 0, {1.0f, 1.0f, 1.0f, 1.0f} };
-        ecs_set_id(world, player, Engine::Renderer::id_Material, sizeof(mat), &mat);
+        ecs_set_id(world, ent, Engine::Renderer::id_Material, sizeof(mat), &mat);
     }
 
-    // 3. Create Grid of Markers at (0,0,0)
-    for (int x = -5; x <= 5; ++x) {
-        for (int z = -5; z <= 5; ++z) {
-            if (x == 0 && z == 0) continue; // Skip origin (Player is there)
-
-            char name[32];
-            std::snprintf(name, sizeof(name), "Grid_%d_%d", x, z);
-            ecs_entity_desc_t e = {};
-            e.name = name;
-            ecs_entity_t marker = ecs_entity_init(world, &e);
-
-            Engine::Transform::TransformComp tf = {};
-            tf.position = { (float)x * 4.0f, 0.0f, (float)z * 4.0f };
-            tf.rotation = { 0, 0, 0 };
-            tf.scale    = { 0.2f, 0.2f, 0.2f };
-            ecs_set_id(world, marker, Engine::Transform::id_Transform, sizeof(tf), &tf);
-
-            // Explicitly add WorldMatrix
-            Engine::Transform::WorldMatrix wm = { Engine::Math::ScryMat4::Identity() };
-            ecs_set_id(world, marker, Engine::Transform::id_WorldMatrix, sizeof(wm), &wm);
-
-            Engine::Renderer::MeshInstance mi = { suzanne_handle };
-            ecs_set_id(world, marker, Engine::Renderer::id_MeshInstance, sizeof(mi), &mi);
-
-            Engine::Renderer::Intent intent = { Engine::Renderer::INTENT_VISIBLE };
-            ecs_set_id(world, marker, Engine::Renderer::id_EntityIntent, sizeof(intent), &intent);
-
-            // Grid markers are cyan
-            Engine::Renderer::Material mat = { 0, {0.0f, 1.0f, 1.0f, 1.0f} };
-            ecs_set_id(world, marker, Engine::Renderer::id_Material, sizeof(mat), &mat);
-        }
-    }
-
-    // 4. Create Camera
+    // 3. Create Camera
     {
         ecs_entity_desc_t ed = {};
         ed.name = "MainCamera";
@@ -156,9 +126,6 @@ static void OnInit(Context* ctx) {
         s.entity = sys_ent;
         s.query.terms[0].id = Engine::Transform::id_Transform;
         s.query.terms[0].inout = EcsInOut;
-        s.query.terms[1].id = player;
-        s.query.terms[1].inout = EcsIn;
-        s.query.terms[1].src.id = player; 
 
         s.callback = [](ecs_iter_t* it) {
             Engine::Transform::TransformComp* tf = ecs_field(it, Engine::Transform::TransformComp, 0);
@@ -169,7 +136,7 @@ static void OnInit(Context* ctx) {
         ecs_system_init(world, &s);
     }
 
-    EngineLog("[Init] GPU-driven spinning Suzanne and Grid ready.");
+    EngineLog("[Init] Scene ready.");
 }
 
 static void OnShutdown(Context* ctx) {
@@ -184,7 +151,7 @@ int main(int argc, char* argv[]) {
     (void)argc; (void)argv;
 
     AppConfig config = {};
-    config.title                   = "Scry GPU-Driven Sandbox";
+    config.title                   = "Scry";
     config.window_width            = 1280;
     config.window_height           = 720;
     config.OnInit                  = OnInit;

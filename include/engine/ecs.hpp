@@ -14,6 +14,9 @@ ENGINE_API void InitOSAPI();
 // the custom Scry pipeline, and binds the enkiTS task scheduler.
 ENGINE_API ecs_world_t* CreateWorld();
 
+// Shutdown the Flecs OS API and free resources.
+ENGINE_API void ShutdownOSAPI();
+
 // ── Double-buffer template ────────────────────────────────────────────────
 
 template <typename T>

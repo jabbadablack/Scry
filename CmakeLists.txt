@@ -29,10 +29,12 @@ set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 set(ENKITS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(ENKITS_INSTALL OFF CACHE BOOL "" FORCE)
 
-# mimalloc
+# mimalloc — override OFF: engine calls mi_malloc/mi_free explicitly; the global
+# malloc/free override causes spurious warnings when Vulkan/glslang makes large
+# OS-level allocations that bypass mimalloc but then get freed through the intercept.
 set(MI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(MI_BUILD_OBJECT OFF CACHE BOOL "" FORCE)
-set(MI_OVERRIDE ON CACHE BOOL "" FORCE)
+set(MI_OVERRIDE OFF CACHE BOOL "" FORCE)
 set(MI_BUILD_SHARED OFF CACHE BOOL "" FORCE)
 set(MI_BUILD_STATIC ON CACHE BOOL "" FORCE)
 
@@ -64,6 +66,27 @@ set(CPPTRACE_GET_SYMBOLS_WITH_LIBDWARF OFF CACHE BOOL "" FORCE)
 # libassert
 set(LIBASSERT_INSTALL OFF CACHE BOOL "" FORCE)
 set(LIBASSERT_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+
+# Assimp (GLTF + OBJ + FBX only; no export, no tools, no tests)
+set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_GLTF_IMPORTER           ON  CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_OBJ_IMPORTER            ON  CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_FBX_IMPORTER            ON  CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_ASSIMP_TOOLS            OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_TESTS                   OFF CACHE BOOL "" FORCE)
+set(ASSIMP_INSTALL                       OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_SAMPLES                 OFF CACHE BOOL "" FORCE)
+set(ASSIMP_NO_EXPORT                     ON  CACHE BOOL "" FORCE)
+
+# DiligentCore
+# Always keep HLSL enabled — shaders are HLSL; Vulkan uses glslang to cross-compile to SPIR-V.
+# Only skip glslang on MSVC/D3D12 where DXC handles HLSL natively.
+set(DILIGENT_BUILD_TESTS   OFF CACHE BOOL "" FORCE)
+set(DILIGENT_BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
+set(DILIGENT_INSTALL       OFF CACHE BOOL "" FORCE)
+if(MSVC)
+    set(DILIGENT_NO_GLSLANG ON CACHE BOOL "" FORCE)
+endif()
 
 # ─── FetchContent Declarations ───
 
@@ -117,7 +140,35 @@ FetchContent_Declare(eigen
     GIT_TAG        master
 )
 
-FetchContent_MakeAvailable(mimalloc SDL3 flecs yyjson Catch2 cpptrace libassert string_id enkiTS eigen)
+FetchContent_Declare(assimp
+    GIT_REPOSITORY https://github.com/assimp/assimp.git
+    GIT_TAG        v5.3.1
+)
+
+FetchContent_Declare(stb
+    GIT_REPOSITORY https://github.com/nothings/stb.git
+    GIT_TAG        master
+)
+
+# SOURCE_DIR is set so the parent dir (_deps) resolves #include <DiligentCore/...>
+FetchContent_Declare(DiligentCore
+    GIT_REPOSITORY https://github.com/DiligentGraphics/DiligentCore.git
+    GIT_TAG        master
+    SOURCE_DIR     "${CMAKE_BINARY_DIR}/_deps/DiligentCore"
+)
+
+# DiligentCore is processed first because it internally fetches mimalloc via
+# its own FetchContent_MakeAvailable call.  Processing ours first causes a
+# duplicate add_library error in CMake < 3.24 (no double-add-subdirectory guard).
+# By letting DiligentCore "own" mimalloc we avoid the conflict; the if(NOT TARGET)
+# guard below makes sure we don't create a second mimalloc-static on our side.
+FetchContent_MakeAvailable(assimp stb DiligentCore)
+
+if(NOT TARGET mimalloc-static)
+    FetchContent_MakeAvailable(mimalloc)
+endif()
+
+FetchContent_MakeAvailable(SDL3 flecs yyjson Catch2 cpptrace libassert string_id enkiTS eigen)
 
 if(MSVC)
     set(SCRY_WARNING_FLAGS /W4 /WX)
@@ -142,7 +193,32 @@ target_include_directories(scry PUBLIC
     "${string_id_SOURCE_DIR}"
 )
 
-target_compile_definitions(scry PRIVATE ENGINE_EXPORT)
+# DiligentCore include paths:
+#   _deps              → lets our headers use <DiligentCore/Graphics/...>
+#   _deps/DiligentCore → lets DiligentCore's own headers find each other as <Primitives/...>
+target_include_directories(scry PRIVATE
+    "${CMAKE_BINARY_DIR}/_deps"
+    "${CMAKE_BINARY_DIR}/_deps/DiligentCore"
+)
+
+# DiligentCore sets PLATFORM_WIN32/LINUX/MACOS via add_compile_definitions() which is a
+# directory property and does NOT propagate through target_link_libraries to external targets.
+if(WIN32)
+    target_compile_definitions(scry PRIVATE PLATFORM_WIN32=1)
+elseif(UNIX AND NOT APPLE)
+    target_compile_definitions(scry PRIVATE PLATFORM_LINUX=1)
+elseif(APPLE)
+    target_compile_definitions(scry PRIVATE PLATFORM_MACOS=1)
+endif()
+
+# Backend selection: D3D12 for MSVC, Vulkan for GCC/MinGW
+if(MSVC)
+    target_compile_definitions(scry PRIVATE ENGINE_EXPORT SCRY_BACKEND_DX12)
+    target_link_libraries(scry PRIVATE Diligent-GraphicsEngineDX12-static)
+else()
+    target_compile_definitions(scry PRIVATE ENGINE_EXPORT SCRY_BACKEND_VULKAN)
+    target_link_libraries(scry PRIVATE Diligent-GraphicsEngineVk-static)
+endif()
 
 target_link_libraries(scry
     PUBLIC
@@ -196,3 +272,33 @@ endif()
 if(SCRY_BUILD_EXAMPLES)
     add_subdirectory(examples/sandbox)
 endif()
+
+# ─── Asset cooker tool ────────────────────────────────────────────────────────
+# Standalone executable — links ONLY against assimp + stb.  No Scry runtime.
+
+add_executable(scry_cooker tools/cooker.cpp)
+
+target_compile_features(scry_cooker PRIVATE cxx_std_17)
+
+target_include_directories(scry_cooker PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"   # for engine/CookedAsset.h
+    "${stb_SOURCE_DIR}"                     # for stb_image.h
+    "${assimp_SOURCE_DIR}/include"
+    "${assimp_BINARY_DIR}/include"          # for generated assimp/config.h
+)
+
+target_link_libraries(scry_cooker PRIVATE assimp::assimp)
+
+# ─── cook_assets custom target ───────────────────────────────────────────────
+# Runs scry_cooker over assets/raw → bin/assets/cooked before scry is linked.
+
+add_custom_target(cook_assets
+    COMMAND $<TARGET_FILE:scry_cooker>
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/raw"
+            "${CMAKE_BINARY_DIR}/bin/assets/cooked"
+    DEPENDS scry_cooker
+    COMMENT "Cooking raw assets into cooked binary blobs"
+    VERBATIM
+)
+
+add_dependencies(scry cook_assets)

@@ -1,6 +1,7 @@
 #include <engine/memory.hpp>
 #include <mimalloc.h>
 #include <libassert/assert.hpp>
+#include <new>
 
 namespace Engine {
 namespace Memory {
@@ -17,7 +18,7 @@ bool IsUsingMimalloc(const void* ptr) {
 void* AllocInDll(size_t size) {
     DEBUG_ASSERT(size > 0);
     DEBUG_ASSERT(size < 1024 * 1024 * 1024);
-    void* ptr = ::operator new(size);
+    void* ptr = mi_malloc(size);
     DEBUG_ASSERT(ptr != nullptr);
     return ptr;
 }
@@ -26,7 +27,7 @@ void FreeInDll(void* ptr) {
     if (ptr == nullptr) {
         return;
     }
-    ::operator delete(ptr);
+    mi_free(ptr);
 }
 
 void ArenaInit(Arena* arena, void* backing_memory, size_t size) {
@@ -170,54 +171,3 @@ void PoolReset(PoolAllocator* pool) {
 
 } // namespace Memory
 } // namespace Engine
-
-// Global operator new/delete overrides to use mimalloc
-void* operator new(size_t size) {
-    DEBUG_ASSERT(size > 0);
-    void* ptr = mi_malloc(size);
-    return ptr;
-}
-
-void* operator new[](size_t size) {
-    DEBUG_ASSERT(size > 0);
-    void* ptr = mi_malloc(size);
-    return ptr;
-}
-
-void operator delete(void* p) noexcept {
-    mi_free(p);
-}
-
-void operator delete[](void* p) noexcept {
-    mi_free(p);
-}
-
-void operator delete(void* p, size_t size) noexcept {
-    (void)size;
-    mi_free(p);
-}
-
-void operator delete[](void* p, size_t size) noexcept {
-    (void)size;
-    mi_free(p);
-}
-
-void* operator new(size_t size, const std::nothrow_t&) noexcept {
-    DEBUG_ASSERT(size > 0);
-    void* ptr = mi_malloc(size);
-    return ptr;
-}
-
-void* operator new[](size_t size, const std::nothrow_t&) noexcept {
-    DEBUG_ASSERT(size > 0);
-    void* ptr = mi_malloc(size);
-    return ptr;
-}
-
-void operator delete(void* p, const std::nothrow_t&) noexcept {
-    mi_free(p);
-}
-
-void operator delete[](void* p, const std::nothrow_t&) noexcept {
-    mi_free(p);
-}

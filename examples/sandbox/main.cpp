@@ -3,19 +3,16 @@
 #include <engine/ecs.hpp>
 #include <engine/json.hpp>
 #include <engine/plugin.hpp>
+#include <engine/graphics.hpp>
+#include <engine/renderer.hpp>
+#include <engine/transform.hpp>
 #include <libassert/assert.hpp>
 #include <flecs.h>
 #include <cstdio>
+#include <exception>
+#include <filesystem>
 
-// ── Component types ───────────────────────────────────────────────────────────
-
-struct Health { float value; };
-
-#pragma pack(push, 1)
-struct DamageIntent { uint8_t active; float amount; };
-#pragma pack(pop)
-
-static constexpr float k_damage_amount = 10.0f;
+namespace fs = std::filesystem;
 
 // ── Logging callback ──────────────────────────────────────────────────────────
 
@@ -24,144 +21,95 @@ static void AppLog(const char* msg) {
     std::fflush(stdout);
 }
 
+// ── Asset Discovery ───────────────────────────────────────────────────────────
+
+static uint32_t DiscoverAndLoadMesh(const char* filename) {
+    std::string paths[] = {
+        std::string("assets/cooked/") + filename,
+        std::string("../assets/cooked/") + filename,
+        std::string("../../assets/cooked/") + filename,
+        std::string("bin/assets/cooked/") + filename,
+        std::string("../bin/assets/cooked/") + filename,
+        std::string("../../bin/assets/cooked/") + filename
+    };
+
+    for (const auto& path : paths) {
+        if (fs::exists(path)) {
+            char log_msg[512];
+            std::snprintf(log_msg, sizeof(log_msg), "[Init] Found asset at: %s", path.c_str());
+            EngineLog(log_msg);
+            return Engine::Graphics::LoadMesh(path.c_str());
+        }
+    }
+
+    char err_msg[512];
+    std::snprintf(err_msg, sizeof(err_msg), "[Init] FATAL: Could not find asset %s in any candidate path.", filename);
+    EngineLog(err_msg);
+    
+    // Log current working directory to help debugging
+    std::snprintf(err_msg, sizeof(err_msg), "[Init] Current working directory: %s", fs::current_path().string().c_str());
+    EngineLog(err_msg);
+
+    return Engine::Graphics::INVALID_MESH;
+}
+
 // ── Lifecycle callbacks ───────────────────────────────────────────────────────
 
 static void OnInit(Context* ctx) {
     DEBUG_ASSERT(ctx != nullptr);
-
     Engine::JSON::LoadProjectConfig(ctx, nullptr);
 
     ecs_world_t* world = GetWorld(ctx);
 
-    // ── Health component ──────────────────────────────────────────────────────
-    ecs_entity_t id_Health;
-    {
-        ecs_entity_desc_t e    = {};
-        e.name                 = "DoubleBuffered<Health>";
-        ecs_component_desc_t c = {};
-        c.entity               = ecs_entity_init(world, &e);
-        c.type.size            = sizeof(Engine::ECS::DoubleBuffered<Health>);
-        c.type.alignment       = alignof(Engine::ECS::DoubleBuffered<Health>);
-        id_Health              = ecs_component_init(world, &c);
-        DEBUG_ASSERT(id_Health != 0);
+    // 1. Load mesh
+    uint32_t suzanne_handle = DiscoverAndLoadMesh("suzanne.scrymesh");
+    if (suzanne_handle == Engine::Graphics::INVALID_MESH) {
+        return;
     }
 
-    Engine::ECS::RegisterDoubleBufferSync<Health>(world, id_Health);
+    // 2. Create Player
+    ecs_entity_desc_t e = {};
+    e.name = "Player";
+    ecs_entity_t player = ecs_entity_init(world, &e);
 
-    // ── DamageIntent component ────────────────────────────────────────────────
-    ecs_entity_t id_Damage;
+    Engine::Transform::TransformComp tf = {};
+    tf.position = {0, 0, 0};
+    tf.rotation = {0, 0, 0};
+    tf.scale    = {1, 1, 1};
+    ecs_set_id(world, player, Engine::Transform::id_Transform, sizeof(tf), &tf);
+
+    Engine::Renderer::MeshInstance mi = { suzanne_handle };
+    ecs_set_id(world, player, Engine::Renderer::id_MeshInstance, sizeof(mi), &mi);
+
+    Engine::Renderer::Intent intent = { Engine::Renderer::INTENT_VISIBLE };
+    ecs_set_id(world, player, Engine::Renderer::id_EntityIntent, sizeof(intent), &intent);
+
+    // 3. Rotation system
     {
-        ecs_entity_desc_t e    = {};
-        e.name                 = "DamageIntent";
-        ecs_component_desc_t c = {};
-        c.entity               = ecs_entity_init(world, &e);
-        c.type.size            = sizeof(DamageIntent);
-        c.type.alignment       = alignof(DamageIntent);
-        id_Damage              = ecs_component_init(world, &c);
-        DEBUG_ASSERT(id_Damage != 0);
-    }
-
-    Engine::Pipeline::RegisterIntentComponent(world, id_Damage);
-
-    // ── DamageQueueSystem — Intent phase ──────────────────────────────────────
-    {
-        ecs_entity_desc_t e        = {};
-        e.name                     = "DamageQueueSystem";
-        const ecs_entity_t sys_ent = ecs_entity_init(world, &e);
+        ecs_entity_desc_t ed = {};
+        ed.name = "RotateSystem";
+        ecs_entity_t sys_ent = ecs_entity_init(world, &ed);
         ecs_add_pair(world, sys_ent, EcsDependsOn, Engine::Pipeline::Phase_Intent);
 
-        ecs_system_desc_t s    = {};
-        s.entity               = sys_ent;
-        s.query.terms[0].id    = id_Health;
-        s.query.terms[0].inout = EcsIn;
-        s.query.terms[1].id    = id_Damage;
-        s.query.terms[1].inout = EcsInOut;
+        ecs_system_desc_t s = {};
+        s.entity = sys_ent;
+        s.query.terms[0].id = Engine::Transform::id_Transform;
+        s.query.terms[0].inout = EcsInOut;
         s.callback = [](ecs_iter_t* it) {
-            const Engine::ECS::DoubleBuffered<Health>* hp     = ecs_field(it, Engine::ECS::DoubleBuffered<Health>, 0);
-            DamageIntent*                               intent = ecs_field(it, DamageIntent, 1);
+            Engine::Transform::TransformComp* tf = ecs_field(it, Engine::Transform::TransformComp, 0);
             for (int i = 0; i < it->count; ++i) {
-                if (hp[i].read.value > 0.0f) {
-                    intent[i].active = 1;
-                    intent[i].amount = k_damage_amount;
-                }
+                tf[i].rotation.y() += it->delta_time;
             }
         };
-
         ecs_system_init(world, &s);
     }
 
-    // ── DamageSystem — State phase ────────────────────────────────────────────
-    {
-        ecs_entity_desc_t e        = {};
-        e.name                     = "DamageSystem";
-        const ecs_entity_t sys_ent = ecs_entity_init(world, &e);
-        ecs_add_pair(world, sys_ent, EcsDependsOn, Engine::Pipeline::Phase_StateUpdate);
-
-        ecs_system_desc_t s    = {};
-        s.entity               = sys_ent;
-        s.query.terms[0].id    = id_Damage;
-        s.query.terms[0].inout = EcsIn;
-        s.query.terms[1].id    = id_Health;
-        s.query.terms[1].inout = EcsInOut;
-        s.callback = [](ecs_iter_t* it) {
-            const DamageIntent*                  intent = ecs_field(it, DamageIntent, 0);
-            Engine::ECS::DoubleBuffered<Health>* hp     = ecs_field(it, Engine::ECS::DoubleBuffered<Health>, 1);
-            for (int i = 0; i < it->count; ++i) {
-                if (intent[i].active) {
-                    hp[i].write.value -= intent[i].amount;
-                }
-            }
-        };
-
-        ecs_system_init(world, &s);
-    }
-
-    // ── HealthReactorSystem — React phase ─────────────────────────────────────
-    {
-        ecs_entity_desc_t e        = {};
-        e.name                     = "HealthReactorSystem";
-        const ecs_entity_t sys_ent = ecs_entity_init(world, &e);
-        ecs_add_pair(world, sys_ent, EcsDependsOn, Engine::Pipeline::Phase_React);
-
-        ecs_system_desc_t s    = {};
-        s.entity               = sys_ent;
-        s.query.terms[0].id    = id_Health;
-        s.query.terms[0].inout = EcsIn;
-        s.callback = [](ecs_iter_t* it) {
-            const Engine::ECS::DoubleBuffered<Health>* hp = ecs_field(it, Engine::ECS::DoubleBuffered<Health>, 0);
-            char buf[64];
-            for (int i = 0; i < it->count; ++i) {
-                if (hp[i].read.value != hp[i].write.value) {
-                    std::snprintf(buf, sizeof(buf), "[React] health %f -> %f",
-                             static_cast<double>(hp[i].read.value),
-                             static_cast<double>(hp[i].write.value));
-                    EngineLog(buf);
-                }
-            }
-        };
-
-        ecs_system_init(world, &s);
-    }
-
-    // ── Spawn Player ──────────────────────────────────────────────────────────
-    {
-        ecs_entity_desc_t e       = {};
-        e.name                    = "Player";
-        const ecs_entity_t player = ecs_entity_init(world, &e);
-
-        Engine::ECS::DoubleBuffered<Health> hp_init = {{100.0f}, {100.0f}};
-        ecs_set_id(world, player, id_Health, sizeof(hp_init), &hp_init);
-
-        DamageIntent dmg_init = {};
-        ecs_set_id(world, player, id_Damage, sizeof(dmg_init), &dmg_init);
-    }
-
-    EngineLog("[Init] ISR demo ready — health will deplete to 0 over ~10 frames.");
+    EngineLog("[Init] GPU-driven spinning Suzanne ready.");
 }
 
 static void OnShutdown(Context* ctx) {
     (void)ctx;
-    EngineLog("[Shutdown] ISR demo complete");
+    EngineLog("[Shutdown] Sandbox complete");
     Engine::Plugin::UnloadPlugins();
 }
 
@@ -171,18 +119,27 @@ int main(int argc, char* argv[]) {
     (void)argc; (void)argv;
 
     AppConfig config = {};
-    config.title                   = "Engine ISR Demo";
-    config.window_width            = 800;
-    config.window_height           = 600;
+    config.title                   = "Scry GPU-Driven Sandbox";
+    config.window_width            = 1280;
+    config.window_height           = 720;
     config.OnInit                  = OnInit;
     config.OnShutdown              = OnShutdown;
     config.OnLog                   = AppLog;
     config.global_memory_pool_size = 256 * 1024;
     config.thread_count            = 1;
 
-    const EngineError err = EngineRun(&config);
-    if (err != SUCCESS) {
-        std::fprintf(stderr, "[Main] Engine failed to start with error code: %d\n", (int)err);
+    try {
+        const EngineError err = EngineRun(&config);
+        if (err != SUCCESS) {
+            std::fprintf(stderr, "[Main] Engine failed to start with error code: %d\n", (int)err);
+            std::printf("Press ENTER to exit...");
+            std::getchar();
+            return 1;
+        }
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "[Main] Fatal exception: %s\n", e.what());
+        std::printf("Press ENTER to exit...");
+        std::getchar();
         return 1;
     }
 

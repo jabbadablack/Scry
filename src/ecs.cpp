@@ -1,5 +1,6 @@
 #include <engine/ecs.hpp>
 #include <engine/pipeline.hpp>
+#include <engine/transform.hpp>
 #include <engine/job_system.hpp>
 #include <engine/memory.hpp>
 #include <mimalloc.h>
@@ -131,10 +132,12 @@ static int32_t AtomicDec(int32_t* value) {
 }
 
 void InitOSAPI() {
-    size_t req_size = Memory::PoolGetRequiredSize(sizeof(ThreadWrapper), MAX_THREAD_WRAPPERS);
-    g_thread_wrapper_pool_mem = mi_malloc(req_size);
-    DEBUG_ASSERT(g_thread_wrapper_pool_mem != nullptr);
-    Memory::PoolInit(&g_thread_wrapper_pool, g_thread_wrapper_pool_mem, req_size, sizeof(ThreadWrapper), MAX_THREAD_WRAPPERS);
+    if (g_thread_wrapper_pool_mem == nullptr) {
+        size_t req_size = Memory::PoolGetRequiredSize(sizeof(ThreadWrapper), MAX_THREAD_WRAPPERS);
+        g_thread_wrapper_pool_mem = mi_malloc(req_size);
+        DEBUG_ASSERT(g_thread_wrapper_pool_mem != nullptr);
+        Memory::PoolInit(&g_thread_wrapper_pool, g_thread_wrapper_pool_mem, req_size, sizeof(ThreadWrapper), MAX_THREAD_WRAPPERS);
+    }
     
     ecs_os_set_api_defaults();
     ecs_os_api_t api = ecs_os_api;
@@ -169,6 +172,13 @@ void InitOSAPI() {
     ecs_os_set_api(&api);
 }
 
+void ShutdownOSAPI() {
+    if (g_thread_wrapper_pool_mem) {
+        mi_free(g_thread_wrapper_pool_mem);
+        g_thread_wrapper_pool_mem = nullptr;
+    }
+}
+
 ecs_world_t* CreateWorld() {
     InitOSAPI();
 
@@ -188,6 +198,8 @@ ecs_world_t* CreateWorld() {
 #ifndef NDEBUG
     EngineLog("[ECS] Pipeline ready");
 #endif
+
+    Transform::Init(world);
 
     return world;
 }

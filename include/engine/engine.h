@@ -34,7 +34,8 @@ typedef enum EngineError {
     ERR_PLATFORM_INIT = -1,
     ERR_MEMORY_INIT = -2,
     ERR_JOB_SYSTEM_INIT = -3,
-    ERR_ECS_INIT = -4
+    ERR_ECS_INIT = -4,
+    ERR_GRAPHICS_INIT = -5
 } EngineError;
 
 /* ── Opaque engine context ───────────────────────────────────────────────── */
@@ -108,8 +109,9 @@ ENGINE_API void RequestExit(Context* ctx);
  */
 ENGINE_API void* GetUserData(const Context* ctx);
 
-/* Engine version as a null-terminated semver string (e.g. "0.1.0"). */
-ENGINE_API const char* GetVersion(void);
+/* Engine version as a null-terminated semver string (e.g. "0.1.0").
+ * Named EngineGetVersion to avoid collision with WINAPI GetVersion(). */
+ENGINE_API const char* EngineGetVersion(void);
 
 /* GetWorld — returns the raw Flecs world pointer stored in ctx.
  * The caller must include <flecs.h> to use any ECS functions on the result.

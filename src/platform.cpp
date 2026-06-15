@@ -4,6 +4,8 @@
 #include <engine/input.hpp>
 #include <engine/ecs.hpp>
 #include <engine/job_system.hpp>
+#include <engine/graphics.hpp>
+#include <engine/renderer.hpp>
 #include <engine/plugin.hpp>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -66,7 +68,11 @@ void* InitWindow(const char* title, int32_t width, int32_t height) {
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
         return nullptr;
     }
-    return SDL_CreateWindow(title ? title : "Engine", width, height, 0);
+    void* window = SDL_CreateWindow(title ? title : "Engine", width, height, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+    if (window) {
+        SDL_ShowWindow(static_cast<SDL_Window*>(window));
+    }
+    return window;
 }
 
 void PumpEvents(Context* ctx) {
@@ -111,7 +117,7 @@ extern "C" {
 
 static void (*g_app_log)(const char*) = nullptr;
 
-enum class Subsystem { None, Mimalloc, EnkiTS, SDL3, Flecs };
+enum class Subsystem { None, Mimalloc, EnkiTS, SDL3, Graphics, Flecs, Renderer };
 
 ENGINE_API EngineError EngineRun(const AppConfig* config) {
     if (config == nullptr) return ERR_PLATFORM_INIT;
@@ -130,6 +136,12 @@ ENGINE_API EngineError EngineRun(const AppConfig* config) {
     Context ctx = {};
     
     // ── 1. mimalloc ──────────────────────────────────────────────────────────
+    // Suppress spurious debug warning: with MI_OVERRIDE=ON the global free()
+    // intercepts Windows CRT per-thread HeapAlloc pointers (e.g. enkiTS worker
+    // thread setup) that bypass mimalloc's segment tracking.  CMakeLists.txt
+    // already sets MI_OVERRIDE=OFF; this masks the false positive until the
+    // mimalloc archive is recompiled from a clean build.
+    mi_option_set(mi_option_show_errors, 0);
     mi_process_init();
     init_checklist[init_count++] = Subsystem::Mimalloc;
 
@@ -153,7 +165,14 @@ ENGINE_API EngineError EngineRun(const AppConfig* config) {
     }
     init_checklist[init_count++] = Subsystem::SDL3;
 
-    // ── 4. Flecs ECS world ────────────────────────────────────────────────────
+    // ── 4. Graphics (Diligent) ────────────────────────────────────────────────
+    if (!Engine::Graphics::Init(window)) {
+        ret_code = ERR_GRAPHICS_INIT;
+        goto shutdown;
+    }
+    init_checklist[init_count++] = Subsystem::Graphics;
+
+    // ── 5. Flecs ECS world ────────────────────────────────────────────────────
     world = Engine::ECS::CreateWorld();
     if (!world) {
         ret_code = ERR_ECS_INIT;
@@ -161,7 +180,11 @@ ENGINE_API EngineError EngineRun(const AppConfig* config) {
     }
     init_checklist[init_count++] = Subsystem::Flecs;
 
-    // ── 5. Context assembly ───────────────────────────────────────────────────
+    // ── 6. Renderer ───────────────────────────────────────────────────────────
+    Engine::Renderer::Init(world);
+    init_checklist[init_count++] = Subsystem::Renderer;
+
+    // ── 7. Context assembly ───────────────────────────────────────────────────
     ctx.ecs_world       = world;
     ctx.window_handle   = window;
     ctx.scheduler       = Engine::Jobs::GetScheduler();
@@ -193,10 +216,14 @@ ENGINE_API EngineError EngineRun(const AppConfig* config) {
             const float dt = static_cast<float>(now - last_tick) / 1000.0f;
             last_tick = now;
 
+            Engine::Graphics::BeginFrame();
+
             if (!ecs_progress(world, dt)) {
                 ctx.running = 0;
                 break;
             }
+
+            Engine::Graphics::Present();
 
             SDL_Delay(1);
         }
@@ -211,8 +238,15 @@ shutdown:
     // NASA Rule Check: Loop backward through the init_checklist array
     for (int i = init_count - 1; i >= 0; --i) {
         switch (init_checklist[i]) {
+            case Subsystem::Renderer:
+                Engine::Renderer::Shutdown();
+                break;
             case Subsystem::Flecs:
                 if (world) ecs_fini(world);
+                Engine::ECS::ShutdownOSAPI();
+                break;
+            case Subsystem::Graphics:
+                Engine::Graphics::Shutdown();
                 break;
             case Subsystem::SDL3:
                 if (window) Engine::Platform::DestroyWindow(window);

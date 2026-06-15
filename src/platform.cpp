@@ -69,9 +69,6 @@ static void MouseButtonCallback(GLFWwindow* window, int button, int action, int 
         write_state.keys[idx] &= static_cast<uint8_t>(~(1u << bit));
         if (button == GLFW_MOUSE_BUTTON_RIGHT) {
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-            if (glfwRawMouseMotionSupported()) {
-                glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_FALSE);
-            }
         }
     }
 }
@@ -81,18 +78,18 @@ static void CursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
     const uint8_t w_idx = Engine::Input::g_input_buffer.write_index;
     auto& write_state = Engine::Input::g_input_buffer.states[w_idx];
 
-    float prev_x = static_cast<float>(write_state.mouse_x);
-    float prev_y = static_cast<float>(write_state.mouse_y);
+    // Note: When cursor is disabled, xpos/ypos are virtual and unbounded
+    static double last_x = xpos;
+    static double last_y = ypos;
+
+    write_state.mouse_dx += static_cast<float>(xpos - last_x);
+    write_state.mouse_dy += static_cast<float>(ypos - last_y);
+
+    last_x = xpos;
+    last_y = ypos;
 
     write_state.mouse_x = static_cast<int16_t>(xpos);
     write_state.mouse_y = static_cast<int16_t>(ypos);
-
-    // Calculate relative motion
-    // Note: For the very first event this might jump, but it's acceptable for a sandbox
-    if (prev_x != 0.0f || prev_y != 0.0f) {
-        write_state.mouse_dx += (static_cast<float>(xpos) - prev_x);
-        write_state.mouse_dy += (static_cast<float>(ypos) - prev_y);
-    }
 }
 
 static void ErrorCallback(int error, const char* description) {
@@ -105,8 +102,6 @@ void* InitWindow(const char* title, int32_t width, int32_t height) {
         return nullptr;
     }
     
-    // We are using BGFX, which manages the graphics context itself.
-    // GLFW should not create an OpenGL context.
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
@@ -126,11 +121,11 @@ void PumpEvents(Context* ctx) {
     const uint8_t w_idx = Engine::Input::g_input_buffer.write_index;
     const uint8_t r_idx = Engine::Input::g_input_buffer.read_index;
     
-    // Prepare write state by copying from read state (persist held keys)
-    // mouse_dx/dy are reset in Swap(), so they start at 0 here
+    // mouse_dx/dy are cumulative across callbacks, reset only when swapped
     Engine::Input::g_input_buffer.states[w_idx] = Engine::Input::g_input_buffer.states[r_idx];
+    Engine::Input::g_input_buffer.states[w_idx].mouse_dx = 0.0f;
+    Engine::Input::g_input_buffer.states[w_idx].mouse_dy = 0.0f;
 
-    // Poll events; this will trigger callbacks which write to states[w_idx]
     glfwPollEvents();
 
     if (glfwWindowShouldClose(static_cast<GLFWwindow*>(ctx->window_handle))) {

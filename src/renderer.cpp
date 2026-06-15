@@ -166,7 +166,6 @@ void Init(ecs_world_t* world) {
         s.callback = [](ecs_iter_t* it) {
             DEBUG_ASSERT(it != nullptr);
 
-            // 1. Setup global view state
             const bgfx::Stats* stats = bgfx::getStats();
             DEBUG_ASSERT(stats != nullptr);
             bgfx::setViewRect(0, 0, 0, (uint16_t)stats->width, (uint16_t)stats->height);
@@ -174,14 +173,13 @@ void Init(ecs_world_t* world) {
 
             if (g_camera_query) {
                 ecs_iter_t cam_it = ecs_query_iter(it->world, g_camera_query);
-                while (ecs_query_next(&cam_it)) { // Iter until end to avoid Flecs leak
+                while (ecs_query_next(&cam_it)) { 
                     const Engine::Camera::Camera* cam = ecs_field(&cam_it, Engine::Camera::Camera, 0);
                     DEBUG_ASSERT(cam != nullptr);
                     bgfx::setViewTransform(0, cam[0].view, cam[0].proj);
                 }
             }
 
-            // 2. Data-oriented grouping: Group entities by (Mesh, Material)
             struct Batch {
                 uint32_t mesh_id;
                 uint16_t program;
@@ -211,7 +209,6 @@ void Init(ecs_world_t* world) {
                 }
             }
 
-            // 3. Submit batches
             for (auto& pair : batches) {
                 auto& b = pair.second;
                 uint32_t count = static_cast<uint32_t>(b.matrices.size());
@@ -239,7 +236,11 @@ void Init(ecs_world_t* world) {
                         bgfx::setIndexBuffer(ibh);
                         bgfx::setInstanceDataBuffer(&idb);
                         bgfx::setUniform(u_baseColor, b.color);
-                        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
+                        
+                        // RESTORE SOLID CULLING AND DEPTH WRITING
+                        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z | 
+                                       BGFX_STATE_DEPTH_TEST_LESS | BGFX_STATE_CULL_CCW | BGFX_STATE_MSAA);
+                        
                         bgfx::submit(0, prog);
 
                         if (!g_first_frame_submitted) {

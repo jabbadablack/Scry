@@ -15,13 +15,13 @@ ecs_entity_t id_Camera = 0;
 void Init(ecs_world_t* world) {
     // ── Register Component ───────────────────────────────────────────────────
     {
-        ecs_entity_desc_t e = {};
-        e.name = "Camera";
-        ecs_component_desc_t c = {};
-        c.entity = ecs_entity_init(world, &e);
-        c.type.size = sizeof(Camera);
-        c.type.alignment = alignof(Camera);
-        id_Camera = ecs_component_init(world, &c);
+        ecs_entity_desc_t ed = {};
+        ed.name = "Camera";
+        ecs_component_desc_t cd = {};
+        cd.entity = ecs_entity_init(world, &ed);
+        cd.type.size = sizeof(Camera);
+        cd.type.alignment = alignof(Camera);
+        id_Camera = ecs_component_init(world, &cd);
     }
 
     // ── Camera Input System (Phase_Intent) ──────────────────────────────────
@@ -42,6 +42,7 @@ void Init(ecs_world_t* world) {
 
             for (int i = 0; i < it->count; ++i) {
                 if (Input::g_input_buffer.IsKeyDown(Input::Key::MouseR)) {
+                    // Fix: Flip signs for standard FPS-style "natural" look
                     cam[i].yaw   -= Input::g_input_buffer.states[Input::g_input_buffer.read_index].mouse_dx * sensitivity;
                     cam[i].pitch -= Input::g_input_buffer.states[Input::g_input_buffer.read_index].mouse_dy * sensitivity;
                     cam[i].pitch = std::clamp(cam[i].pitch, -1.5f, 1.5f);
@@ -90,8 +91,9 @@ void Init(ecs_world_t* world) {
                     cam[i].position.z() + fwd.z() 
                 };
                 
-                bx::mtxLookAt(cam[i].view, eye, at);
-                bx::mtxProj(cam[i].proj, 60.0f, 1280.0f/720.0f, 0.1f, 1000.0f, bgfx::getCaps()->homogeneousDepth);
+                // Explicitly use Right-Handedness for BGFX consistency
+                bx::mtxLookAt(cam[i].view, eye, at, {0,1,0}, bx::Handedness::Right);
+                bx::mtxProj(cam[i].proj, 60.0f, 1280.0f/720.0f, 0.1f, 1000.0f, bgfx::getCaps()->homogeneousDepth, bx::Handedness::Right);
             }
         };
         ecs_system_init(world, &s);

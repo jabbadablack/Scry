@@ -8,32 +8,33 @@ namespace Input {
 enum class Key : uint32_t {
     None = 0,
 
-    // Letters (matching SDL scancodes)
-    A = 4, B = 5, C = 6, D = 7, E = 8, F = 9, G = 10, H = 11, I = 12, J = 13,
-    K = 14, L = 15, M = 16, N = 17, O = 18, P = 19, Q = 20, R = 21, S = 22,
-    T = 23, U = 24, V = 25, W = 26, X = 27, Y = 28, Z = 29,
+    // Letters (matching GLFW keys)
+    A = 65, B = 66, C = 67, D = 68, E = 69, F = 70, G = 71, H = 72, I = 73, J = 74,
+    K = 75, L = 76, M = 77, N = 78, O = 79, P = 80, Q = 81, R = 82, S = 83,
+    T = 84, U = 85, V = 86, W = 87, X = 88, Y = 89, Z = 90,
 
     // Numbers
-    Num1 = 30, Num2 = 31, Num3 = 32, Num4 = 33, Num5 = 34,
-    Num6 = 35, Num7 = 36, Num8 = 37, Num9 = 38, Num0 = 39,
+    Num0 = 48, Num1 = 49, Num2 = 50, Num3 = 51, Num4 = 52,
+    Num5 = 53, Num6 = 54, Num7 = 55, Num8 = 56, Num9 = 57,
 
     // Controls
-    Return = 40, Escape = 41, Backspace = 42, Tab = 43, Space = 44,
+    Return = 257, Escape = 256, Backspace = 259, Tab = 258, Space = 32,
 
     // Function keys
-    F1 = 58, F2 = 59, F3 = 60, F4 = 61, F5 = 62, F6 = 63,
-    F7 = 64, F8 = 65, F9 = 66, F10 = 67, F11 = 68, F12 = 69,
+    F1 = 290, F2 = 291, F3 = 292, F4 = 293, F5 = 294, F6 = 295,
+    F7 = 296, F8 = 297, F9 = 298, F10 = 299, F11 = 300, F12 = 301,
 
     // Arrows
-    Right = 79, Left = 80, Down = 81, Up = 82,
+    Right = 262, Left = 263, Down = 264, Up = 265,
 
     // Modifiers
-    LCtrl = 224, LShift = 225, LAlt = 226,
-    RCtrl = 228, RShift = 229, RAlt = 230,
+    LCtrl = 341, LShift = 340, LAlt = 342,
+    RCtrl = 345, RShift = 344, RAlt = 346,
 
-    // Virtual Mouse Codes (mapped to unused space above standard scancodes)
-    MouseL = 510,
-    MouseR = 511
+    // Virtual Mouse Codes (GLFW mouse buttons are 0-7, mapping to custom range)
+    MouseL = 0,
+    MouseR = 1,
+    MouseM = 2
 };
 
 struct ENGINE_API InputState {
@@ -56,6 +57,9 @@ struct ENGINE_API InputBuffer {
         write_index = temp;
         // Carry over the active inputs to the next frame to persist held buttons
         states[write_index] = states[read_index];
+        // Reset relative motion
+        states[write_index].mouse_dx = 0.0f;
+        states[write_index].mouse_dy = 0.0f;
     }
 
     inline bool IsKeyDown(Key key) const {

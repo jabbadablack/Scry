@@ -3,7 +3,6 @@
 #include <engine/platform.hpp>
 #include <engine/memory.hpp>
 #include <engine/job_system.hpp>
-#include <SDL3/SDL.h>
 #include <mimalloc.h>
 #include <libassert/assert.hpp>
 #include <yyjson.h>
@@ -11,6 +10,18 @@
 #include <cstdio>
 #include <vector>
 #include <string>
+#include <filesystem>
+
+namespace fs = std::filesystem;
+
+#ifdef _WIN32
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  include <windows.h>
+#else
+#  include <dlfcn.h>
+#endif
 
 namespace Engine {
 namespace Plugin {
@@ -20,7 +31,13 @@ struct PluginDescriptor {
     std::string library_path;
 };
 
-static SDL_SharedObject* g_plugin_handles[16] = {nullptr};
+#ifdef _WIN32
+typedef HMODULE LibraryHandle;
+#else
+typedef void* LibraryHandle;
+#endif
+
+static LibraryHandle g_plugin_handles[16] = {nullptr};
 static uint32_t g_plugin_count = 0;
 static std::vector<PluginDescriptor> g_registry;
 
@@ -40,98 +57,91 @@ static void EngineFree(void* ptr) {
     if (ptr) mi_free(ptr);
 }
 
-struct LibSearchData {
-    const char* suffix;
-    char result[512];
-};
-
-static SDL_EnumerationResult SDLCALL LibSearchCallback(void* userdata, const char* dirname, const char* fname) {
-    LibSearchData* data = static_cast<LibSearchData*>(userdata);
-    const size_t fname_len = std::strlen(fname);
-    const size_t suffix_len = std::strlen(data->suffix);
-    
-    if (fname_len >= suffix_len && std::strcmp(fname + (fname_len - suffix_len), data->suffix) == 0) {
-        std::snprintf(data->result, 512, "%s/%s", dirname, fname);
-        return SDL_ENUM_FAILURE; 
-    }
-    return SDL_ENUM_CONTINUE;
-}
-
-static SDL_EnumerationResult SDLCALL RegistryEnumCallback(void* userdata, const char* dirname, const char* fname) {
-    (void)userdata;
-    
-    char plugin_dir[512];
-    size_t dir_len = std::strlen(dirname);
-    if (dir_len > 0 && (dirname[dir_len-1] == '/' || dirname[dir_len-1] == '\\')) {
-        std::snprintf(plugin_dir, sizeof(plugin_dir), "%s%s", dirname, fname);
-    } else {
-        std::snprintf(plugin_dir, sizeof(plugin_dir), "%s/%s", dirname, fname);
-    }
-    
-    char json_path[512];
-    std::snprintf(json_path, sizeof(json_path), "%s/plugin.json", plugin_dir);
-    
-    std::FILE* f = std::fopen(json_path, "rb");
-    if (!f) return SDL_ENUM_CONTINUE;
-    
-    std::fseek(f, 0, SEEK_END);
-    long fsize = std::ftell(f);
-    std::fseek(f, 0, SEEK_SET);
-    
-    if (fsize <= 0) {
-        std::fclose(f);
-        return SDL_ENUM_CONTINUE;
-    }
-    
-    char* buffer = static_cast<char*>(mi_malloc(static_cast<size_t>(fsize)));
-    if (!buffer) {
-        std::fclose(f);
-        return SDL_ENUM_CONTINUE;
-    }
-    
-    size_t read_bytes = std::fread(buffer, 1, static_cast<size_t>(fsize), f);
-    std::fclose(f);
-    
-    yyjson_doc* doc = yyjson_read(buffer, read_bytes, 0);
-    if (doc) {
-        yyjson_val* root = yyjson_doc_get_root(doc);
-        yyjson_val* name_val = yyjson_obj_get(root, "name");
-        if (name_val && yyjson_is_str(name_val)) {
-            const char* name = yyjson_get_str(name_val);
-            
-            PluginDescriptor desc;
-            desc.name = name;
-            
-            LibSearchData search;
-            search.result[0] = '\0';
-#ifdef _WIN32
-            search.suffix = ".dll";
-#else
-            search.suffix = ".so";
-#endif
-            SDL_EnumerateDirectory(plugin_dir, LibSearchCallback, &search);
-            if (search.result[0] != '\0') {
-                desc.library_path = search.result;
-                g_registry.push_back(desc);
-            }
-        }
-        yyjson_doc_free(doc);
-    }
-    mi_free(buffer);
-    
-    return SDL_ENUM_CONTINUE;
-}
-
 bool LoadPlugins(Context* ctx) {
     (void)ctx;
-    const char* base_path = SDL_GetBasePath();
-    if (!base_path) return false;
-
-    char plugins_root[512];
-    std::snprintf(plugins_root, sizeof(plugins_root), "%splugins", base_path);
-
     g_registry.clear();
-    SDL_EnumerateDirectory(plugins_root, RegistryEnumCallback, nullptr);
+
+    fs::path base_path = fs::current_path();
+    fs::path plugins_root = base_path / "plugins";
+    // For sandbox running in build/bin, check ../../plugins
+    if (!fs::exists(plugins_root)) {
+        plugins_root = base_path / ".." / ".." / "plugins";
+    }
+
+    if (!fs::exists(plugins_root) || !fs::is_directory(plugins_root)) {
+        return false;
+    }
+
+    for (const auto& entry : fs::directory_iterator(plugins_root)) {
+        if (!entry.is_directory()) continue;
+
+        fs::path json_path = entry.path() / "plugin.json";
+        if (!fs::exists(json_path)) continue;
+
+        std::FILE* f = std::fopen(json_path.string().c_str(), "rb");
+        if (!f) continue;
+        
+        std::fseek(f, 0, SEEK_END);
+        long fsize = std::ftell(f);
+        std::fseek(f, 0, SEEK_SET);
+        
+        if (fsize <= 0) {
+            std::fclose(f);
+            continue;
+        }
+        
+        char* buffer = static_cast<char*>(mi_malloc(static_cast<size_t>(fsize)));
+        if (!buffer) {
+            std::fclose(f);
+            continue;
+        }
+        
+        size_t read_bytes = std::fread(buffer, 1, static_cast<size_t>(fsize), f);
+        std::fclose(f);
+        
+        yyjson_doc* doc = yyjson_read(buffer, read_bytes, 0);
+        if (doc) {
+            yyjson_val* root = yyjson_doc_get_root(doc);
+            yyjson_val* name_val = yyjson_obj_get(root, "name");
+            if (name_val && yyjson_is_str(name_val)) {
+                const char* name = yyjson_get_str(name_val);
+                
+                PluginDescriptor desc;
+                desc.name = name;
+
+#ifdef _WIN32
+                const char* suffix = ".dll";
+#else
+                const char* suffix = ".so";
+#endif
+                bool found_lib = false;
+                for (const auto& lib_entry : fs::directory_iterator(entry.path())) {
+                    if (lib_entry.path().extension().string() == suffix) {
+                        desc.library_path = lib_entry.path().string();
+                        g_registry.push_back(desc);
+                        found_lib = true;
+                        break;
+                    }
+                }
+
+                // If not found in source dir, maybe look in build/bin/plugins/...
+                if (!found_lib) {
+                    fs::path build_lib_path = base_path / "bin" / "plugins" / entry.path().filename();
+                    if (fs::exists(build_lib_path)) {
+                        for (const auto& lib_entry : fs::directory_iterator(build_lib_path)) {
+                            if (lib_entry.path().extension().string() == suffix) {
+                                desc.library_path = lib_entry.path().string();
+                                g_registry.push_back(desc);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            yyjson_doc_free(doc);
+        }
+        mi_free(buffer);
+    }
 
     return true;
 }
@@ -156,15 +166,28 @@ bool LoadSinglePlugin(Context* ctx, const char* name) {
     api.Free       = EngineFree;
     api.SubmitTask = Engine::Jobs::SubmitTask;
 
-    SDL_SharedObject* handle = SDL_LoadObject(found->library_path.c_str());
+#ifdef _WIN32
+    HMODULE handle = LoadLibraryA(found->library_path.c_str());
     if (handle == nullptr) return false;
-
     typedef void (*PluginInitFn)(const PluginAPI*);
-    PluginInitFn init_fn = reinterpret_cast<PluginInitFn>(SDL_LoadFunction(handle, "PluginInit"));
+    PluginInitFn init_fn = reinterpret_cast<PluginInitFn>(GetProcAddress(handle, "PluginInit"));
     if (init_fn == nullptr) {
-        SDL_UnloadObject(handle);
+        FreeLibrary(handle);
         return false;
     }
+#else
+    void* handle = dlopen(found->library_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    if (handle == nullptr) {
+        std::fprintf(stderr, "[Plugin] dlopen error: %s\n", dlerror());
+        return false;
+    }
+    typedef void (*PluginInitFn)(const PluginAPI*);
+    PluginInitFn init_fn = reinterpret_cast<PluginInitFn>(dlsym(handle, "PluginInit"));
+    if (init_fn == nullptr) {
+        dlclose(handle);
+        return false;
+    }
+#endif
 
     if (g_plugin_count < 16) {
         g_plugin_handles[g_plugin_count] = handle;
@@ -172,7 +195,11 @@ bool LoadSinglePlugin(Context* ctx, const char* name) {
         init_fn(&api);
         return true;
     } else {
-        SDL_UnloadObject(handle);
+#ifdef _WIN32
+        FreeLibrary(handle);
+#else
+        dlclose(handle);
+#endif
     }
 
     return false;
@@ -181,7 +208,11 @@ bool LoadSinglePlugin(Context* ctx, const char* name) {
 void UnloadPlugins() {
     for (uint32_t i = 0; i < g_plugin_count; ++i) {
         if (g_plugin_handles[i]) {
-            SDL_UnloadObject(g_plugin_handles[i]);
+#ifdef _WIN32
+            FreeLibrary(g_plugin_handles[i]);
+#else
+            dlclose(g_plugin_handles[i]);
+#endif
             g_plugin_handles[i] = nullptr;
         }
     }

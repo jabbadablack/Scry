@@ -31,7 +31,9 @@ static uint32_t DiscoverAndLoadMesh(const char* filename) {
         std::string("../../assets/cooked/") + filename,
         std::string("bin/assets/cooked/") + filename,
         std::string("../bin/assets/cooked/") + filename,
-        std::string("../../bin/assets/cooked/") + filename
+        std::string("../../bin/assets/cooked/") + filename,
+        std::string("build/bin/assets/cooked/") + filename,
+        std::string("../build/bin/assets/cooked/") + filename
     };
 
     for (const auto& path : paths) {
@@ -46,8 +48,6 @@ static uint32_t DiscoverAndLoadMesh(const char* filename) {
     char err_msg[512];
     std::snprintf(err_msg, sizeof(err_msg), "[Init] FATAL: Could not find asset %s in any candidate path.", filename);
     EngineLog(err_msg);
-    
-    // Log current working directory to help debugging
     std::snprintf(err_msg, sizeof(err_msg), "[Init] Current working directory: %s", fs::current_path().string().c_str());
     EngineLog(err_msg);
 
@@ -69,36 +69,64 @@ static void OnInit(Context* ctx) {
     }
 
     // 2. Create Player
-    ecs_entity_desc_t e = {};
-    e.name = "Player";
-    ecs_entity_t player = ecs_entity_init(world, &e);
+    ecs_entity_t player;
+    {
+        ecs_entity_desc_t e = {};
+        e.name = "Player";
+        player = ecs_entity_init(world, &e);
 
-    Engine::Transform::TransformComp tf = {};
-    tf.position = {0, 0, 0};
-    tf.rotation = {0, 0, 0};
-    tf.scale    = {1, 1, 1};
-    ecs_set_id(world, player, Engine::Transform::id_Transform, sizeof(tf), &tf);
+        Engine::Transform::TransformComp tf = {};
+        tf.position = {0, 0, 0};
+        tf.rotation = {0, 0, 0};
+        tf.scale    = {1, 1, 1};
+        ecs_set_id(world, player, Engine::Transform::id_Transform, sizeof(tf), &tf);
 
-    Engine::Renderer::MeshInstance mi = { suzanne_handle };
-    ecs_set_id(world, player, Engine::Renderer::id_MeshInstance, sizeof(mi), &mi);
+        Engine::Renderer::MeshInstance mi = { suzanne_handle };
+        ecs_set_id(world, player, Engine::Renderer::id_MeshInstance, sizeof(mi), &mi);
 
-    Engine::Renderer::Intent intent = { Engine::Renderer::INTENT_VISIBLE };
-    ecs_set_id(world, player, Engine::Renderer::id_EntityIntent, sizeof(intent), &intent);
+        Engine::Renderer::Intent intent = { Engine::Renderer::INTENT_VISIBLE };
+        ecs_set_id(world, player, Engine::Renderer::id_EntityIntent, sizeof(intent), &intent);
+    }
 
-    // ── Create Camera ────────────────────────────────────────────────────────
+    // 3. Create Grid of Markers at (0,0,0)
+    for (int x = -5; x <= 5; ++x) {
+        for (int z = -5; z <= 5; ++z) {
+            if (x == 0 && z == 0) continue; // Skip origin (Player is there)
+
+            char name[32];
+            std::snprintf(name, sizeof(name), "Grid_%d_%d", x, z);
+            ecs_entity_desc_t e = {};
+            e.name = name;
+            ecs_entity_t marker = ecs_entity_init(world, &e);
+
+            Engine::Transform::TransformComp tf = {};
+            tf.position = { (float)x * 4.0f, 0.0f, (float)z * 4.0f };
+            tf.rotation = { 0, 0, 0 };
+            tf.scale    = { 0.2f, 0.2f, 0.2f };
+            ecs_set_id(world, marker, Engine::Transform::id_Transform, sizeof(tf), &tf);
+
+            Engine::Renderer::MeshInstance mi = { suzanne_handle };
+            ecs_set_id(world, marker, Engine::Renderer::id_MeshInstance, sizeof(mi), &mi);
+
+            Engine::Renderer::Intent intent = { Engine::Renderer::INTENT_VISIBLE };
+            ecs_set_id(world, marker, Engine::Renderer::id_EntityIntent, sizeof(intent), &intent);
+        }
+    }
+
+    // 4. Create Camera
     {
         ecs_entity_desc_t ed = {};
         ed.name = "MainCamera";
         ecs_entity_t cam_ent = ecs_entity_init(world, &ed);
         
         Engine::Camera::Camera cam = {};
-        cam.position  = {0, 2, 5};
-        cam.pitch     = -0.3f;
+        cam.position  = {0, 5, 10};
+        cam.pitch     = -0.4f;
         cam.yaw       = 0.0f;
         ecs_set_id(world, cam_ent, Engine::Camera::id_Camera, sizeof(cam), &cam);
     }
 
-    // 3. Rotation system
+    // 5. Rotation system (using a tag or direct entity handle)
     {
         ecs_entity_desc_t ed = {};
         ed.name = "RotateSystem";
@@ -109,6 +137,10 @@ static void OnInit(Context* ctx) {
         s.entity = sys_ent;
         s.query.terms[0].id = Engine::Transform::id_Transform;
         s.query.terms[0].inout = EcsInOut;
+        s.query.terms[1].id = player;
+        s.query.terms[1].inout = EcsIn;
+        s.query.terms[1].src.id = player; // Match only the player entity
+
         s.callback = [](ecs_iter_t* it) {
             Engine::Transform::TransformComp* tf = ecs_field(it, Engine::Transform::TransformComp, 0);
             for (int i = 0; i < it->count; ++i) {
@@ -118,7 +150,7 @@ static void OnInit(Context* ctx) {
         ecs_system_init(world, &s);
     }
 
-    EngineLog("[Init] GPU-driven spinning Suzanne ready.");
+    EngineLog("[Init] GPU-driven spinning Suzanne and Grid ready.");
 }
 
 static void OnShutdown(Context* ctx) {

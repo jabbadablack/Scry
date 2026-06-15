@@ -1,4 +1,3 @@
-#define SDL_MAIN_HANDLED
 #include <engine/engine_context.hpp>
 #include <engine/platform.hpp>
 #include <engine/input.hpp>
@@ -7,11 +6,15 @@
 #include <engine/graphics.hpp>
 #include <engine/renderer.hpp>
 #include <engine/plugin.hpp>
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_main.h>
+
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+
 #include <mimalloc.h>
 #include <libassert/assert.hpp>
 #include <cstdio>
+#include <thread>
+#include <chrono>
 
 namespace Engine {
 namespace Input {
@@ -22,61 +25,96 @@ InputBuffer g_input_buffer;
 namespace Engine {
 namespace Platform {
 
-static void ProcessInputEvent(const SDL_Event& event, Engine::Input::InputState& write_state) {
-    DEBUG_ASSERT(&event != nullptr);
-    DEBUG_ASSERT(&write_state != nullptr);
+static void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    (void)window; (void)scancode; (void)mods;
+    if (key < 0 || key >= 512) return;
+    
+    const uint8_t w_idx = Engine::Input::g_input_buffer.write_index;
+    auto& write_state = Engine::Input::g_input_buffer.states[w_idx];
 
-    if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
-        const bool is_down = (event.type == SDL_EVENT_KEY_DOWN);
-        const uint32_t scancode = static_cast<uint32_t>(event.key.scancode);
-        if (scancode < 512) {
-            const uint32_t idx = scancode / 8;
-            const uint32_t bit = scancode % 8;
-            if (is_down) {
-                write_state.keys[idx] |= static_cast<uint8_t>(1u << bit);
-            } else {
-                write_state.keys[idx] &= static_cast<uint8_t>(~(1u << bit));
+    const uint32_t idx = static_cast<uint32_t>(key) / 8;
+    const uint32_t bit = static_cast<uint32_t>(key) % 8;
+
+    if (action == GLFW_PRESS) {
+        write_state.keys[idx] |= static_cast<uint8_t>(1u << bit);
+    } else if (action == GLFW_RELEASE) {
+        write_state.keys[idx] &= static_cast<uint8_t>(~(1u << bit));
+    }
+}
+
+static void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
+    (void)mods;
+    if (button < 0 || button > 2) return;
+
+    const uint8_t w_idx = Engine::Input::g_input_buffer.write_index;
+    auto& write_state = Engine::Input::g_input_buffer.states[w_idx];
+
+    uint32_t scancode = 0;
+    if (button == GLFW_MOUSE_BUTTON_LEFT) scancode = static_cast<uint32_t>(Engine::Input::Key::MouseL);
+    else if (button == GLFW_MOUSE_BUTTON_RIGHT) scancode = static_cast<uint32_t>(Engine::Input::Key::MouseR);
+    else if (button == GLFW_MOUSE_BUTTON_MIDDLE) scancode = static_cast<uint32_t>(Engine::Input::Key::MouseM);
+
+    const uint32_t idx = scancode / 8;
+    const uint32_t bit = scancode % 8;
+
+    if (action == GLFW_PRESS) {
+        write_state.keys[idx] |= static_cast<uint8_t>(1u << bit);
+        if (button == GLFW_MOUSE_BUTTON_RIGHT) {
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            if (glfwRawMouseMotionSupported()) {
+                glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
             }
         }
-    } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
-        write_state.mouse_x  = static_cast<int16_t>(event.motion.x);
-        write_state.mouse_y  = static_cast<int16_t>(event.motion.y);
-        write_state.mouse_dx = event.motion.xrel;
-        write_state.mouse_dy = event.motion.yrel;
-    } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
-        const bool is_down = (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN);
-        uint32_t scancode = 0;
-
-        if (event.button.button == SDL_BUTTON_LEFT) {
-            scancode = 510;
-        } else if (event.button.button == SDL_BUTTON_RIGHT) {
-            scancode = 511;
-            SDL_Window* window = SDL_GetWindowFromID(event.button.windowID);
-            if (window) {
-                SDL_SetWindowRelativeMouseMode(window, is_down);
-            }
-        }
-
-        if (scancode != 0) {
-            const uint32_t idx = scancode / 8;
-            const uint32_t bit = scancode % 8;
-            if (is_down) {
-                write_state.keys[idx] |= static_cast<uint8_t>(1u << bit);
-            } else {
-                write_state.keys[idx] &= static_cast<uint8_t>(~(1u << bit));
+    } else if (action == GLFW_RELEASE) {
+        write_state.keys[idx] &= static_cast<uint8_t>(~(1u << bit));
+        if (button == GLFW_MOUSE_BUTTON_RIGHT) {
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            if (glfwRawMouseMotionSupported()) {
+                glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_FALSE);
             }
         }
     }
 }
 
+static void CursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
+    (void)window;
+    const uint8_t w_idx = Engine::Input::g_input_buffer.write_index;
+    auto& write_state = Engine::Input::g_input_buffer.states[w_idx];
+
+    float prev_x = static_cast<float>(write_state.mouse_x);
+    float prev_y = static_cast<float>(write_state.mouse_y);
+
+    write_state.mouse_x = static_cast<int16_t>(xpos);
+    write_state.mouse_y = static_cast<int16_t>(ypos);
+
+    // Calculate relative motion
+    // Note: For the very first event this might jump, but it's acceptable for a sandbox
+    if (prev_x != 0.0f || prev_y != 0.0f) {
+        write_state.mouse_dx += (static_cast<float>(xpos) - prev_x);
+        write_state.mouse_dy += (static_cast<float>(ypos) - prev_y);
+    }
+}
+
+static void ErrorCallback(int error, const char* description) {
+    std::fprintf(stderr, "[GLFW Error] %d: %s\n", error, description);
+}
+
 void* InitWindow(const char* title, int32_t width, int32_t height) {
-    SDL_SetMainReady();
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
+    glfwSetErrorCallback(ErrorCallback);
+    if (!glfwInit()) {
         return nullptr;
     }
-    void* window = SDL_CreateWindow(title ? title : "Engine", width, height, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+    
+    // We are using BGFX, which manages the graphics context itself.
+    // GLFW should not create an OpenGL context.
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+
+    GLFWwindow* window = glfwCreateWindow(width, height, title ? title : "Engine", nullptr, nullptr);
     if (window) {
-        SDL_ShowWindow(static_cast<SDL_Window*>(window));
+        glfwSetKeyCallback(window, KeyCallback);
+        glfwSetMouseButtonCallback(window, MouseButtonCallback);
+        glfwSetCursorPosCallback(window, CursorPosCallback);
     }
     return window;
 }
@@ -87,33 +125,30 @@ void PumpEvents(Context* ctx) {
 
     const uint8_t w_idx = Engine::Input::g_input_buffer.write_index;
     const uint8_t r_idx = Engine::Input::g_input_buffer.read_index;
+    
+    // Prepare write state by copying from read state (persist held keys)
+    // mouse_dx/dy are reset in Swap(), so they start at 0 here
     Engine::Input::g_input_buffer.states[w_idx] = Engine::Input::g_input_buffer.states[r_idx];
 
-    SDL_Event event;
-    bool has_event = SDL_PollEvent(&event);
-    while (has_event) {
-        if (event.type == SDL_EVENT_QUIT) {
-            ctx->running = 0;
-        } else if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
-            ctx->running = 0;
-        } else {
-            ProcessInputEvent(event, Engine::Input::g_input_buffer.states[w_idx]);
-        }
-        has_event = SDL_PollEvent(&event);
+    // Poll events; this will trigger callbacks which write to states[w_idx]
+    glfwPollEvents();
+
+    if (glfwWindowShouldClose(static_cast<GLFWwindow*>(ctx->window_handle))) {
+        ctx->running = 0;
     }
 
     Engine::Input::g_input_buffer.Swap();
 }
 
 uint64_t GetTime() {
-    return SDL_GetTicks();
+    return static_cast<uint64_t>(glfwGetTime() * 1000.0);
 }
 
 void DestroyWindow(void* window_handle) {
     if (window_handle) {
-        SDL_DestroyWindow(static_cast<SDL_Window*>(window_handle));
+        glfwDestroyWindow(static_cast<GLFWwindow*>(window_handle));
     }
-    SDL_Quit();
+    glfwTerminate();
 }
 
 } // namespace Platform
@@ -123,7 +158,7 @@ extern "C" {
 
 static void (*g_app_log)(const char*) = nullptr;
 
-enum class Subsystem { None, Mimalloc, EnkiTS, SDL3, Graphics, Flecs, Renderer };
+enum class Subsystem { None, Mimalloc, EnkiTS, Platform, Graphics, Flecs, Renderer };
 
 ENGINE_API EngineError EngineRun(const AppConfig* config) {
     if (config == nullptr) return ERR_PLATFORM_INIT;
@@ -142,11 +177,6 @@ ENGINE_API EngineError EngineRun(const AppConfig* config) {
     Context ctx = {};
     
     // ── 1. mimalloc ──────────────────────────────────────────────────────────
-    // Suppress spurious debug warning: with MI_OVERRIDE=ON the global free()
-    // intercepts Windows CRT per-thread HeapAlloc pointers (e.g. enkiTS worker
-    // thread setup) that bypass mimalloc's segment tracking.  CMakeLists.txt
-    // already sets MI_OVERRIDE=OFF; this masks the false positive until the
-    // mimalloc archive is recompiled from a clean build.
     mi_option_set(mi_option_show_errors, 0);
     mi_process_init();
     init_checklist[init_count++] = Subsystem::Mimalloc;
@@ -163,15 +193,15 @@ ENGINE_API EngineError EngineRun(const AppConfig* config) {
     }
     init_checklist[init_count++] = Subsystem::EnkiTS;
 
-    // ── 3. Platform (SDL3) ────────────────────────────────────────────────
+    // ── 3. Platform (GLFW) ────────────────────────────────────────────────
     window = Engine::Platform::InitWindow(config->title, config->window_width, config->window_height);
     if (!window) {
         ret_code = ERR_PLATFORM_INIT;
         goto shutdown;
     }
-    init_checklist[init_count++] = Subsystem::SDL3;
+    init_checklist[init_count++] = Subsystem::Platform;
 
-    // ── 4. Graphics (Diligent) ────────────────────────────────────────────────
+    // ── 4. Graphics (BGFX) ────────────────────────────────────────────────
     if (!Engine::Graphics::Init(window)) {
         ret_code = ERR_GRAPHICS_INIT;
         goto shutdown;
@@ -231,7 +261,7 @@ ENGINE_API EngineError EngineRun(const AppConfig* config) {
 
             Engine::Graphics::Present();
 
-            SDL_Delay(1);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     }
 
@@ -241,7 +271,6 @@ ENGINE_API EngineError EngineRun(const AppConfig* config) {
     }
 
 shutdown:
-    // NASA Rule Check: Loop backward through the init_checklist array
     for (int i = init_count - 1; i >= 0; --i) {
         switch (init_checklist[i]) {
             case Subsystem::Renderer:
@@ -254,7 +283,7 @@ shutdown:
             case Subsystem::Graphics:
                 Engine::Graphics::Shutdown();
                 break;
-            case Subsystem::SDL3:
+            case Subsystem::Platform:
                 if (window) Engine::Platform::DestroyWindow(window);
                 break;
             case Subsystem::EnkiTS:

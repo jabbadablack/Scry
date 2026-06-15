@@ -1,15 +1,24 @@
 #include <engine/graphics.hpp>
 #include <engine/CookedAsset.h>
-#include <engine/memory.hpp>
-#include "graphics_internal.hpp"
+
+#include <bgfx/bgfx.h>
+#include <bgfx/platform.h>
+
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+
+#if defined(_WIN32)
+#define GLFW_EXPOSE_NATIVE_WIN32
+#elif defined(__APPLE__)
+#define GLFW_EXPOSE_NATIVE_COCOA
+#else
+#define GLFW_EXPOSE_NATIVE_X11
+#endif
+#include <GLFW/glfw3native.h>
 
 #include <libassert/assert.hpp>
-#include <mimalloc.h>
 #include <cstdio>
 #include <cstring>
-
-#define SDL_MAIN_HANDLED
-#include <SDL3/SDL.h>
 
 #ifdef _WIN32
 #  ifndef WIN32_LEAN_AND_MEAN
@@ -23,172 +32,19 @@
 #  include <unistd.h>
 #endif
 
-/* ── Platform-specific Diligent backend ──────────────────────────────────────
- * MSVC on Windows → D3D12.  GCC/MinGW on Windows or Linux → Vulkan.
- * Controlled by compile-time definitions set in CMakeLists.txt.
- */
-#if defined(SCRY_BACKEND_DX12)
-#  include <Graphics/GraphicsEngineDirect3D12/interface/EngineFactoryD3D12.h>
-#  pragma comment(lib, "d3d12.lib")
-#  pragma comment(lib, "dxgi.lib")
-#elif defined(SCRY_BACKEND_VULKAN)
-#  include <Graphics/GraphicsEngineVulkan/interface/EngineFactoryVk.h>
-#else
-#  error "Define SCRY_BACKEND_DX12 or SCRY_BACKEND_VULKAN via CMake."
-#endif
-
-using namespace Diligent;
-
 namespace Engine {
 namespace Graphics {
 
-// ── Module-level state ────────────────────────────────────────────────────────
-
-static RefCntAutoPtr<IRenderDevice>  g_device;
-static RefCntAutoPtr<IDeviceContext> g_ctx;
-static RefCntAutoPtr<ISwapChain>     g_swap_chain;
+struct MeshBuffers {
+    bgfx::VertexBufferHandle vbh = BGFX_INVALID_HANDLE;
+    bgfx::IndexBufferHandle  ibh = BGFX_INVALID_HANDLE;
+    uint32_t                 index_count = 0;
+    bool                     in_use = false;
+};
 
 static MeshBuffers g_meshes[MAX_MESHES];
 static uint32_t    g_mesh_count = 0;
-
-// ── Internal accessors ────────────────────────────────────────────────────────
-
-IRenderDevice*  GetDevice()              { return g_device;     }
-IDeviceContext* GetContext()             { return g_ctx;        }
-ISwapChain*     GetSwapChain()           { return g_swap_chain; }
-MeshBuffers*    GetMesh(uint32_t handle) {
-    if (handle >= MAX_MESHES || !g_meshes[handle].in_use) return nullptr;
-    return &g_meshes[handle];
-}
-
-// ── Init ──────────────────────────────────────────────────────────────────────
-
-bool Init(void* sdl_window_handle) {
-    DEBUG_ASSERT(sdl_window_handle != nullptr);
-    if (!sdl_window_handle) {
-        EngineLog("[Graphics] FATAL: null SDL window handle");
-        return false;
-    }
-
-#if defined(SCRY_BACKEND_VULKAN)
-    IEngineFactoryVk* factory = GetEngineFactoryVk();
-    DEBUG_ASSERT(factory != nullptr);
-
-    EngineVkCreateInfo ci;
-
-    IRenderDevice*  raw_device = nullptr;
-    IDeviceContext* raw_ctx    = nullptr;
-    factory->CreateDeviceAndContextsVk(ci, &raw_device, &raw_ctx);
-    if (!raw_device || !raw_ctx) {
-        EngineLog("[Graphics] FATAL: Vulkan device creation failed");
-        return false;
-    }
-    g_device.Attach(raw_device);
-    g_ctx.Attach(raw_ctx);
-
-    SwapChainDesc sc_desc;
-    sc_desc.ColorBufferFormat = TEX_FORMAT_BGRA8_UNORM_SRGB;
-    sc_desc.DepthBufferFormat = TEX_FORMAT_D32_FLOAT;
-    sc_desc.BufferCount       = 2;
-
-#  ifdef _WIN32
-    SDL_PropertiesID props = SDL_GetWindowProperties(static_cast<SDL_Window*>(sdl_window_handle));
-    HWND hwnd = static_cast<HWND>(
-        SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
-    DEBUG_ASSERT(hwnd != nullptr);
-    Win32NativeWindow native_window{hwnd};
-#  else
-    // Linux: obtain X11 window + Display from SDL3 properties
-    Window  x11_win  = static_cast<Window>(SDL_GetNumberProperty(
-        SDL_GetWindowProperties(static_cast<SDL_Window*>(sdl_window_handle)),
-        SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0));
-    Display* x11_dpy = static_cast<Display*>(SDL_GetPointerProperty(
-        SDL_GetWindowProperties(static_cast<SDL_Window*>(sdl_window_handle)),
-        SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr));
-    DEBUG_ASSERT(x11_win != 0 && x11_dpy != nullptr);
-    LinuxNativeWindow native_window;
-    native_window.WindowId = x11_win;
-    native_window.pDisplay = x11_dpy;
-#  endif
-
-    factory->CreateSwapChainVk(g_device, g_ctx, sc_desc, native_window, &g_swap_chain);
-
-#elif defined(SCRY_BACKEND_DX12)
-    IEngineFactoryD3D12* factory = GetEngineFactoryD3D12();
-    DEBUG_ASSERT(factory != nullptr);
-
-    EngineD3D12CreateInfo ci;
-
-    IRenderDevice*  raw_device = nullptr;
-    IDeviceContext* raw_ctx    = nullptr;
-    factory->CreateDeviceAndContextsD3D12(ci, &raw_device, &raw_ctx);
-    if (!raw_device || !raw_ctx) {
-        EngineLog("[Graphics] FATAL: D3D12 device creation failed");
-        return false;
-    }
-    g_device.Attach(raw_device);
-    g_ctx.Attach(raw_ctx);
-
-    SDL_PropertiesID props = SDL_GetWindowProperties(static_cast<SDL_Window*>(sdl_window_handle));
-    HWND hwnd = static_cast<HWND>(
-        SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
-    DEBUG_ASSERT(hwnd != nullptr);
-
-    SwapChainDesc sc_desc;
-    sc_desc.ColorBufferFormat = TEX_FORMAT_BGRA8_UNORM_SRGB;
-    sc_desc.DepthBufferFormat = TEX_FORMAT_D32_FLOAT;
-    sc_desc.BufferCount       = 2;
-    Win32NativeWindow native_window{hwnd};
-    factory->CreateSwapChainD3D12(g_device, g_ctx, sc_desc, FullScreenModeDesc{}, native_window, &g_swap_chain);
-#endif
-
-    if (!g_swap_chain) {
-        EngineLog("[Graphics] FATAL: swap chain creation failed");
-        return false;
-    }
-
-#ifndef NDEBUG
-    EngineLog("[Graphics] Diligent device + swap chain ready");
-#endif
-    return true;
-}
-
-// ── Shutdown ──────────────────────────────────────────────────────────────────
-
-void Shutdown() {
-    for (uint32_t i = 0; i < MAX_MESHES; ++i) {
-        if (g_meshes[i].in_use) FreeMesh(i);
-    }
-    g_swap_chain.Release();
-    g_ctx.Release();
-    g_device.Release();
-#ifndef NDEBUG
-    EngineLog("[Graphics] Shutdown complete");
-#endif
-}
-
-// ── BeginFrame ────────────────────────────────────────────────────────────────
-
-void BeginFrame() {
-    if (!g_swap_chain || !g_ctx) return;
-
-    auto* rtv = g_swap_chain->GetCurrentBackBufferRTV();
-    auto* dsv = g_swap_chain->GetDepthBufferDSV();
-    const float clear[4] = {0.05f, 0.05f, 0.05f, 1.0f};
-    g_ctx->SetRenderTargets(1, &rtv, dsv, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-    g_ctx->ClearRenderTarget(rtv, clear, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-    g_ctx->ClearDepthStencil(dsv, CLEAR_DEPTH_FLAG, 1.0f, 0,
-                             RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-}
-
-// ── Present ───────────────────────────────────────────────────────────────────
-
-void Present() {
-    DEBUG_ASSERT(g_swap_chain != nullptr);
-    if (g_swap_chain) {
-        g_swap_chain->Present();
-    }
-}
+static bgfx::VertexLayout g_vertex_layout;
 
 // ── OS Mapping Helpers ────────────────────────────────────────────────────────
 
@@ -209,7 +65,7 @@ static bool MapFileReadOnly(const char* path, MappedFile& out) {
     if (out.hFile == INVALID_HANDLE_VALUE) return false;
 
     LARGE_INTEGER li;
-    GetFileSizeEx(out.hFile, &li);
+    if (!GetFileSizeEx(out.hFile, &li)) { CloseHandle(out.hFile); return false; }
     out.size = static_cast<size_t>(li.QuadPart);
 
     out.hMap = CreateFileMappingA(out.hFile, NULL, PAGE_READONLY, 0, 0, NULL);
@@ -233,28 +89,112 @@ static bool MapFileReadOnly(const char* path, MappedFile& out) {
 
 static void UnmapFile(MappedFile& mf) {
 #ifdef _WIN32
-    UnmapViewOfFile(mf.data);
-    CloseHandle(mf.hMap);
-    CloseHandle(mf.hFile);
+    if (mf.data) UnmapViewOfFile(mf.data);
+    if (mf.hMap) CloseHandle(mf.hMap);
+    if (mf.hFile != INVALID_HANDLE_VALUE) CloseHandle(mf.hFile);
 #else
-    munmap(mf.data, mf.size);
-    close(mf.fd);
+    if (mf.data && mf.data != MAP_FAILED) munmap(mf.data, mf.size);
+    if (mf.fd >= 0) close(mf.fd);
 #endif
 }
 
-// ── LoadMesh ──────────────────────────────────────────────────────────────────
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+bool Init(void* glfw_window_handle) {
+    DEBUG_ASSERT(glfw_window_handle != nullptr);
+    if (!glfw_window_handle) {
+        EngineLog("[Graphics] FATAL: null GLFW window handle");
+        return false;
+    }
+
+    GLFWwindow* window = static_cast<GLFWwindow*>(glfw_window_handle);
+
+    bgfx::Init init;
+    
+    // Explicitly select backend matching our offline shaders (SPIRV)
+    // For non-MSVC builds, we use SPIRV shaders, which require Vulkan.
+#if defined(_WIN32) && !defined(_MSC_VER)
+    init.type = bgfx::RendererType::Vulkan;
+#else
+    init.type = bgfx::RendererType::Count; // Auto
+#endif
+    
+    // Set platform data
+    bgfx::PlatformData pd = {};
+#if defined(_WIN32)
+    pd.nwh = glfwGetWin32Window(window);
+#elif defined(__APPLE__)
+    pd.nwh = glfwGetCocoaWindow(window);
+#else
+    pd.nwh = (void*)(uintptr_t)glfwGetX11Window(window);
+    pd.ndt = glfwGetX11Display();
+#endif
+    init.platformData = pd;
+
+    int width, height;
+    // Use Framebuffer size for pixel-perfect viewport
+    glfwGetFramebufferSize(window, &width, &height);
+    init.resolution.width  = (uint32_t)width;
+    init.resolution.height = (uint32_t)height;
+    init.resolution.reset  = BGFX_RESET_VSYNC;
+
+    if (!bgfx::init(init)) {
+        EngineLog("[Graphics] FATAL: bgfx::init failed");
+        return false;
+    }
+
+    // Explicitly set viewport to avoid 0x0 rendering
+    bgfx::setViewRect(0, 0, 0, (uint16_t)width, (uint16_t)height);
+    bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x111111FF, 1.0f, 0);
+
+    // Setup vertex layout matching ScryVertex
+    g_vertex_layout.begin()
+        .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+        .add(bgfx::Attrib::Normal,   3, bgfx::AttribType::Float)
+        .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
+        .end();
+
+    {
+        char log_buf[128];
+        std::snprintf(log_buf, sizeof(log_buf), "[Graphics] BGFX ready. Renderer: %s", bgfx::getRendererName(bgfx::getRendererType()));
+        EngineLog(log_buf);
+    }
+    return true;
+}
+
+void Shutdown() {
+    for (uint32_t i = 0; i < MAX_MESHES; ++i) {
+        if (g_meshes[i].in_use) FreeMesh(i);
+    }
+    bgfx::shutdown();
+    EngineLog("[Graphics] Shutdown complete");
+}
+
+void BeginFrame() {
+    bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x111111FF, 1.0f, 0);
+    bgfx::touch(0);
+}
+
+void Present() {
+    bgfx::frame();
+}
 
 uint32_t LoadMesh(const char* filepath) {
     DEBUG_ASSERT(filepath != nullptr);
-    DEBUG_ASSERT(g_device != nullptr);
 
-    if (!filepath || !g_device) return INVALID_MESH;
+    if (!filepath) return INVALID_MESH;
     if (g_mesh_count >= MAX_MESHES) {
         EngineLog("[Graphics] LoadMesh: mesh table full");
         return INVALID_MESH;
     }
 
-    MappedFile mf;
+    MappedFile mf = {};
+#ifdef _WIN32
+    mf.hFile = INVALID_HANDLE_VALUE;
+#else
+    mf.fd = -1;
+#endif
+
     if (!MapFileReadOnly(filepath, mf)) {
         char err_buf[256];
         std::snprintf(err_buf, sizeof(err_buf), "[Graphics] LoadMesh: file not found: %s", filepath);
@@ -262,7 +202,6 @@ uint32_t LoadMesh(const char* filepath) {
         return INVALID_MESH;
     }
 
-    // ── Validate header ───────────────────────────────────────────────────────
     const auto* hdr = static_cast<const ScryMeshHeader*>(mf.data);
     if (mf.size < sizeof(ScryMeshHeader) || hdr->magic != SCRY_MESH_MAGIC || hdr->version != SCRY_MESH_VERSION) {
         EngineLog("[Graphics] LoadMesh: invalid .scrymesh header");
@@ -273,47 +212,21 @@ uint32_t LoadMesh(const char* filepath) {
     const auto* vertices = reinterpret_cast<const ScryVertex*>(hdr + 1);
     const auto* indices  = reinterpret_cast<const uint32_t*>(vertices + hdr->vertex_count);
 
-    // ── Create Diligent static GPU buffers ───────────────────────────────────
     const uint32_t slot = g_mesh_count++;
 
-    // Vertex buffer
-    {
-        BufferDesc bd;
-        bd.Name      = "VertexBuffer";
-        bd.Usage     = USAGE_IMMUTABLE;
-        bd.BindFlags = BIND_VERTEX_BUFFER;
-        bd.Size      = hdr->vertex_count * sizeof(ScryVertex);
+    // BGFX buffers - Use copy for static data
+    const bgfx::Memory* vmem = bgfx::copy(vertices, hdr->vertex_count * sizeof(ScryVertex));
+    const bgfx::Memory* imem = bgfx::copy(indices, hdr->index_count * sizeof(uint32_t));
 
-        BufferData init_data;
-        init_data.pData    = vertices;
-        init_data.DataSize = bd.Size;
-
-        g_device->CreateBuffer(bd, &init_data, &g_meshes[slot].vertices);
-        DEBUG_ASSERT(g_meshes[slot].vertices != nullptr);
-    }
-
-    // Index buffer
-    {
-        BufferDesc bd;
-        bd.Name      = "IndexBuffer";
-        bd.Usage     = USAGE_IMMUTABLE;
-        bd.BindFlags = BIND_INDEX_BUFFER;
-        bd.Size      = hdr->index_count * sizeof(uint32_t);
-
-        BufferData init_data;
-        init_data.pData    = indices;
-        init_data.DataSize = bd.Size;
-
-        g_device->CreateBuffer(bd, &init_data, &g_meshes[slot].indices);
-        DEBUG_ASSERT(g_meshes[slot].indices != nullptr);
-    }
+    g_meshes[slot].vbh = bgfx::createVertexBuffer(vmem, g_vertex_layout);
+    g_meshes[slot].ibh = bgfx::createIndexBuffer(imem);
 
     g_meshes[slot].index_count = hdr->index_count;
     g_meshes[slot].in_use      = true;
 
 #ifndef NDEBUG
     char buf[128];
-    std::snprintf(buf, sizeof(buf), "[Graphics] Mesh loaded (mapped): %s (v=%u i=%u handle=%u)",
+    std::snprintf(buf, sizeof(buf), "[Graphics] Mesh loaded (mapped, bgfx): %s (v=%u i=%u handle=%u)",
         filepath, hdr->vertex_count, hdr->index_count, slot);
     EngineLog(buf);
 #endif
@@ -323,15 +236,31 @@ uint32_t LoadMesh(const char* filepath) {
     return slot;
 }
 
-// ── FreeMesh ──────────────────────────────────────────────────────────────────
-
 void FreeMesh(uint32_t handle) {
     DEBUG_ASSERT(handle < MAX_MESHES);
-    if (handle >= MAX_MESHES) return;
-    g_meshes[handle].vertices.Release();
-    g_meshes[handle].indices.Release();
+    if (handle >= MAX_MESHES || !g_meshes[handle].in_use) return;
+
+    if (bgfx::isValid(g_meshes[handle].vbh)) {
+        bgfx::destroy(g_meshes[handle].vbh);
+        g_meshes[handle].vbh = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(g_meshes[handle].ibh)) {
+        bgfx::destroy(g_meshes[handle].ibh);
+        g_meshes[handle].ibh = BGFX_INVALID_HANDLE;
+    }
     g_meshes[handle].index_count = 0;
     g_meshes[handle].in_use      = false;
+}
+
+// Accessor for renderer
+bgfx::VertexBufferHandle GetVertexBuffer(uint32_t handle) {
+    if (handle < MAX_MESHES && g_meshes[handle].in_use) return g_meshes[handle].vbh;
+    return BGFX_INVALID_HANDLE;
+}
+
+bgfx::IndexBufferHandle GetIndexBuffer(uint32_t handle) {
+    if (handle < MAX_MESHES && g_meshes[handle].in_use) return g_meshes[handle].ibh;
+    return BGFX_INVALID_HANDLE;
 }
 
 } // namespace Graphics

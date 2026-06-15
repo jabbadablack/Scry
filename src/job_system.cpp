@@ -71,10 +71,6 @@ void Shutdown() {
     if (Memory::PoolGetActiveCount(&g_task_pool) > 0) {
         fprintf(stderr, "[Engine] CRITICAL MEMORY LEAK: FlecsTask pool has active allocations!\n");
     }
-    
-    if (Memory::PoolGetActiveCount(&Engine::ECS::g_thread_wrapper_pool) > 0) {
-        fprintf(stderr, "[Engine] CRITICAL MEMORY LEAK: ThreadWrapper pool has active allocations!\n");
-    }
 
     if (g_task_pool_mem) {
         mi_free(g_task_pool_mem);

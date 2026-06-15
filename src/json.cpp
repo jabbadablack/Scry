@@ -5,15 +5,16 @@
 #include <engine/memory.hpp>
 #include <engine/plugin.hpp>
 #include <engine/ecs.hpp>
-#include <SDL3/SDL.h>
 #include <yyjson.h>
 #include <mimalloc.h>
 #include <libassert/assert.hpp>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <string_id.hpp>
 #include <database.hpp>
 
+namespace fs = std::filesystem;
 namespace sid = foonathan::string_id;
 
 namespace Engine {
@@ -147,14 +148,15 @@ bool LoadProjectConfig(Context* ctx, const char* filepath) {
 
     ecs_world_t* world = ctx->ecs_world;
 
-    const char* base_path = SDL_GetBasePath();
-    if (base_path == nullptr) return false;
-
-    char full_path[512] = {0};
-    std::snprintf(full_path, sizeof(full_path), "%s%s", base_path, filepath);
+    fs::path base_path = fs::current_path();
+    fs::path full_path = base_path / filepath;
+    if (!fs::exists(full_path)) {
+        // Check relative paths like ../../
+        full_path = base_path / ".." / ".." / filepath;
+    }
 
     size_t size = 0;
-    char* buffer = ReadFileToContiguousBuffer(full_path, &size);
+    char* buffer = ReadFileToContiguousBuffer(full_path.string().c_str(), &size);
     if (buffer == nullptr) return false;
 
     yyjson_alc alc;

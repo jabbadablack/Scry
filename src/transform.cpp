@@ -52,18 +52,10 @@ void Init(ecs_world_t* world) {
         s.query.terms[0].inout = EcsIn;
         s.query.terms[1].id    = id_WorldMatrix;
         s.query.terms[1].inout = EcsInOut;
-        s.query.terms[2].id    = Engine::Renderer::id_MeshInstance;
-        s.query.terms[2].inout = EcsIn;
-        s.query.terms[2].oper  = EcsOptional;
-        s.query.terms[3].id    = Engine::Renderer::id_EntityIntent;
-        s.query.terms[3].inout = EcsIn;
-        s.query.terms[3].oper  = EcsOptional;
         
         s.callback = [](ecs_iter_t* it) {
             const TransformComp* tf = ecs_field(it, TransformComp, 0);
             WorldMatrix*         wm = ecs_field(it, WorldMatrix, 1);
-            const Engine::Renderer::MeshInstance* mi = ecs_field(it, Engine::Renderer::MeshInstance, 2);
-            const Engine::Renderer::Intent* intent = ecs_field(it, Engine::Renderer::Intent, 3);
             
             DEBUG_ASSERT(tf != nullptr && wm != nullptr);
 
@@ -77,21 +69,6 @@ void Init(ecs_world_t* world) {
                 trs.scale(Eigen::Vector3f(tf[i].scale.x(), tf[i].scale.y(), tf[i].scale.z()));
 
                 wm[i].value = trs.matrix();
-
-                // Direct write to GPU StateBuffer
-                if (Engine::Renderer::g_MappedStateBuffer) {
-                    uint32_t idx = static_cast<uint32_t>(it->entities[i]) % Engine::Renderer::MAX_ENTITIES;
-                    Engine::Renderer::g_MappedStateBuffer[idx].transform = wm[i].value;
-                    if (mi) {
-                        Engine::Renderer::g_MappedStateBuffer[idx].mesh_id = mi[i].mesh_id;
-                    }
-                }
-
-                // Direct write to GPU IntentBuffer
-                if (Engine::Renderer::g_MappedIntentBuffer && intent) {
-                    uint32_t idx = static_cast<uint32_t>(it->entities[i]) % Engine::Renderer::MAX_ENTITIES;
-                    Engine::Renderer::g_MappedIntentBuffer[idx] = intent[i].mask;
-                }
             }
         };
 

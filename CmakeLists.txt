@@ -29,20 +29,22 @@ set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 set(ENKITS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(ENKITS_INSTALL OFF CACHE BOOL "" FORCE)
 
-# mimalloc — override OFF: engine calls mi_malloc/mi_free explicitly; the global
-# malloc/free override causes spurious warnings when Vulkan/glslang makes large
-# OS-level allocations that bypass mimalloc but then get freed through the intercept.
+# mimalloc
 set(MI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(MI_BUILD_OBJECT OFF CACHE BOOL "" FORCE)
 set(MI_OVERRIDE OFF CACHE BOOL "" FORCE)
 set(MI_BUILD_SHARED OFF CACHE BOOL "" FORCE)
 set(MI_BUILD_STATIC ON CACHE BOOL "" FORCE)
 
-# SDL3
-set(SDL_SHARED OFF CACHE BOOL "" FORCE)
-set(SDL_STATIC ON CACHE BOOL "" FORCE)
-set(SDL_TESTS OFF CACHE BOOL "" FORCE)
-set(SDL_INSTALL OFF CACHE BOOL "" FORCE)
+# GLFW
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+
+# BGFX
+set(BGFX_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BGFX_BUILD_TOOLS ON CACHE BOOL "" FORCE)
+set(BGFX_CONFIG_MAX_VIEWS 16 CACHE BOOL "" FORCE)
 
 # Flecs
 set(FLECS_STATIC OFF CACHE BOOL "" FORCE)
@@ -78,16 +80,6 @@ set(ASSIMP_INSTALL                       OFF CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_SAMPLES                 OFF CACHE BOOL "" FORCE)
 set(ASSIMP_NO_EXPORT                     ON  CACHE BOOL "" FORCE)
 
-# DiligentCore
-# Always keep HLSL enabled — shaders are HLSL; Vulkan uses glslang to cross-compile to SPIR-V.
-# Only skip glslang on MSVC/D3D12 where DXC handles HLSL natively.
-set(DILIGENT_BUILD_TESTS   OFF CACHE BOOL "" FORCE)
-set(DILIGENT_BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
-set(DILIGENT_INSTALL       OFF CACHE BOOL "" FORCE)
-if(MSVC)
-    set(DILIGENT_NO_GLSLANG ON CACHE BOOL "" FORCE)
-endif()
-
 # ─── FetchContent Declarations ───
 
 FetchContent_Declare(mimalloc
@@ -95,9 +87,14 @@ FetchContent_Declare(mimalloc
     GIT_TAG        v2.1.2
 )
 
-FetchContent_Declare(SDL3
-    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-    GIT_TAG        main
+FetchContent_Declare(glfw
+    GIT_REPOSITORY https://github.com/glfw/glfw.git
+    GIT_TAG        3.4
+)
+
+FetchContent_Declare(bgfx_cmake
+    GIT_REPOSITORY https://github.com/bkaradzic/bgfx.cmake.git
+    GIT_TAG        master
 )
 
 FetchContent_Declare(flecs
@@ -155,25 +152,7 @@ FetchContent_Declare(meshoptimizer
     GIT_TAG        v0.21
 )
 
-# SOURCE_DIR is set so the parent dir (_deps) resolves #include <DiligentCore/...>
-FetchContent_Declare(DiligentCore
-    GIT_REPOSITORY https://github.com/DiligentGraphics/DiligentCore.git
-    GIT_TAG        master
-    SOURCE_DIR     "${CMAKE_BINARY_DIR}/_deps/DiligentCore"
-)
-
-# DiligentCore is processed first because it internally fetches mimalloc via
-# its own FetchContent_MakeAvailable call.  Processing ours first causes a
-# duplicate add_library error in CMake < 3.24 (no double-add-subdirectory guard).
-# By letting DiligentCore "own" mimalloc we avoid the conflict; the if(NOT TARGET)
-# guard below makes sure we don't create a second mimalloc-static on our side.
-FetchContent_MakeAvailable(assimp stb DiligentCore meshoptimizer)
-
-if(NOT TARGET mimalloc-static)
-    FetchContent_MakeAvailable(mimalloc)
-endif()
-
-FetchContent_MakeAvailable(SDL3 flecs yyjson Catch2 cpptrace libassert string_id enkiTS eigen)
+FetchContent_MakeAvailable(mimalloc glfw bgfx_cmake assimp stb meshoptimizer flecs yyjson Catch2 cpptrace libassert string_id enkiTS eigen)
 
 if(MSVC)
     set(SCRY_WARNING_FLAGS /W4 /WX)
@@ -198,38 +177,20 @@ target_include_directories(scry PUBLIC
     "${string_id_SOURCE_DIR}"
 )
 
-# DiligentCore include paths:
-#   _deps              → lets our headers use <DiligentCore/Graphics/...>
-#   _deps/DiligentCore → lets DiligentCore's own headers find each other as <Primitives/...>
-target_include_directories(scry PRIVATE
-    "${CMAKE_BINARY_DIR}/_deps"
-    "${CMAKE_BINARY_DIR}/_deps/DiligentCore"
-)
-
-# DiligentCore sets PLATFORM_WIN32/LINUX/MACOS via add_compile_definitions() which is a
-# directory property and does NOT propagate through target_link_libraries to external targets.
 if(WIN32)
-    target_compile_definitions(scry PRIVATE PLATFORM_WIN32=1)
+    target_compile_definitions(scry PRIVATE PLATFORM_WIN32=1 ENGINE_EXPORT)
 elseif(UNIX AND NOT APPLE)
-    target_compile_definitions(scry PRIVATE PLATFORM_LINUX=1)
+    target_compile_definitions(scry PRIVATE PLATFORM_LINUX=1 ENGINE_EXPORT)
 elseif(APPLE)
-    target_compile_definitions(scry PRIVATE PLATFORM_MACOS=1)
-endif()
-
-# Backend selection: D3D12 for MSVC, Vulkan for GCC/MinGW
-if(MSVC)
-    target_compile_definitions(scry PRIVATE ENGINE_EXPORT SCRY_BACKEND_DX12)
-    target_link_libraries(scry PRIVATE Diligent-GraphicsEngineDX12-static)
-else()
-    target_compile_definitions(scry PRIVATE ENGINE_EXPORT SCRY_BACKEND_VULKAN)
-    target_link_libraries(scry PRIVATE Diligent-GraphicsEngineVk-static)
+    target_compile_definitions(scry PRIVATE PLATFORM_MACOS=1 ENGINE_EXPORT)
 endif()
 
 target_link_libraries(scry
     PUBLIC
         mimalloc-static
         flecs
-        SDL3::SDL3-static
+        glfw
+        bgfx
         yyjson
         libassert::assert
         foonathan_string_id
@@ -279,30 +240,71 @@ if(SCRY_BUILD_EXAMPLES)
 endif()
 
 # ─── Asset cooker tool ────────────────────────────────────────────────────────
-# Standalone executable — links ONLY against assimp + stb.  No Scry runtime.
+# Standalone executable — links ONLY against assimp + stb + meshoptimizer
 
 add_executable(scry_cooker tools/cooker.cpp)
 
 target_compile_features(scry_cooker PRIVATE cxx_std_17)
 
 target_include_directories(scry_cooker PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/include"   # for engine/CookedAsset.h
-    "${stb_SOURCE_DIR}"                     # for stb_image.h
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    "${stb_SOURCE_DIR}"
     "${assimp_SOURCE_DIR}/include"
-    "${assimp_BINARY_DIR}/include"          # for generated assimp/config.h
+    "${assimp_BINARY_DIR}/include"
     "${meshoptimizer_SOURCE_DIR}/src"
 )
 
 target_link_libraries(scry_cooker PRIVATE assimp::assimp meshoptimizer)
 
-# ─── cook_assets custom target ───────────────────────────────────────────────
-# Runs scry_cooker over assets/raw → bin/assets/cooked before scry is linked.
+# ─── Shader Compilation ───
+if(TARGET shaderc)
+    set(SHADERC_EXE shaderc)
+else()
+    set(SHADERC_EXE ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaderc)
+endif()
 
+function(compile_bgfx_shader SHADER_FILE TYPE PLATFORM PROFILE OUTPUT_FILE)
+    add_custom_command(
+        OUTPUT ${OUTPUT_FILE}
+        COMMAND ${SHADERC_EXE} -f ${SHADER_FILE} -o ${OUTPUT_FILE} --type ${TYPE} --platform ${PLATFORM} --profile ${PROFILE} -i "${bgfx_cmake_SOURCE_DIR}/bgfx/src"
+        DEPENDS ${SHADER_FILE} shaderc
+        COMMENT "Compiling shader ${SHADER_FILE} -> ${OUTPUT_FILE}"
+    )
+endfunction()
+
+if(MSVC)
+    set(BGFX_PLATFORM "windows")
+    set(BGFX_VS_PROFILE "vs_5_0")
+    set(BGFX_FS_PROFILE "ps_5_0")
+elseif(APPLE)
+    set(BGFX_PLATFORM "osx")
+    set(BGFX_VS_PROFILE "metal")
+    set(BGFX_FS_PROFILE "metal")
+else()
+    set(BGFX_PLATFORM "linux")
+    set(BGFX_VS_PROFILE "spirv")
+    set(BGFX_FS_PROFILE "spirv")
+endif()
+
+set(SHADER_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/raw/shaders")
+set(SHADER_BIN_DIR "${CMAKE_BINARY_DIR}/bin/assets/cooked/shaders")
+
+file(MAKE_DIRECTORY ${SHADER_BIN_DIR})
+
+compile_bgfx_shader("${SHADER_SRC_DIR}/vs_mesh.sc" "vertex"   ${BGFX_PLATFORM} ${BGFX_VS_PROFILE} "${SHADER_BIN_DIR}/vs_mesh.bin")
+compile_bgfx_shader("${SHADER_SRC_DIR}/fs_mesh.sc" "fragment" ${BGFX_PLATFORM} ${BGFX_FS_PROFILE} "${SHADER_BIN_DIR}/fs_mesh.bin")
+
+add_custom_target(cook_shaders DEPENDS
+    "${SHADER_BIN_DIR}/vs_mesh.bin"
+    "${SHADER_BIN_DIR}/fs_mesh.bin"
+)
+
+# ─── cook_assets custom target ───────────────────────────────────────────────
 add_custom_target(cook_assets
     COMMAND $<TARGET_FILE:scry_cooker>
             "${CMAKE_CURRENT_SOURCE_DIR}/assets/raw"
             "${CMAKE_BINARY_DIR}/bin/assets/cooked"
-    DEPENDS scry_cooker
+    DEPENDS scry_cooker cook_shaders
     COMMENT "Cooking raw assets into cooked binary blobs"
     VERBATIM
 )

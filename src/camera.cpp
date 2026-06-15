@@ -44,7 +44,7 @@ void Init(ecs_world_t* world) {
                 if (Input::g_input_buffer.IsKeyDown(Input::Key::MouseR)) {
                     // Fix: Flip signs for standard FPS-style "natural" look
                     cam[i].yaw   += Input::g_input_buffer.states[Input::g_input_buffer.read_index].mouse_dx * sensitivity;
-                    cam[i].pitch -= Input::g_input_buffer.states[Input::g_input_buffer.read_index].mouse_dy * sensitivity;
+                    cam[i].pitch += Input::g_input_buffer.states[Input::g_input_buffer.read_index].mouse_dy * sensitivity;
                     cam[i].pitch = std::clamp(cam[i].pitch, -1.5f, 1.5f);
                 }
 

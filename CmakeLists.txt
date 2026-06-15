@@ -20,28 +20,15 @@ option(SCRY_BUILD_EXAMPLES "Build example sandbox" ON)
 
 include(FetchContent)
 
-# ─── Global dependency settings to minimize noise ───
+# ─── Global settings ─────────────────────────────────────────────────────────
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(CMAKE_SKIP_INSTALL_RULES ON CACHE BOOL "" FORCE)
 set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
-
-# mimalloc
-set(MI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(MI_BUILD_OBJECT OFF CACHE BOOL "" FORCE)
-set(MI_OVERRIDE OFF CACHE BOOL "" FORCE)
-set(MI_BUILD_SHARED OFF CACHE BOOL "" FORCE)
-set(MI_BUILD_STATIC ON CACHE BOOL "" FORCE)
 
 # GLFW
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-
-# BGFX — single-threaded to eliminate ring-buffer RAM (30-50 MB savings)
-set(BGFX_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(BGFX_BUILD_TOOLS ON CACHE BOOL "" FORCE)
-set(BGFX_CONFIG_MAX_VIEWS 4 CACHE STRING "" FORCE)
-set(BGFX_CONFIG_MULTITHREADED 0 CACHE STRING "" FORCE)
 
 # Flecs
 set(FLECS_STATIC OFF CACHE BOOL "" FORCE)
@@ -52,19 +39,6 @@ set(FLECS_EXAMPLES OFF CACHE BOOL "" FORCE)
 # Catch2
 set(CATCH_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(CATCH_INSTALL_HELPERS OFF CACHE BOOL "" FORCE)
-
-# foonathan/string_id
-set(FOONATHAN_STRING_ID_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(FOONATHAN_STRING_ID_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-
-# cpptrace
-set(CPPTRACE_INSTALL OFF CACHE BOOL "" FORCE)
-set(CPPTRACE_GET_SYMBOLS_WITH_DBGHELP ON CACHE BOOL "" FORCE)
-set(CPPTRACE_GET_SYMBOLS_WITH_LIBDWARF OFF CACHE BOOL "" FORCE)
-
-# libassert
-set(LIBASSERT_INSTALL OFF CACHE BOOL "" FORCE)
-set(LIBASSERT_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 
 # Assimp (GLTF + OBJ + FBX only; no export, no tools, no tests)
 set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT OFF CACHE BOOL "" FORCE)
@@ -77,20 +51,26 @@ set(ASSIMP_INSTALL                       OFF CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_SAMPLES                 OFF CACHE BOOL "" FORCE)
 set(ASSIMP_NO_EXPORT                     ON  CACHE BOOL "" FORCE)
 
-# ─── FetchContent Declarations ───
+# DiligentCore — Vulkan only, static (no shared DLL = no export.map MinGW issue)
+set(DILIGENT_NO_DIRECT3D11  ON  CACHE BOOL "" FORCE)
+set(DILIGENT_NO_DIRECT3D12  ON  CACHE BOOL "" FORCE)
+set(DILIGENT_NO_OPENGL      ON  CACHE BOOL "" FORCE)
+set(DILIGENT_NO_METAL       ON  CACHE BOOL "" FORCE)
+set(DILIGENT_NO_ARCHIVER    ON  CACHE BOOL "" FORCE)
+set(DILIGENT_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
+set(DILIGENT_BUILD_SAMPLES  OFF CACHE BOOL "" FORCE)
+set(DILIGENT_INSTALL_CORE   OFF CACHE BOOL "" FORCE)
+set(DILIGENT_VK_SHARED      OFF CACHE BOOL "" FORCE)
 
-FetchContent_Declare(mimalloc
-    GIT_REPOSITORY https://github.com/microsoft/mimalloc.git
-    GIT_TAG        v2.1.2
-)
+# ─── FetchContent Declarations ───────────────────────────────────────────────
 
 FetchContent_Declare(glfw
     GIT_REPOSITORY https://github.com/glfw/glfw.git
     GIT_TAG        3.4
 )
 
-FetchContent_Declare(bgfx_cmake
-    GIT_REPOSITORY https://github.com/bkaradzic/bgfx.cmake.git
+FetchContent_Declare(DiligentCore
+    GIT_REPOSITORY https://github.com/DiligentGraphics/DiligentCore.git
     GIT_TAG        master
 )
 
@@ -107,21 +87,6 @@ FetchContent_Declare(yyjson
 FetchContent_Declare(Catch2
     GIT_REPOSITORY https://github.com/catchorg/Catch2.git
     GIT_TAG        v3.4.0
-)
-
-FetchContent_Declare(cpptrace
-    GIT_REPOSITORY https://github.com/jeremy-rifkin/cpptrace.git
-    GIT_TAG        v0.6.3
-)
-
-FetchContent_Declare(libassert
-    GIT_REPOSITORY https://github.com/jeremy-rifkin/libassert.git
-    GIT_TAG        v2.2.1
-)
-
-FetchContent_Declare(string_id
-    GIT_REPOSITORY https://github.com/foonathan/string_id.git
-    GIT_TAG        master
 )
 
 FetchContent_Declare(eigen
@@ -149,13 +114,24 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated -Wno-return-type -Wno-unknown-pragmas")
 endif()
 
-FetchContent_MakeAvailable(mimalloc glfw bgfx_cmake assimp stb meshoptimizer flecs yyjson Catch2 cpptrace libassert string_id eigen)
+# DiligentCore first — it pulls in its own nested FetchContent (glslang, SPIRV-Cross, etc.)
+FetchContent_MakeAvailable(DiligentCore)
 
-# Force bgfx single-threaded mode as a compile definition (belt-and-suspenders
-# alongside the BGFX_CONFIG_MULTITHREADED cache variable above)
-if(TARGET bgfx)
-    target_compile_definitions(bgfx PRIVATE BGFX_CONFIG_MULTITHREADED=0)
+# MinGW fix: DiligentCore's VK shared DLL linker uses --version-script=export.map
+# with a RELATIVE path, but ninja runs the linker from ${CMAKE_BINARY_DIR}.
+# DiligentCore writes export.map to its own build subdir; copy it to the root.
+if(MINGW)
+    set(_diligent_vk_export_map
+        "${diligentcore_BINARY_DIR}/Graphics/GraphicsEngineVulkan/export.map")
+    if(EXISTS "${_diligent_vk_export_map}")
+        configure_file("${_diligent_vk_export_map}" "${CMAKE_BINARY_DIR}/export.map" COPYONLY)
+    else()
+        file(WRITE "${CMAKE_BINARY_DIR}/export.map"
+            "{ global: *GetEngineFactoryVk*; local: *; };\n")
+    endif()
 endif()
+
+FetchContent_MakeAvailable(glfw assimp stb meshoptimizer flecs yyjson Catch2 eigen)
 
 if(MSVC)
     set(SCRY_WARNING_FLAGS /W4 /WX)
@@ -177,15 +153,11 @@ target_include_directories(scry PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
     "${eigen_SOURCE_DIR}"
-    "${string_id_SOURCE_DIR}"
 )
 
-# BGFX/BX Include paths from bgfx.cmake structure
-target_include_directories(scry PRIVATE
-    "${CMAKE_BINARY_DIR}/_deps"
-    "${bgfx_cmake_SOURCE_DIR}/bx/include"
-    "${bgfx_cmake_SOURCE_DIR}/bimg/include"
-    "${bgfx_cmake_SOURCE_DIR}/bgfx/include"
+# DiligentCore root — SYSTEM suppresses -Wpedantic warnings from their headers
+target_include_directories(scry SYSTEM PRIVATE
+    "${diligentcore_SOURCE_DIR}"
 )
 
 if(WIN32)
@@ -198,13 +170,11 @@ endif()
 
 target_link_libraries(scry
     PUBLIC
-        mimalloc-static
         flecs
         glfw
-        bgfx
         yyjson
-        libassert::assert
-        foonathan_string_id
+    PRIVATE
+        Diligent-GraphicsEngineVk-static
 )
 
 # ─── Tests ───────────────────────────────────────────────────────────────────
@@ -212,10 +182,8 @@ target_link_libraries(scry
 if(SCRY_BUILD_TESTS)
     add_subdirectory(tests)
 
-    # Exclude tests from ALL builds by default
     set_target_properties(scry_tests PROPERTIES EXCLUDE_FROM_ALL TRUE)
 
-    # Re-enable for Debug in Multi-Config generators
     if(CMAKE_CONFIGURATION_TYPES)
         foreach(cfg ${CMAKE_CONFIGURATION_TYPES})
             if(cfg STREQUAL "Debug")
@@ -250,7 +218,6 @@ if(SCRY_BUILD_EXAMPLES)
 endif()
 
 # ─── Asset cooker tool ────────────────────────────────────────────────────────
-# Standalone executable — links ONLY against assimp + stb + meshoptimizer
 
 add_executable(scry_cooker tools/cooker.cpp)
 
@@ -266,60 +233,29 @@ target_include_directories(scry_cooker PRIVATE
 
 target_link_libraries(scry_cooker PRIVATE assimp::assimp meshoptimizer)
 
-# ─── Shader Compilation ───
-if(TARGET shaderc)
-    set(SHADERC_EXE shaderc)
-else()
-    set(SHADERC_EXE ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaderc)
-endif()
+# ─── Shader copy ─────────────────────────────────────────────────────────────
+# DiligentCore compiles HLSL at runtime; just copy mesh.hlsl to the output tree.
 
-function(compile_bgfx_shader SHADER_FILE TYPE PLATFORM PROFILE OUTPUT_FILE)
-    add_custom_command(
-        OUTPUT ${OUTPUT_FILE}
-        COMMAND ${SHADERC_EXE} -f ${SHADER_FILE} -o ${OUTPUT_FILE} --type ${TYPE} --platform ${PLATFORM} --profile ${PROFILE} -i "${bgfx_cmake_SOURCE_DIR}/bgfx/src"
-        DEPENDS ${SHADER_FILE} shaderc
-        COMMENT "Compiling shader ${SHADER_FILE} -> ${OUTPUT_FILE}"
-    )
-endfunction()
+set(SHADER_SRC "${CMAKE_CURRENT_SOURCE_DIR}/assets/raw/shaders/mesh.hlsl")
+set(SHADER_DST "${CMAKE_BINARY_DIR}/bin/assets/raw/shaders/mesh.hlsl")
 
-if(MSVC)
-    set(BGFX_PLATFORM "windows")
-    set(BGFX_VS_PROFILE "vs_5_0")
-    set(BGFX_FS_PROFILE "ps_5_0")
-    set(BGFX_CS_PROFILE "cs_5_0")
-elseif(APPLE)
-    set(BGFX_PLATFORM "osx")
-    set(BGFX_VS_PROFILE "metal")
-    set(BGFX_FS_PROFILE "metal")
-    set(BGFX_CS_PROFILE "metal")
-else()
-    set(BGFX_PLATFORM "linux")
-    set(BGFX_VS_PROFILE "spirv")
-    set(BGFX_FS_PROFILE "spirv")
-    set(BGFX_CS_PROFILE "spirv")
-endif()
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bin/assets/raw/shaders")
 
-set(SHADER_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/raw/shaders")
-set(SHADER_BIN_DIR "${CMAKE_BINARY_DIR}/bin/assets/cooked/shaders")
-
-file(MAKE_DIRECTORY ${SHADER_BIN_DIR})
-
-compile_bgfx_shader("${SHADER_SRC_DIR}/vs_mesh.sc"       "vertex"   ${BGFX_PLATFORM} ${BGFX_VS_PROFILE} "${SHADER_BIN_DIR}/vs_mesh.bin")
-compile_bgfx_shader("${SHADER_SRC_DIR}/fs_mesh.sc"       "fragment" ${BGFX_PLATFORM} ${BGFX_FS_PROFILE} "${SHADER_BIN_DIR}/fs_mesh.bin")
-compile_bgfx_shader("${SHADER_SRC_DIR}/cs_indirect.sc"   "compute"  ${BGFX_PLATFORM} ${BGFX_CS_PROFILE} "${SHADER_BIN_DIR}/cs_indirect.bin")
-
-add_custom_target(cook_shaders DEPENDS
-    "${SHADER_BIN_DIR}/vs_mesh.bin"
-    "${SHADER_BIN_DIR}/fs_mesh.bin"
-    "${SHADER_BIN_DIR}/cs_indirect.bin"
+add_custom_command(
+    OUTPUT  "${SHADER_DST}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SHADER_SRC}" "${SHADER_DST}"
+    DEPENDS "${SHADER_SRC}"
+    COMMENT "Copying mesh.hlsl to output"
 )
+
+add_custom_target(copy_shaders DEPENDS "${SHADER_DST}")
 
 # ─── cook_assets custom target ───────────────────────────────────────────────
 add_custom_target(cook_assets
     COMMAND $<TARGET_FILE:scry_cooker>
             "${CMAKE_CURRENT_SOURCE_DIR}/assets/raw"
             "${CMAKE_BINARY_DIR}/bin/assets/cooked"
-    DEPENDS scry_cooker cook_shaders
+    DEPENDS scry_cooker copy_shaders
     COMMENT "Cooking raw assets into cooked binary blobs"
     VERBATIM
 )

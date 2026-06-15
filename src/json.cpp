@@ -6,197 +6,130 @@
 #include <engine/plugin.hpp>
 #include <engine/ecs.hpp>
 #include <yyjson.h>
-#include <mimalloc.h>
-#include <libassert/assert.hpp>
+#include <cassert>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <string_id.hpp>
-#include <database.hpp>
 
 namespace fs = std::filesystem;
-namespace sid = foonathan::string_id;
 
 namespace Engine {
 namespace JSON {
 
-static sid::default_database& GetStringIdDatabase() {
-    static sid::default_database database;
-    return database;
+// FNV-1a 64-bit hash — replaces foonathan::string_id
+static uint64_t HashString(const char* str) {
+    uint64_t hash = 14695981039346656037ULL;
+    while (*str) {
+        hash ^= static_cast<uint64_t>(static_cast<unsigned char>(*str++));
+        hash *= 1099511628211ULL;
+    }
+    return hash;
 }
 
-static uint64_t GetStringIdHash(const char* str) {
-    sid::string_id sid_obj(str, GetStringIdDatabase());
-    return sid_obj.hash_code();
-}
+static const uint64_t HASH_DOUBLE_BUFFERED_POSITION = HashString("DoubleBufferedPosition");
+static const uint64_t HASH_MOVE_INTENT              = HashString("MoveIntent");
 
-// Pre-hashed component keys using foonathan::string_id
-static const uint64_t HASH_DOUBLE_BUFFERED_POSITION = GetStringIdHash("DoubleBufferedPosition");
-static const uint64_t HASH_MOVE_INTENT = GetStringIdHash("MoveIntent");
+static void* YyjsonMalloc(void* ctx, size_t size)                              { (void)ctx; return std::malloc(size); }
+static void* YyjsonRealloc(void* ctx, void* ptr, size_t, size_t new_size)      { (void)ctx; return std::realloc(ptr, new_size); }
+static void  YyjsonFree(void* ctx, void* ptr)                                  { (void)ctx; std::free(ptr); }
 
-// Custom mimalloc allocators for yyjson
-static void* YyjsonMalloc(void* ctx, size_t size) {
-    (void)ctx;
-    return mi_malloc(size);
-}
-
-static void* YyjsonRealloc(void* ctx, void* ptr, size_t old_size, size_t new_size) {
-    (void)ctx; (void)old_size;
-    return mi_realloc(ptr, new_size);
-}
-
-static void YyjsonFree(void* ctx, void* ptr) {
-    (void)ctx;
-    if (ptr) mi_free(ptr);
-}
-
-// Contiguous file reader using custom allocator
-static char* ReadFileToContiguousBuffer(const char* filepath, size_t* out_size) {
-    DEBUG_ASSERT(filepath != nullptr);
-    DEBUG_ASSERT(out_size != nullptr);
-
+static char* ReadFileToBuffer(const char* filepath, size_t* out_size) {
+    assert(filepath && out_size);
     std::FILE* f = std::fopen(filepath, "rb");
-    if (f == nullptr) return nullptr;
-
+    if (!f) return nullptr;
     std::fseek(f, 0, SEEK_END);
     const long file_size = std::ftell(f);
     std::fseek(f, 0, SEEK_SET);
-
-    char* buffer = static_cast<char*>(mi_malloc(static_cast<size_t>(file_size) + 1));
-    if (buffer == nullptr) {
-        std::fclose(f);
-        return nullptr;
-    }
-
-    const size_t read_bytes = std::fread(buffer, 1, static_cast<size_t>(file_size), f);
-    buffer[read_bytes] = '\0';
+    char* buf = static_cast<char*>(std::malloc(static_cast<size_t>(file_size) + 1));
+    if (!buf) { std::fclose(f); return nullptr; }
+    *out_size = std::fread(buf, 1, static_cast<size_t>(file_size), f);
+    buf[*out_size] = '\0';
     std::fclose(f);
-
-    *out_size = read_bytes;
-    return buffer;
+    return buf;
 }
 
-// Parsers for individual components
-struct Position {
-    Engine::Math::ScryVec2 pos;
-};
-
-struct MoveIntent {
-    Engine::Math::ScryVec2 dir;
-};
+struct Position   { Engine::Math::ScryVec2 pos; };
+struct MoveIntent { Engine::Math::ScryVec2 dir; };
 
 static void ParseDoubleBufferedPosition(ecs_world_t* world, ecs_entity_t entity, ecs_entity_t comp_id, yyjson_val* comp_val) {
-    yyjson_val* read_obj = yyjson_obj_get(comp_val, "read");
-    yyjson_val* write_obj = yyjson_obj_get(comp_val, "write");
-
-    if (read_obj != nullptr && write_obj != nullptr) {
-        Engine::ECS::DoubleBuffered<Position> pos = {};
-        pos.read.pos.x() = static_cast<float>(yyjson_get_real(yyjson_obj_get(read_obj, "x")));
-        pos.read.pos.y() = static_cast<float>(yyjson_get_real(yyjson_obj_get(read_obj, "y")));
-        pos.write.pos.x() = static_cast<float>(yyjson_get_real(yyjson_obj_get(write_obj, "x")));
-        pos.write.pos.y() = static_cast<float>(yyjson_get_real(yyjson_obj_get(write_obj, "y")));
-
-        ecs_set_id(world, entity, comp_id, sizeof(pos), &pos);
-    }
+    yyjson_val* r = yyjson_obj_get(comp_val, "read");
+    yyjson_val* w = yyjson_obj_get(comp_val, "write");
+    if (!r || !w) return;
+    Engine::ECS::DoubleBuffered<Position> pos = {};
+    pos.read.pos.x()  = static_cast<float>(yyjson_get_real(yyjson_obj_get(r, "x")));
+    pos.read.pos.y()  = static_cast<float>(yyjson_get_real(yyjson_obj_get(r, "y")));
+    pos.write.pos.x() = static_cast<float>(yyjson_get_real(yyjson_obj_get(w, "x")));
+    pos.write.pos.y() = static_cast<float>(yyjson_get_real(yyjson_obj_get(w, "y")));
+    ecs_set_id(world, entity, comp_id, sizeof(pos), &pos);
 }
 
 static void ParseMoveIntent(ecs_world_t* world, ecs_entity_t entity, ecs_entity_t comp_id, yyjson_val* comp_val) {
     MoveIntent intent = {};
     intent.dir.x() = static_cast<float>(yyjson_get_real(yyjson_obj_get(comp_val, "dx")));
     intent.dir.y() = static_cast<float>(yyjson_get_real(yyjson_obj_get(comp_val, "dy")));
-
     ecs_set_id(world, entity, comp_id, sizeof(intent), &intent);
 }
 
 static void ParseState(ecs_world_t* world, yyjson_val* state_obj) {
-    const ecs_entity_t id_DoubleBufferedPosition = ecs_lookup(world, "DoubleBufferedPosition");
-    const ecs_entity_t id_MoveIntent = ecs_lookup(world, "MoveIntent");
-    if (id_DoubleBufferedPosition == 0 && id_MoveIntent == 0) return;
+    const ecs_entity_t id_DBP = ecs_lookup(world, "DoubleBufferedPosition");
+    const ecs_entity_t id_MI  = ecs_lookup(world, "MoveIntent");
+    if (!id_DBP && !id_MI) return;
 
-    size_t ent_idx, ent_max;
-    yyjson_val *ent_key, *ent_val;
-    yyjson_obj_foreach(state_obj, ent_idx, ent_max, ent_key, ent_val) {
-        const char* entity_name = yyjson_get_str(ent_key);
+    size_t ei, em; yyjson_val *ek, *ev;
+    yyjson_obj_foreach(state_obj, ei, em, ek, ev) {
+        const char* entity_name = yyjson_get_str(ek);
+        ecs_entity_desc_t ed = {}; ed.name = entity_name;
+        const ecs_entity_t entity = ecs_entity_init(world, &ed);
 
-        ecs_entity_desc_t player_desc = {};
-        player_desc.name = entity_name;
-        const ecs_entity_t entity = ecs_entity_init(world, &player_desc);
+        yyjson_val* comps = yyjson_obj_get(ev, "components");
+        if (!comps) continue;
 
-        yyjson_val* components_obj = yyjson_obj_get(ent_val, "components");
-        if (components_obj == nullptr) continue;
-
-        size_t comp_idx, comp_max;
-        yyjson_val *comp_key, *comp_val;
-        yyjson_obj_foreach(components_obj, comp_idx, comp_max, comp_key, comp_val) {
-            const char* comp_name = yyjson_get_str(comp_key);
-            const uint64_t hash = GetStringIdHash(comp_name);
-            if (hash == HASH_DOUBLE_BUFFERED_POSITION) {
-                ParseDoubleBufferedPosition(world, entity, id_DoubleBufferedPosition, comp_val);
-            } else if (hash == HASH_MOVE_INTENT) {
-                ParseMoveIntent(world, entity, id_MoveIntent, comp_val);
-            }
+        size_t ci, cm; yyjson_val *ck, *cv;
+        yyjson_obj_foreach(comps, ci, cm, ck, cv) {
+            const uint64_t hash = HashString(yyjson_get_str(ck));
+            if (hash == HASH_DOUBLE_BUFFERED_POSITION)
+                ParseDoubleBufferedPosition(world, entity, id_DBP, cv);
+            else if (hash == HASH_MOVE_INTENT)
+                ParseMoveIntent(world, entity, id_MI, cv);
         }
     }
 }
 
 bool LoadProjectConfig(Context* ctx, const char* filepath) {
-    if (ctx == nullptr || ctx->ecs_world == nullptr) return false;
+    if (!ctx || !ctx->ecs_world) return false;
+    if (!filepath || !std::strlen(filepath)) filepath = "project.json";
 
-    if (filepath == nullptr || std::strlen(filepath) == 0) {
-        filepath = "project.json";
-    }
-
-    ecs_world_t* world = ctx->ecs_world;
-
-    fs::path base_path = fs::current_path();
-    fs::path full_path = base_path / filepath;
-    if (!fs::exists(full_path)) {
-        // Check relative paths like ../../
-        full_path = base_path / ".." / ".." / filepath;
-    }
+    fs::path full_path = fs::current_path() / filepath;
+    if (!fs::exists(full_path))
+        full_path = fs::current_path() / ".." / ".." / filepath;
 
     size_t size = 0;
-    char* buffer = ReadFileToContiguousBuffer(full_path.string().c_str(), &size);
-    if (buffer == nullptr) return false;
+    char* buf = ReadFileToBuffer(full_path.string().c_str(), &size);
+    if (!buf) return false;
 
-    yyjson_alc alc;
-    alc.malloc = YyjsonMalloc;
-    alc.realloc = YyjsonRealloc;
-    alc.free = YyjsonFree;
-    alc.ctx = nullptr;
-
-    yyjson_doc* doc = yyjson_read_opts(buffer, size, YYJSON_READ_INSITU, &alc, nullptr);
-    if (doc == nullptr) {
-        mi_free(buffer);
-        return false;
-    }
+    yyjson_alc alc = { YyjsonMalloc, YyjsonRealloc, YyjsonFree, nullptr };
+    yyjson_doc* doc = yyjson_read_opts(buf, size, YYJSON_READ_INSITU, &alc, nullptr);
+    if (!doc) { std::free(buf); return false; }
 
     yyjson_val* root = yyjson_doc_get_root(doc);
-
-    // Build the plugin name-to-path registry by scanning the plugins directory.
     Engine::Plugin::LoadPlugins(ctx);
 
-    // Load Plugins listed in the project config by their designated names.
-    yyjson_val* plugins_arr = yyjson_obj_get(root, "plugins");
-    if (plugins_arr != nullptr && yyjson_is_arr(plugins_arr)) {
-        size_t idx, max;
-        yyjson_val* val;
-        yyjson_arr_foreach(plugins_arr, idx, max, val) {
-            const char* plugin_name = yyjson_get_str(val);
-            if (plugin_name != nullptr) {
-                Engine::Plugin::LoadSinglePlugin(ctx, plugin_name);
-            }
+    yyjson_val* plugins = yyjson_obj_get(root, "plugins");
+    if (plugins && yyjson_is_arr(plugins)) {
+        size_t i, m; yyjson_val* v;
+        yyjson_arr_foreach(plugins, i, m, v) {
+            const char* name = yyjson_get_str(v);
+            if (name) Engine::Plugin::LoadSinglePlugin(ctx, name);
         }
     }
 
-    // Load State configuration
-    yyjson_val* state_obj = yyjson_obj_get(root, "state");
-    if (state_obj != nullptr && yyjson_is_obj(state_obj) && yyjson_obj_size(state_obj) > 0) {
-        ParseState(world, state_obj);
-    }
+    yyjson_val* state = yyjson_obj_get(root, "state");
+    if (state && yyjson_is_obj(state) && yyjson_obj_size(state) > 0)
+        ParseState(ctx->ecs_world, state);
 
     yyjson_doc_free(doc);
-    mi_free(buffer);
+    std::free(buf);
     return true;
 }
 

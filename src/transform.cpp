@@ -1,7 +1,7 @@
 #include <engine/transform.hpp>
 #include <engine/pipeline.hpp>
 #include <engine/renderer.hpp>
-#include <libassert/assert.hpp>
+#include <cassert>
 #include <Eigen/Geometry>
 #include <cstdio>
 
@@ -12,7 +12,7 @@ ecs_entity_t id_Transform  = 0;
 ecs_entity_t id_WorldMatrix = 0;
 
 void Init(ecs_world_t* world) {
-    DEBUG_ASSERT(world != nullptr);
+    assert(world != nullptr);
 
     // ── Register TransformComp component ─────────────────────────────────────
     {
@@ -23,7 +23,7 @@ void Init(ecs_world_t* world) {
         c.type.size            = sizeof(TransformComp);
         c.type.alignment       = alignof(TransformComp);
         id_Transform           = ecs_component_init(world, &c);
-        DEBUG_ASSERT(id_Transform != 0);
+        assert(id_Transform != 0);
     }
 
     // ── Register WorldMatrix component ────────────────────────────────────────
@@ -35,7 +35,7 @@ void Init(ecs_world_t* world) {
         c.type.size            = sizeof(WorldMatrix);
         c.type.alignment       = alignof(WorldMatrix);
         id_WorldMatrix         = ecs_component_init(world, &c);
-        DEBUG_ASSERT(id_WorldMatrix != 0);
+        assert(id_WorldMatrix != 0);
     }
 
     // ── Register Phase_StateUpdate transform system ───────────────────────────
@@ -43,7 +43,7 @@ void Init(ecs_world_t* world) {
         ecs_entity_desc_t e        = {};
         e.name                     = "TransformSystem";
         const ecs_entity_t sys_ent = ecs_entity_init(world, &e);
-        DEBUG_ASSERT(sys_ent != 0);
+        assert(sys_ent != 0);
         ecs_add_pair(world, sys_ent, EcsDependsOn, Engine::Pipeline::Phase_StateUpdate);
 
         ecs_system_desc_t s    = {};
@@ -57,7 +57,7 @@ void Init(ecs_world_t* world) {
             const TransformComp* tf = ecs_field(it, TransformComp, 0);
             WorldMatrix*         wm = ecs_field(it, WorldMatrix, 1);
             
-            DEBUG_ASSERT(tf != nullptr && wm != nullptr);
+            assert(tf != nullptr && wm != nullptr);
 
             for (int i = 0; i < it->count; ++i) {
                 Eigen::Affine3f trs = Eigen::Affine3f::Identity();
@@ -73,7 +73,7 @@ void Init(ecs_world_t* world) {
         };
 
         const ecs_entity_t sys = ecs_system_init(world, &s);
-        DEBUG_ASSERT(sys != 0);
+        assert(sys != 0);
     }
 
 #ifndef NDEBUG

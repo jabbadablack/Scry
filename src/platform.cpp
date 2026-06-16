@@ -2,8 +2,8 @@
 #include <engine/platform.h>
 #include <engine/input.h>
 #include <engine/ecs.h>
-#include <engine/graphics.h>
-#include <engine/renderer.h>
+#include <engine/renderer/core.h>
+#include <engine/renderer/renderer.h>
 #include <engine/plugin.h>
 
 #define GLFW_INCLUDE_NONE

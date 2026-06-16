@@ -3,8 +3,9 @@
 #include <engine/ecs.h>
 #include <engine/json.h>
 #include <engine/plugin.h>
-#include <engine/graphics.h>
-#include <engine/renderer.h>
+#include <engine/renderer/core.h>
+#include <engine/renderer/renderer.h>
+#include <engine/renderer/mesh.h>
 #include <engine/transform.h>
 #include <engine/camera.h>
 #include <engine/spatial.h>

@@ -128,31 +128,66 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
         optimized_idxs.data(), optimized_idxs.data(),
         optimized_idxs.size(), optimized_verts.size());
 
-    // ── Step 6: Decimation — crush to 15% of original triangle count ─────────
-    const size_t target_indices = optimized_idxs.size() * 0.15f;
-
-    std::vector<uint32_t> decimated_idxs(optimized_idxs.size());
-    float error = 0.0f;
-    const size_t decimated_index_count = meshopt_simplify(
-        decimated_idxs.data(),
+    // ── Step 6: LOD0 — 15% of original triangle count ────────────────────────
+    const size_t lod0_target = optimized_idxs.size() * 15 / 100;
+    std::vector<uint32_t> lod0_idxs(optimized_idxs.size());
+    float lod0_error = 0.0f;
+    const size_t lod0_index_count = meshopt_simplify(
+        lod0_idxs.data(),
         optimized_idxs.data(), optimized_idxs.size(),
         &optimized_verts[0].px, optimized_verts.size(), sizeof(ScryVertex),
-        target_indices, 0.01f, 0, &error);
-    decimated_idxs.resize(decimated_index_count);
-
-    // ── Step 7: Cache-optimize the decimated index buffer ────────────────────
+        lod0_target, 0.01f, 0, &lod0_error);
+    lod0_idxs.resize(lod0_index_count);
     meshopt_optimizeVertexCache(
-        decimated_idxs.data(), decimated_idxs.data(),
-        decimated_idxs.size(), optimized_verts.size());
+        lod0_idxs.data(), lod0_idxs.data(), lod0_idxs.size(), optimized_verts.size());
 
-    // ── Step 8: Fetch-optimize + compact — purges unreferenced vertices ───────
-    const size_t final_vertex_count = meshopt_optimizeVertexFetch(
-        optimized_verts.data(),
-        decimated_idxs.data(), decimated_idxs.size(),
-        optimized_verts.data(), optimized_verts.size(), sizeof(ScryVertex));
-    optimized_verts.resize(final_vertex_count);
+    // ── Step 7: LOD1 — 50% of LOD0 triangle count ────────────────────────────
+    const size_t lod1_target = lod0_index_count / 2;
+    std::vector<uint32_t> lod1_idxs(lod0_idxs.size());
+    float lod1_error = 0.0f;
+    const size_t lod1_index_count = meshopt_simplify(
+        lod1_idxs.data(),
+        lod0_idxs.data(), lod0_idxs.size(),
+        &optimized_verts[0].px, optimized_verts.size(), sizeof(ScryVertex),
+        lod1_target, 0.01f, 0, &lod1_error);
+    lod1_idxs.resize(lod1_index_count);
+    meshopt_optimizeVertexCache(
+        lod1_idxs.data(), lod1_idxs.data(), lod1_idxs.size(), optimized_verts.size());
 
-    // ── Step 9: Write .scrymesh ───────────────────────────────────────────────
+    // ── Step 8: LOD2 — 10% of LOD0 triangle count ────────────────────────────
+    const size_t lod2_target = lod0_index_count / 10;
+    std::vector<uint32_t> lod2_idxs(lod1_idxs.size());
+    float lod2_error = 0.0f;
+    const size_t lod2_index_count = meshopt_simplify(
+        lod2_idxs.data(),
+        lod1_idxs.data(), lod1_idxs.size(),
+        &optimized_verts[0].px, optimized_verts.size(), sizeof(ScryVertex),
+        lod2_target, 0.05f, 0, &lod2_error);
+    lod2_idxs.resize(lod2_index_count);
+    meshopt_optimizeVertexCache(
+        lod2_idxs.data(), lod2_idxs.data(), lod2_idxs.size(), optimized_verts.size());
+
+    // ── Step 9: Fetch-optimize + compact — apply consistent remap to all LODs ─
+    // Remap computed from LOD0 indices; LOD1/LOD2 are strict subsets of LOD0's vertices.
+    std::vector<unsigned int> fetch_remap(optimized_verts.size());
+    const size_t final_vertex_count = meshopt_optimizeVertexFetchRemap(
+        fetch_remap.data(),
+        lod0_idxs.data(), lod0_idxs.size(),
+        optimized_verts.size());
+
+    meshopt_remapIndexBuffer(
+        lod0_idxs.data(), lod0_idxs.data(), lod0_idxs.size(), fetch_remap.data());
+    meshopt_remapIndexBuffer(
+        lod1_idxs.data(), lod1_idxs.data(), lod1_idxs.size(), fetch_remap.data());
+    meshopt_remapIndexBuffer(
+        lod2_idxs.data(), lod2_idxs.data(), lod2_idxs.size(), fetch_remap.data());
+
+    std::vector<ScryVertex> final_verts(final_vertex_count);
+    meshopt_remapVertexBuffer(
+        final_verts.data(), optimized_verts.data(), optimized_verts.size(),
+        sizeof(ScryVertex), fetch_remap.data());
+
+    // ── Step 10: Write .scrymesh ──────────────────────────────────────────────
     const fs::path out = out_dir / swap_ext(input, ".scrymesh");
     FILE* f = std::fopen(out.string().c_str(), "wb");
     if (!f) {
@@ -161,21 +196,30 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
     }
 
     ScryMeshHeader hdr{};
-    hdr.magic        = SCRY_MESH_MAGIC;
-    hdr.version      = SCRY_MESH_VERSION;
-    hdr.vertex_count = static_cast<uint32_t>(optimized_verts.size());
-    hdr.index_count  = static_cast<uint32_t>(decimated_idxs.size());
+    hdr.magic             = SCRY_MESH_MAGIC;
+    hdr.version           = SCRY_MESH_VERSION;
+    hdr.vertex_count      = static_cast<uint32_t>(final_vertex_count);
+    hdr.lod0_index_count  = static_cast<uint32_t>(lod0_index_count);
+    hdr.lod1_index_count  = static_cast<uint32_t>(lod1_index_count);
+    hdr.lod2_index_count  = static_cast<uint32_t>(lod2_index_count);
 
-    std::fwrite(&hdr,                   sizeof(hdr),        1,                      f);
-    std::fwrite(optimized_verts.data(),  sizeof(ScryVertex), optimized_verts.size(), f);
-    std::fwrite(decimated_idxs.data(),   sizeof(uint32_t),   decimated_idxs.size(),  f);
+    std::fwrite(&hdr,            sizeof(hdr),        1,                    f);
+    std::fwrite(final_verts.data(), sizeof(ScryVertex), final_vertex_count, f);
+    std::fwrite(lod0_idxs.data(), sizeof(uint32_t),  lod0_index_count,    f);
+    std::fwrite(lod1_idxs.data(), sizeof(uint32_t),  lod1_index_count,    f);
+    std::fwrite(lod2_idxs.data(), sizeof(uint32_t),  lod2_index_count,    f);
     std::fclose(f);
 
-    std::printf("[cooker] %s -> %s  (%zu raw -> %zu dedup -> %zu decimated verts, %zu idx, err=%.4f)\n",
+    std::printf(
+        "[cooker] %s -> %s  (%zu raw -> %zu dedup -> %zu final verts | "
+        "LOD0=%zu LOD1=%zu LOD2=%zu idx | err0=%.4f err1=%.4f err2=%.4f)\n",
         input.filename().string().c_str(),
         out.filename().string().c_str(),
         raw_vertex_count, unique_vertices, final_vertex_count,
-        decimated_idxs.size(), static_cast<double>(error));
+        lod0_index_count, lod1_index_count, lod2_index_count,
+        static_cast<double>(lod0_error),
+        static_cast<double>(lod1_error),
+        static_cast<double>(lod2_error));
     return true;
 }
 

@@ -1,11 +1,11 @@
 #pragma once
-#include <engine/graphics.h>
 #include <engine/math.h>
+#include <cstdint>
 
 namespace Engine {
 namespace Renderer {
 
-struct MeshData { Engine::Graphics::MeshAllocation alloc; };
+struct MeshData { uint32_t lod_group_id; };
 
 struct AABB {
     Engine::Math::ScryVec3 min;

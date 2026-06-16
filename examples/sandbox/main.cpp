@@ -21,7 +21,7 @@ static void AppLog(const char* msg) {
     std::fflush(stdout);
 }
 
-static Engine::Graphics::MeshAllocation DiscoverAndLoadMesh(const char* filename) {
+static Engine::Graphics::LODGroup DiscoverAndLoadMesh(const char* filename) {
     std::string paths[] = {
         std::string("assets/cooked/") + filename,
         std::string("../assets/cooked/") + filename,
@@ -50,7 +50,9 @@ static Engine::Graphics::MeshAllocation DiscoverAndLoadMesh(const char* filename
         "[Init] Current working directory: %s", fs::current_path().string().c_str());
     EngineLog(err_msg);
 
-    return {0, 0, 0};
+    Engine::Graphics::LODGroup failed = {};
+    failed.group_id = UINT32_MAX;
+    return failed;
 }
 
 static void OnInit(Context* ctx) {
@@ -59,8 +61,8 @@ static void OnInit(Context* ctx) {
 
     ecs_world_t* world = GetWorld(ctx);
 
-    Engine::Graphics::MeshAllocation alloc = DiscoverAndLoadMesh("suzanne.scrymesh");
-    if (alloc.indexCount == 0) return;
+    Engine::Graphics::LODGroup lodGroup = DiscoverAndLoadMesh("suzanne.scrymesh");
+    if (lodGroup.group_id == UINT32_MAX) return;
 
     // Spawn 10000 entities in a 100×100 grid
     for (int i = 0; i < 10000; ++i) {
@@ -88,7 +90,7 @@ static void OnInit(Context* ctx) {
         Engine::Transform::DirtyMatrixIntent dirty = { 1 };
         ecs_set_id(world, ent, Engine::Transform::id_DirtyMatrix, sizeof(dirty), &dirty);
 
-        Engine::Renderer::MeshData md = { alloc };
+        Engine::Renderer::MeshData md = { lodGroup.group_id };
         ecs_set_id(world, ent, Engine::Renderer::id_MeshData, sizeof(md), &md);
 
         Engine::Renderer::AABB aabb;

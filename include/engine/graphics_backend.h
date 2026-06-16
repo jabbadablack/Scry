@@ -15,6 +15,7 @@ Diligent::ISwapChain*     GetSwapChain();
 
 Diligent::IBuffer* GetGlobalVertexBuffer();
 Diligent::IBuffer* GetGlobalIndexBuffer();
+Diligent::IBuffer* GetLODGroupBuffer();
 
 } // namespace Graphics
 } // namespace Engine

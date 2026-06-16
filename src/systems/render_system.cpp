@@ -32,23 +32,28 @@ ecs_entity_t id_EntityIntent = 0;
 ecs_entity_t id_Material     = 0;
 
 // ── Capacity ─────────────────────────────────────────────────────────────────
-static constexpr uint32_t MAX_ENTITIES = 16384u;
+static constexpr uint32_t MAX_ENTITIES    = 16384u;
+static constexpr uint32_t MAX_LOD_GROUPS  = 256u;
+static constexpr uint32_t LOD_LEVELS      = 3u;
 
 // ── Graphics PSO / SRB ───────────────────────────────────────────────────────
 static RefCntAutoPtr<IPipelineState>         g_pPSO;
 static RefCntAutoPtr<IShaderResourceBinding> g_pSRB;
-static RefCntAutoPtr<IBuffer>                g_pMatrixBuffer;
 static RefCntAutoPtr<IBuffer>                g_pDrawParamsCB;
 
 // ── Compute PSO / SRB ────────────────────────────────────────────────────────
 static RefCntAutoPtr<IPipelineState>         g_pCullPSO;
 static RefCntAutoPtr<IShaderResourceBinding> g_pCullSRB;
 
-// ── MDI + cull resources ─────────────────────────────────────────────────────
-static RefCntAutoPtr<IBuffer> g_IndirectArgsBuffer;    // 20 bytes, 1 draw cmd
-static RefCntAutoPtr<IBuffer> g_pAABBBuffer;           // dynamic SSBO, MAX_ENTITIES * 32
-static RefCntAutoPtr<IBuffer> g_pCullParamsCB;         // 128 bytes cbuffer
-static RefCntAutoPtr<IBuffer> g_pVisibleInstancesBuffer; // UAV(compute) + SRV(vertex), MAX_ENTITIES * 4
+// ── Per-frame raw input buffers (CPU→GPU each frame) ─────────────────────────
+static RefCntAutoPtr<IBuffer> g_RawMatrixSSBO;     // DYNAMIC SRV, raw world matrices
+static RefCntAutoPtr<IBuffer> g_pAABBBuffer;       // DYNAMIC SRV, per-entity AABB
+static RefCntAutoPtr<IBuffer> g_EntityMeshIdBuffer;// DYNAMIC SRV, per-entity lod_group_id
+static RefCntAutoPtr<IBuffer> g_pCullParamsCB;     // DYNAMIC cbuffer, frustum + camera
+
+// ── MDI + dense output buffers (DEFAULT, GPU writes / GPU reads) ──────────────
+static RefCntAutoPtr<IBuffer> g_IndirectArgsBuffer; // MAX_LOD_GROUPS*3 IndirectCommands
+static RefCntAutoPtr<IBuffer> g_VisibleMatrixSSBO;  // dense ScryMat4 output, MAX_LOD_GROUPS*3*MAX_ENTITIES
 
 // ── ECS queries ──────────────────────────────────────────────────────────────
 static ecs_query_t* g_render_query = nullptr;
@@ -62,6 +67,7 @@ struct alignas(16) ShaderAABB {
 
 static float      s_mat_flat[MAX_ENTITIES * 16];
 static ShaderAABB s_aabb_flat[MAX_ENTITIES];
+static uint32_t   s_mesh_ids[MAX_ENTITIES];
 static uint32_t   s_entity_count = 0;
 
 // CPU-side mirror of the HLSL IndirectCommand struct
@@ -74,13 +80,14 @@ struct IndirectCmd {
 };
 static_assert(sizeof(IndirectCmd) == 20, "IndirectCmd size mismatch");
 
-// CPU-side mirror of CullParams cbuffer
+// CPU-side mirror of CullParams cbuffer (128 bytes)
 struct CullParamsCPU {
-    float    frustumPlanes[6][4]; // 96 bytes
-    uint32_t entityCount;
-    uint32_t _pad[3];
+    float    frustumPlanes[6][4]; // 96 bytes, offset 0
+    float    cameraWorldPos[4];   // 16 bytes, offset 96
+    uint32_t entityCount;         //  4 bytes, offset 112
+    uint32_t _pad[3];             // 12 bytes, offset 116
 };
-static_assert(sizeof(CullParamsCPU) == 112, "CullParams size mismatch");
+static_assert(sizeof(CullParamsCPU) == 128, "CullParams size mismatch");
 
 static bool g_logged_first = false;
 
@@ -131,8 +138,6 @@ static char* DiscoverShader(const char* filename, uint32_t* out_len) {
 
 static void ExtractFrustumPlanes(const float* vp, float planes[6][4]) {
     // VP is stored column-major: vp[col*4 + row]
-    // Row vectors for plane extraction (row-major interpretation of column-major):
-    // row i = vp[0*4+i], vp[1*4+i], vp[2*4+i], vp[3*4+i]
     auto row = [&](int r, float* out) {
         out[0] = vp[0 * 4 + r];
         out[1] = vp[1 * 4 + r];
@@ -142,12 +147,6 @@ static void ExtractFrustumPlanes(const float* vp, float planes[6][4]) {
     float r0[4], r1[4], r2[4], r3[4];
     row(0, r0); row(1, r1); row(2, r2); row(3, r3);
 
-    // Left:  row3 + row0
-    // Right: row3 - row0
-    // Bottom:row3 + row1
-    // Top:   row3 - row1
-    // Near:  row3 + row2  (Vulkan NDC: z in [0,1])
-    // Far:   row3 - row2
     auto combine = [](const float* a, const float* b, float s, float* out) {
         out[0] = a[0] + s * b[0];
         out[1] = a[1] + s * b[1];
@@ -198,9 +197,10 @@ static bool CreateGraphicsPSO() {
     if (!pVS) { EngineLog("[Renderer] FATAL: vertex shader compile failed"); return false; }
     if (!pPS) { EngineLog("[Renderer] FATAL: pixel shader compile failed");  return false; }
 
+    // b_instances is STATIC — always g_VisibleMatrixSSBO, set once on PSO
     ShaderResourceVariableDesc vars[] = {
         {SHADER_TYPE_VERTEX, "b_vertices",  SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
-        {SHADER_TYPE_VERTEX, "b_instances", SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
+        {SHADER_TYPE_VERTEX, "b_instances", SHADER_RESOURCE_VARIABLE_TYPE_STATIC},
         {SHADER_TYPE_VERTEX, "DrawParams",  SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
     };
 
@@ -253,18 +253,22 @@ static bool CreateComputePSO() {
 
     if (!pCS) { EngineLog("[Renderer] FATAL: cull shader compile failed"); return false; }
 
+    // b_lodGroups and b_outVisibleMatrices are STATIC — set once on PSO, never change
     ShaderResourceVariableDesc cullVars[] = {
-        {SHADER_TYPE_COMPUTE, "b_matrices",    SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
-        {SHADER_TYPE_COMPUTE, "b_bounds",      SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
-        {SHADER_TYPE_COMPUTE, "b_indirectArgs",SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
-        {SHADER_TYPE_COMPUTE, "CullParams",    SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
+        {SHADER_TYPE_COMPUTE, "b_matrices",          SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
+        {SHADER_TYPE_COMPUTE, "b_bounds",            SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
+        {SHADER_TYPE_COMPUTE, "b_lodGroups",         SHADER_RESOURCE_VARIABLE_TYPE_STATIC},
+        {SHADER_TYPE_COMPUTE, "b_entityLodIds",      SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
+        {SHADER_TYPE_COMPUTE, "b_indirectArgs",      SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
+        {SHADER_TYPE_COMPUTE, "b_outVisibleMatrices",SHADER_RESOURCE_VARIABLE_TYPE_STATIC},
+        {SHADER_TYPE_COMPUTE, "CullParams",          SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
     };
 
     ComputePipelineStateCreateInfo cpsoCI;
     cpsoCI.PSODesc.Name                        = "CullPSO";
     cpsoCI.PSODesc.PipelineType                = PIPELINE_TYPE_COMPUTE;
     cpsoCI.PSODesc.ResourceLayout.Variables    = cullVars;
-    cpsoCI.PSODesc.ResourceLayout.NumVariables = 4u;
+    cpsoCI.PSODesc.ResourceLayout.NumVariables = 7u;
     cpsoCI.pCS = pCS;
 
     dev->CreateComputePipelineState(cpsoCI, &g_pCullPSO);
@@ -290,18 +294,18 @@ void Init(ecs_world_t* world) {
     IRenderDevice* dev = Graphics::GetDevice();
     assert(dev);
 
-    // Matrix SSBO (dynamic, written CPU-side each frame)
+    // Raw world-matrix SSBO — CPU writes per frame, compute reads
     {
         BufferDesc bd;
-        bd.Name              = "MatrixSSBO";
+        bd.Name              = "RawMatrixSSBO";
         bd.Usage             = USAGE_DYNAMIC;
         bd.BindFlags         = BIND_SHADER_RESOURCE;
         bd.Mode              = BUFFER_MODE_STRUCTURED;
         bd.ElementByteStride = 64u;
         bd.CPUAccessFlags    = CPU_ACCESS_WRITE;
         bd.Size              = MAX_ENTITIES * 64u;
-        dev->CreateBuffer(bd, nullptr, &g_pMatrixBuffer);
-        assert(g_pMatrixBuffer);
+        dev->CreateBuffer(bd, nullptr, &g_RawMatrixSSBO);
+        assert(g_RawMatrixSSBO);
     }
 
     // ViewProj constant buffer
@@ -316,21 +320,35 @@ void Init(ecs_world_t* world) {
         assert(g_pDrawParamsCB);
     }
 
-    // AABB SSBO (dynamic, 32 bytes per entity)
+    // AABB SSBO — CPU writes per frame, compute reads
     {
         BufferDesc bd;
         bd.Name              = "AABBBuffer";
         bd.Usage             = USAGE_DYNAMIC;
         bd.BindFlags         = BIND_SHADER_RESOURCE;
         bd.Mode              = BUFFER_MODE_STRUCTURED;
-        bd.ElementByteStride = 32u; // sizeof(ShaderAABB)
+        bd.ElementByteStride = 32u;
         bd.CPUAccessFlags    = CPU_ACCESS_WRITE;
         bd.Size              = MAX_ENTITIES * 32u;
         dev->CreateBuffer(bd, nullptr, &g_pAABBBuffer);
         assert(g_pAABBBuffer);
     }
 
-    // Cull params constant buffer (112 bytes, padded to 128)
+    // Entity lod-group-id SSBO — CPU writes per frame, compute reads
+    {
+        BufferDesc bd;
+        bd.Name              = "EntityMeshIdBuffer";
+        bd.Usage             = USAGE_DYNAMIC;
+        bd.BindFlags         = BIND_SHADER_RESOURCE;
+        bd.Mode              = BUFFER_MODE_STRUCTURED;
+        bd.ElementByteStride = 4u;
+        bd.CPUAccessFlags    = CPU_ACCESS_WRITE;
+        bd.Size              = MAX_ENTITIES * 4u;
+        dev->CreateBuffer(bd, nullptr, &g_EntityMeshIdBuffer);
+        assert(g_EntityMeshIdBuffer);
+    }
+
+    // Cull params constant buffer (128 bytes)
     {
         BufferDesc bd;
         bd.Name           = "CullParamsCB";
@@ -342,68 +360,74 @@ void Init(ecs_world_t* world) {
         assert(g_pCullParamsCB);
     }
 
-    // Indirect args buffer — UAV for compute write, indirect draw args for graphics
+    // Indirect args buffer — MAX_LOD_GROUPS * 3 entries, UAV for compute + indirect draw
     {
         BufferDesc bd;
         bd.Name              = "IndirectArgs";
         bd.Usage             = USAGE_DEFAULT;
         bd.BindFlags         = BIND_INDIRECT_DRAW_ARGS | BIND_UNORDERED_ACCESS;
         bd.Mode              = BUFFER_MODE_STRUCTURED;
-        bd.ElementByteStride = 20u; // sizeof(IndirectCmd)
-        bd.Size              = 20u;
+        bd.ElementByteStride = 20u;
+        bd.Size              = MAX_LOD_GROUPS * LOD_LEVELS * 20u;
         dev->CreateBuffer(bd, nullptr, &g_IndirectArgsBuffer);
         assert(g_IndirectArgsBuffer);
     }
 
-    // Visible instances map — compute writes entity IDs, vertex shader reads them
+    // Dense visible-matrix SSBO — compute writes (UAV), vertex shader reads (SRV).
+    // LOD_LEVELS * MAX_ENTITIES entries; each LOD slot gets a MAX_ENTITIES-sized
+    // sub-range (firstInstance = slot * MAX_ENTITIES). At most MAX_ENTITIES visible
+    // entities exist in total, so each slot's range is conservatively large enough.
+    // Note: supports exactly 1 LOD group. Multiple groups would need this multiplied.
     {
         BufferDesc bd;
-        bd.Name              = "VisibleInstances";
+        bd.Name              = "VisibleMatrixSSBO";
         bd.Usage             = USAGE_DEFAULT;
         bd.BindFlags         = BIND_UNORDERED_ACCESS | BIND_SHADER_RESOURCE;
         bd.Mode              = BUFFER_MODE_STRUCTURED;
-        bd.ElementByteStride = 4u; // sizeof(uint)
-        bd.Size              = MAX_ENTITIES * sizeof(Uint32);
-        dev->CreateBuffer(bd, nullptr, &g_pVisibleInstancesBuffer);
-        assert(g_pVisibleInstancesBuffer);
+        bd.ElementByteStride = 64u;
+        bd.Size              = LOD_LEVELS * MAX_ENTITIES * 64u; // 3 * 16384 * 64 = 3 MB
+        dev->CreateBuffer(bd, nullptr, &g_VisibleMatrixSSBO);
+        assert(g_VisibleMatrixSSBO);
     }
 
     if (!CreateGraphicsPSO()) { EngineLog("[Renderer] FATAL: failed to build graphics PSO"); return; }
     if (!CreateComputePSO())  { EngineLog("[Renderer] FATAL: failed to build compute PSO");  return; }
 
-    // Bind b_visibleInstances as STATIC on both PSOs (set once, never changes per-frame)
+    // Bind STATIC resources on both PSOs (set once, unchanging across draws/frames)
     {
-        IBufferView* visUAV = g_pVisibleInstancesBuffer->GetDefaultView(BUFFER_VIEW_UNORDERED_ACCESS);
-        IBufferView* visSRV = g_pVisibleInstancesBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
-        assert(visUAV && visSRV);
-        g_pCullPSO->GetStaticVariableByName(SHADER_TYPE_COMPUTE, "b_visibleInstances")->Set(visUAV);
-        g_pPSO->GetStaticVariableByName(SHADER_TYPE_VERTEX,  "b_visibleInstances")->Set(visSRV);
-        EngineLog("[Renderer] Visible instances buffer bound as static");
+        IBufferView* visUAV = g_VisibleMatrixSSBO->GetDefaultView(BUFFER_VIEW_UNORDERED_ACCESS);
+        IBufferView* visSRV = g_VisibleMatrixSSBO->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
+        IBufferView* lodSRV = Graphics::GetLODGroupBuffer()->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
+        assert(visUAV && visSRV && lodSRV);
+        g_pCullPSO->GetStaticVariableByName(SHADER_TYPE_COMPUTE, "b_outVisibleMatrices")->Set(visUAV);
+        g_pCullPSO->GetStaticVariableByName(SHADER_TYPE_COMPUTE, "b_lodGroups")         ->Set(lodSRV);
+        g_pPSO->GetStaticVariableByName(SHADER_TYPE_VERTEX, "b_instances")              ->Set(visSRV);
+        EngineLog("[Renderer] Static resources bound");
     }
 
-    // Graphics SRB — bind once against the global megabuffer
+    // Graphics SRB — mutable bindings: b_vertices (global VB), DrawParams
     {
         g_pPSO->CreateShaderResourceBinding(&g_pSRB, true);
         assert(g_pSRB);
-        IBufferView* vbSRV  = Graphics::GetGlobalVertexBuffer()->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
-        IBufferView* matSRV = g_pMatrixBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
-        assert(vbSRV && matSRV);
+        IBufferView* vbSRV = Graphics::GetGlobalVertexBuffer()->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
+        assert(vbSRV);
         g_pSRB->GetVariableByName(SHADER_TYPE_VERTEX, "b_vertices") ->Set(vbSRV);
-        g_pSRB->GetVariableByName(SHADER_TYPE_VERTEX, "b_instances")->Set(matSRV);
         g_pSRB->GetVariableByName(SHADER_TYPE_VERTEX, "DrawParams") ->Set(g_pDrawParamsCB);
         EngineLog("[Renderer] Graphics SRB bound");
     }
 
-    // Compute SRB
+    // Compute SRB — mutable bindings: b_matrices, b_bounds, b_entityLodIds, b_indirectArgs, CullParams
     {
         g_pCullPSO->CreateShaderResourceBinding(&g_pCullSRB, true);
         assert(g_pCullSRB);
-        IBufferView* matSRV  = g_pMatrixBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
-        IBufferView* aabbSRV = g_pAABBBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
-        IBufferView* iArgUAV = g_IndirectArgsBuffer->GetDefaultView(BUFFER_VIEW_UNORDERED_ACCESS);
-        assert(matSRV && aabbSRV && iArgUAV);
+        IBufferView* matSRV   = g_RawMatrixSSBO->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
+        IBufferView* aabbSRV  = g_pAABBBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
+        IBufferView* meshSRV  = g_EntityMeshIdBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
+        IBufferView* iArgUAV  = g_IndirectArgsBuffer->GetDefaultView(BUFFER_VIEW_UNORDERED_ACCESS);
+        assert(matSRV && aabbSRV && meshSRV && iArgUAV);
         g_pCullSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "b_matrices")    ->Set(matSRV);
         g_pCullSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "b_bounds")      ->Set(aabbSRV);
+        g_pCullSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "b_entityLodIds")->Set(meshSRV);
         g_pCullSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "b_indirectArgs")->Set(iArgUAV);
         g_pCullSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "CullParams")    ->Set(g_pCullParamsCB);
         EngineLog("[Renderer] Compute SRB bound");
@@ -449,8 +473,8 @@ void Init(ecs_world_t* world) {
     }
 
     // ── Pass_Cull ─────────────────────────────────────────────────────────────
-    // Runs first in Phase_React: gathers matrices+AABBs, uploads cull params,
-    // resets indirect args, dispatches compute.
+    // Gathers matrices/AABBs/mesh IDs, resets indirect args with prefix-sum
+    // firstInstance offsets, dispatches compute culler.
     {
         ecs_entity_desc_t ed = {}; ed.name = "Pass_Cull";
         ecs_entity_t sys_ent = ecs_entity_init(world, &ed);
@@ -462,16 +486,23 @@ void Init(ecs_world_t* world) {
             IDeviceContext* ctx = Graphics::GetContext();
             assert(ctx);
 
-            // ── Step 1: camera first — VP matrix + chunk coordinate ───────────
+            const uint32_t numGroups = Graphics::GetLODGroupCount();
+            if (numGroups == 0) return;
+
+            // ── Step 1: camera first — VP matrix + chunk + world position ─────
             int32_t cam_cx = 0, cam_cy = 0;
-            float vp[16] = {};
+            float   cam_pos[3] = {};
+            float   vp[16] = {};
             if (g_camera_query) {
                 ecs_iter_t ci = ecs_query_iter(it->world, g_camera_query);
                 while (ecs_query_next(&ci)) {
                     const Engine::Camera::Camera* cam = ecs_field(&ci, Engine::Camera::Camera, 0);
                     if (ci.count == 0) continue;
-                    cam_cx = static_cast<int32_t>(std::floor(cam[0].position.x() / Engine::Spatial::CHUNK_SIZE));
-                    cam_cy = static_cast<int32_t>(std::floor(cam[0].position.z() / Engine::Spatial::CHUNK_SIZE));
+                    cam_cx    = static_cast<int32_t>(std::floor(cam[0].position.x() / Engine::Spatial::CHUNK_SIZE));
+                    cam_cy    = static_cast<int32_t>(std::floor(cam[0].position.z() / Engine::Spatial::CHUNK_SIZE));
+                    cam_pos[0] = cam[0].position.x();
+                    cam_pos[1] = cam[0].position.y();
+                    cam_pos[2] = cam[0].position.z();
                     Eigen::Map<const Eigen::Matrix4f> V(cam[0].view);
                     Eigen::Map<const Eigen::Matrix4f> P(cam[0].proj);
                     Eigen::Matrix4f VP_mat = P * V;
@@ -484,11 +515,9 @@ void Init(ecs_world_t* world) {
                 }
             }
 
-            // ── Step 2: gather matrices + AABBs, chunk-radius filtered ────────
-            constexpr int RENDER_DISTANCE = 4; // chunks
+            // ── Step 2: gather matrices + AABBs + mesh IDs (chunk-radius filtered) ─
+            constexpr int RENDER_DISTANCE = 4;
             s_entity_count = 0;
-            MeshData first_mesh_data = {};
-            bool have_mesh = false;
 
             if (g_render_query) {
                 ecs_iter_t ri = ecs_query_iter(it->world, g_render_query);
@@ -502,7 +531,6 @@ void Init(ecs_world_t* world) {
                     for (int i = 0; i < ri.count && s_entity_count < MAX_ENTITIES; ++i) {
                         if ((intent[i].mask & INTENT_VISIBLE)   == 0) continue;
                         if ((intent[i].mask & INTENT_DESTROYED) != 0) continue;
-                        // CPU chunk-radius cull — only upload entities near the camera
                         if (std::abs(chunk[i].x - cam_cx) > RENDER_DISTANCE) continue;
                         if (std::abs(chunk[i].y - cam_cy) > RENDER_DISTANCE) continue;
 
@@ -517,27 +545,36 @@ void Init(ecs_world_t* world) {
                         s_aabb_flat[s_entity_count].aabb_max[2] = ab[i].max.z();
                         s_aabb_flat[s_entity_count].pad1 = 0.f;
 
-                        if (!have_mesh) { first_mesh_data = md[i]; have_mesh = true; }
+                        s_mesh_ids[s_entity_count] = md[i].lod_group_id;
                         ++s_entity_count;
                     }
                 }
             }
-            if (s_entity_count == 0 || !have_mesh) return;
+            if (s_entity_count == 0) return;
 
-            // ── Step 3: upload to GPU ─────────────────────────────────────────
+            // ── Step 3: upload raw data to GPU ────────────────────────────────
             {
                 void* p = nullptr;
-                ctx->MapBuffer(g_pMatrixBuffer, MAP_WRITE, MAP_FLAG_DISCARD, p);
-                if (p) { std::memcpy(p, s_mat_flat, s_entity_count * 64u); ctx->UnmapBuffer(g_pMatrixBuffer, MAP_WRITE); }
+                ctx->MapBuffer(g_RawMatrixSSBO, MAP_WRITE, MAP_FLAG_DISCARD, p);
+                if (p) { std::memcpy(p, s_mat_flat, s_entity_count * 64u); ctx->UnmapBuffer(g_RawMatrixSSBO, MAP_WRITE); }
             }
             {
                 void* p = nullptr;
                 ctx->MapBuffer(g_pAABBBuffer, MAP_WRITE, MAP_FLAG_DISCARD, p);
                 if (p) { std::memcpy(p, s_aabb_flat, s_entity_count * 32u); ctx->UnmapBuffer(g_pAABBBuffer, MAP_WRITE); }
             }
+            {
+                void* p = nullptr;
+                ctx->MapBuffer(g_EntityMeshIdBuffer, MAP_WRITE, MAP_FLAG_DISCARD, p);
+                if (p) { std::memcpy(p, s_mesh_ids, s_entity_count * 4u); ctx->UnmapBuffer(g_EntityMeshIdBuffer, MAP_WRITE); }
+            }
 
             CullParamsCPU cp = {};
             ExtractFrustumPlanes(vp, cp.frustumPlanes);
+            cp.cameraWorldPos[0] = cam_pos[0];
+            cp.cameraWorldPos[1] = cam_pos[1];
+            cp.cameraWorldPos[2] = cam_pos[2];
+            cp.cameraWorldPos[3] = 0.f;
             cp.entityCount = s_entity_count;
             {
                 void* p = nullptr;
@@ -545,17 +582,32 @@ void Init(ecs_world_t* world) {
                 if (p) { std::memcpy(p, &cp, sizeof(cp)); ctx->UnmapBuffer(g_pCullParamsCB, MAP_WRITE); }
             }
 
-            // Reset indirect args: fill indexCount/firstIndex/baseVertex from mesh alloc,
-            // instanceCount=0 (compute will increment it atomically).
-            IndirectCmd reset = {
-                first_mesh_data.alloc.indexCount,
-                0u,
-                first_mesh_data.alloc.firstIndex,
-                first_mesh_data.alloc.baseVertex,
-                0u
-            };
-            ctx->UpdateBuffer(g_IndirectArgsBuffer, 0, sizeof(reset), &reset,
-                              RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+            // ── Step 4: reset indirect args with prefix-sum firstInstance ─────
+            // Each slot gets its own MAX_ENTITIES-sized sub-range of g_VisibleMatrixSSBO.
+            // SV_InstanceID in Vulkan = gl_InstanceIndex = firstInstance + local_iid,
+            // so b_instances[SV_InstanceID] reads from the correct sub-range automatically.
+            {
+                const uint32_t totalSlots = numGroups * LOD_LEVELS;
+                IndirectCmd resetCmds[MAX_LOD_GROUPS * LOD_LEVELS];
+                for (uint32_t g = 0; g < numGroups; ++g) {
+                    const Graphics::LODGroup* lg = Graphics::GetLODGroup(g);
+                    if (!lg) continue;
+                    for (uint32_t lod = 0; lod < LOD_LEVELS; ++lod) {
+                        const uint32_t slot = g * LOD_LEVELS + lod;
+                        resetCmds[slot] = {
+                            lg->lods[lod].indexCount,
+                            0u,
+                            lg->lods[lod].firstIndex,
+                            lg->lods[lod].baseVertex,
+                            slot * MAX_ENTITIES  // prefix-sum firstInstance
+                        };
+                    }
+                }
+                ctx->UpdateBuffer(g_IndirectArgsBuffer, 0,
+                    totalSlots * static_cast<uint32_t>(sizeof(IndirectCmd)),
+                    resetCmds,
+                    RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+            }
 
             // Dispatch compute culler
             ctx->SetPipelineState(g_pCullPSO);
@@ -571,7 +623,7 @@ void Init(ecs_world_t* world) {
     }
 
     // ── Pass_Opaque ───────────────────────────────────────────────────────────
-    // Runs second in Phase_React: barriers, binds, DrawIndexedIndirect.
+    // Barriers, binds, multi-draw indirect across all LOD slots.
     {
         ecs_entity_desc_t ed = {}; ed.name = "Pass_Opaque";
         ecs_entity_t sys_ent = ecs_entity_init(world, &ed);
@@ -583,17 +635,19 @@ void Init(ecs_world_t* world) {
             (void)it;
             if (s_entity_count == 0) return;
 
+            const uint32_t numGroups = Graphics::GetLODGroupCount();
+            if (numGroups == 0) return;
+
             IDeviceContext* ctx = Graphics::GetContext();
             assert(ctx);
 
-            // Barrier: indirect args UAV (compute wrote) → INDIRECT_ARGUMENT (GPU reads for draw).
-            // Visible instances transitions automatically via CommitShaderResources below.
+            // Barrier: indirect args UAV (compute wrote instanceCount) → INDIRECT_ARGUMENT.
+            // g_VisibleMatrixSSBO transitions automatically via CommitShaderResources.
             StateTransitionDesc barrier(g_IndirectArgsBuffer,
                 RESOURCE_STATE_UNORDERED_ACCESS, RESOURCE_STATE_INDIRECT_ARGUMENT,
                 STATE_TRANSITION_FLAG_UPDATE_STATE);
             ctx->TransitionResourceStates(1, &barrier);
 
-            // Set global index buffer
             ctx->SetIndexBuffer(Graphics::GetGlobalIndexBuffer(), 0,
                                 RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
@@ -601,14 +655,14 @@ void Init(ecs_world_t* world) {
             ctx->CommitShaderResources(g_pSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
             DrawIndexedIndirectAttribs draw;
-            draw.IndexType              = VT_UINT32;
-            draw.pAttribsBuffer         = g_IndirectArgsBuffer;
-            draw.DrawCount              = 1u;
-            draw.Flags                  = DRAW_FLAG_VERIFY_ALL;
+            draw.IndexType      = VT_UINT32;
+            draw.pAttribsBuffer = g_IndirectArgsBuffer;
+            draw.DrawCount      = numGroups * LOD_LEVELS;
+            draw.Flags          = DRAW_FLAG_VERIFY_ALL;
             ctx->DrawIndexedIndirect(draw);
 
             if (!g_logged_first) {
-                EngineLog("[Renderer] First MDI draw submitted");
+                EngineLog("[Renderer] First MDI draw submitted (dense-pack LOD)");
                 g_logged_first = true;
             }
         };
@@ -629,10 +683,11 @@ void Shutdown() {
     g_pSRB.Release();
     g_pPSO.Release();
     g_IndirectArgsBuffer.Release();
-    g_pVisibleInstancesBuffer.Release();
+    g_VisibleMatrixSSBO.Release();
+    g_EntityMeshIdBuffer.Release();
     g_pAABBBuffer.Release();
     g_pCullParamsCB.Release();
-    g_pMatrixBuffer.Release();
+    g_RawMatrixSSBO.Release();
     g_pDrawParamsCB.Release();
     EngineLog("[Renderer] Shutdown complete");
 }

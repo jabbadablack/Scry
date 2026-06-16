@@ -2,15 +2,17 @@
 // CPU layouts:
 //   ScryVertex = { float4 v0{px,py,pz,nx}, float4 v1{ny,nz,u,v} }  — 32 bytes
 //   ScryMat4   = { float4 c0..c3 }                                   — 64 bytes (column-major)
+//
+// b_instances is the dense visible-matrix buffer written by the compute culler.
+// Vulkan: SV_InstanceID = gl_InstanceIndex = firstInstance + local_iid,
+// so indexing b_instances[iID] correctly reads from the per-LOD sub-range.
 
 struct ScryVertex { float4 v0; float4 v1; };
 struct ScryMat4   { float4 c0; float4 c1; float4 c2; float4 c3; };
 
-StructuredBuffer<ScryVertex> b_vertices        : register(t0);
-StructuredBuffer<ScryMat4>   b_instances       : register(t1);
-StructuredBuffer<uint>        b_visibleInstances: register(t2);
+StructuredBuffer<ScryVertex> b_vertices : register(t0);
+StructuredBuffer<ScryMat4>   b_instances: register(t1);
 
-// viewProj stored as four column vectors — avoids row/column-major ambiguity
 cbuffer DrawParams : register(b0)
 {
     float4 vp_c0;
@@ -32,8 +34,7 @@ PSInput VSMain(uint vID : SV_VertexID, uint iID : SV_InstanceID)
     float3 position = vert.v0.xyz;
     float3 normal   = float3(vert.v0.w, vert.v1.x, vert.v1.y);
 
-    uint realID = b_visibleInstances[iID];
-    ScryMat4 m = b_instances[realID];
+    ScryMat4 m = b_instances[iID];
 
     // Column-major world transform
     float4 worldPos = m.c0 * position.x + m.c1 * position.y + m.c2 * position.z + m.c3;

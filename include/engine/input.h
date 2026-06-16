@@ -1,6 +1,8 @@
 #pragma once
 #include <engine/engine.h>
 #include <cstdint>
+#include <cassert>
+#include <cstdio>
 
 namespace Engine {
 namespace Input {
@@ -36,29 +38,139 @@ struct ENGINE_API InputBuffer {
     uint8_t write_index = 0;
     uint8_t read_index  = 1;
 
+    /**
+     * @brief Swaps the read and write input buffers.
+     * 
+     * Hello! This little helper flips our input buffers so we can process the 
+     * latest input while capturing new events in the background.
+     * 
+     * @example
+     * Engine::Input::g_input_buffer.Swap();
+     */
     inline void Swap() {
+        assert(read_index != write_index);
+        assert(read_index < 2 && write_index < 2);
+        static bool logged_once_swap = false;
+        if (!logged_once_swap) {
+            std::printf("InputBuffer: Swapping buffers. Current read index: %d\n", read_index);
+            logged_once_swap = true;
+        }
+
         uint8_t temp   = read_index;
         read_index     = write_index;
         write_index    = temp;
         states[write_index] = states[read_index];
         states[write_index].mouse_dx = 0.0f;
         states[write_index].mouse_dy = 0.0f;
+
+        static bool logged_once_complete = false;
+        if (!logged_once_complete) {
+            std::printf("InputBuffer: Swap complete. New read index: %d\n", read_index);
+            logged_once_complete = true;
+        }
     }
 
+    /**
+     * @brief Checks if a specific key is currently held down.
+     * 
+     * Want to know if a key is pressed? This friendly function will check the 
+     * latest input state and let you know!
+     * 
+     * @param key The key to check.
+     * @return true if the key is down, false otherwise.
+     * 
+     * @example
+     * if (Engine::Input::g_input_buffer.IsKeyDown(Engine::Input::Key::Space)) {
+     *     // Jump!
+     * }
+     */
     inline bool IsKeyDown(Key key) const {
         uint32_t sc = static_cast<uint32_t>(key);
-        if (sc < 512) return (states[read_index].keys[sc / 8] & (1u << (sc % 8))) != 0;
+        assert(read_index < 2);
+        assert(sc < 512);
+        static bool logged_once_check = false;
+        if (!logged_once_check) {
+            std::printf("InputBuffer: Checking key %u\n", sc);
+            logged_once_check = true;
+        }
+
+        if (sc < 512) {
+            bool down = (states[read_index].keys[sc / 8] & (1u << (sc % 8))) != 0;
+            static bool logged_once_status = false;
+            if (!logged_once_status) {
+                std::printf("InputBuffer: Key %u is %s\n", sc, down ? "down" : "up");
+                logged_once_status = true;
+            }
+            return down;
+        }
         return false;
     }
 
+    /**
+     * @brief Checks if a raw scancode is currently held down.
+     * 
+     * If you're working with raw input codes, this function is your best friend.
+     * It checks the input state just like IsKeyDown but uses a raw scancode.
+     * 
+     * @param sc The raw scancode to check.
+     * @return true if the key is down, false otherwise.
+     * 
+     * @example
+     * if (Engine::Input::g_input_buffer.IsRawKeyDown(65)) {
+     *     // 'A' is pressed!
+     * }
+     */
     inline bool IsRawKeyDown(uint32_t sc) const {
-        if (sc < 512) return (states[read_index].keys[sc / 8] & (1u << (sc % 8))) != 0;
+        assert(read_index < 2);
+        assert(sc < 512);
+        static bool logged_once_check = false;
+        if (!logged_once_check) {
+            std::printf("InputBuffer: Checking raw scancode %u\n", sc);
+            logged_once_check = true;
+        }
+
+        if (sc < 512) {
+            bool down = (states[read_index].keys[sc / 8] & (1u << (sc % 8))) != 0;
+            static bool logged_once_status = false;
+            if (!logged_once_status) {
+                std::printf("InputBuffer: Raw scancode %u is %s\n", sc, down ? "down" : "up");
+                logged_once_status = true;
+            }
+            return down;
+        }
         return false;
     }
 
+    /**
+     * @brief Gets the current mouse position.
+     * 
+     * Where's the mouse? This function will kindly provide the current X and Y 
+     * coordinates of the mouse cursor.
+     * 
+     * @param out_x Reference to store the X coordinate.
+     * @param out_y Reference to store the Y coordinate.
+     * 
+     * @example
+     * int16_t x, y;
+     * Engine::Input::g_input_buffer.GetMousePos(x, y);
+     */
     inline void GetMousePos(int16_t& out_x, int16_t& out_y) const {
+        assert(read_index < 2);
+        assert(&out_x != &out_y); // Just to be sure they aren't the same variable
+        static bool logged_once_get = false;
+        if (!logged_once_get) {
+            std::printf("InputBuffer: Getting mouse position from buffer %d\n", read_index);
+            logged_once_get = true;
+        }
+
         out_x = states[read_index].mouse_x;
         out_y = states[read_index].mouse_y;
+
+        static bool logged_once_pos = false;
+        if (!logged_once_pos) {
+            std::printf("InputBuffer: Mouse position is (%d, %d)\n", out_x, out_y);
+            logged_once_pos = true;
+        }
     }
 };
 

@@ -22,6 +22,7 @@
 
 /* ── Standard library ────────────────────────────────────────────────────── */
 #include <cstdio>
+#include <cassert>
 #include <cstring>
 #include <cstdlib>
 #include <filesystem>
@@ -32,19 +33,62 @@ namespace fs = std::filesystem;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/**
+ * @brief Just making sure we have a place to put things! This creates directories if they're missing.
+ * 
+ * @param p The path you want to make sure exists.
+ * @return True if everything is ready, false if we hit a snag.
+ * 
+ * @example
+ * ensure_dir("assets/cooked");
+ */
 static bool ensure_dir(const fs::path& p) {
+    assert(!p.empty() && "Oops! Can't ensure an empty path.");
+    assert(p.is_absolute() || p.is_relative());
+    std::printf("[cooker] Making sure directory exists: %s\n", p.string().c_str());
+    std::printf("[cooker] Checking for directories now...\n");
     std::error_code ec;
     fs::create_directories(p, ec);
     return !ec;
 }
 
+/**
+ * @brief Need a new look? This swaps the file extension for you.
+ * 
+ * @param src The original file path.
+ * @param new_ext The shiny new extension you want (don't forget the dot!).
+ * @return A new path with the new extension.
+ * 
+ * @example
+ * fs::path my_file = swap_ext("model.obj", ".scrymesh");
+ */
 static fs::path swap_ext(const fs::path& src, const char* new_ext) {
+    assert(new_ext != nullptr && "Don't forget the extension!");
+    assert(new_ext[0] == '.' && "Extension should start with a dot, like '.txt'");
+    std::printf("[cooker] Swapping extension of %s to %s\n", src.string().c_str(), new_ext);
+    std::printf("[cooker] Concatenating new extension...\n");
     return src.stem().concat(new_ext);
 }
 
 // ── Mesh cooking ──────────────────────────────────────────────────────────────
 
+/**
+ * @brief Let's get cooking! This function turns your 3D models into optimized .scrymesh files.
+ * 
+ * It handles all the heavy lifting like deduplicating vertices and generating LODs.
+ * 
+ * @param input The path to your raw model file (GLTF, OBJ, etc.).
+ * @param out_dir Where you want the shiny new .scrymesh file to live.
+ * @return True if the mesh was cooked to perfection, false otherwise.
+ * 
+ * @example
+ * cook_mesh("assets/raw/suzanne.obj", "assets/cooked");
+ */
 static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
+    assert(!input.empty() && "Wait, where's the input file?");
+    assert(!out_dir.empty() && "We need somewhere to put the cooked mesh!");
+    std::printf("[cooker] Cooking mesh: %s\n", input.string().c_str());
+    std::printf("[cooker] Getting the Assimp importer ready...\n");
     Assimp::Importer imp;
     const aiScene* scene = imp.ReadFile(
         input.string().c_str(),
@@ -221,7 +265,24 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
 
 // ── Texture cooking ───────────────────────────────────────────────────────────
 
+/**
+ * @brief Time to make some textures! This function turns your PNGs into .scrytex files.
+ * 
+ * It uses stb_image to load the pixels and then wraps them in a nice Scry header.
+ * 
+ * @param input The path to your raw PNG file.
+ * @param out_dir Where the cooked .scrytex file should go.
+ * @return True if the texture was cooked successfully, false otherwise.
+ * 
+ * @example
+ * cook_texture("assets/raw/diffuse.png", "assets/cooked");
+ */
 static bool cook_texture(const fs::path& input, const fs::path& out_dir) {
+    assert(!input.empty() && "We need an input file to cook!");
+    assert(!out_dir.empty() && "Where should I put the cooked texture?");
+    std::printf("[cooker] Preparing to cook texture: %s\n", input.string().c_str());
+    std::printf("[cooker] Loading image data via stb_image...\n");
+
     int w = 0, h = 0, ch = 0;
     uint8_t* pixels = stbi_load(input.string().c_str(), &w, &h, &ch, 4 /* force RGBA */);
     if (!pixels) {
@@ -257,7 +318,25 @@ static bool cook_texture(const fs::path& input, const fs::path& out_dir) {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
+/**
+ * @brief The heart of the cooker! This is where we start processing all your raw assets.
+ * 
+ * It scans the input directory for meshes and textures, and cooks them all up for the engine.
+ * 
+ * @param argc The number of command-line arguments.
+ * @param argv The command-line arguments (input_dir and output_dir).
+ * @return 0 if everything went smoothly, 1 if we encountered some hiccups.
+ * 
+ * @example
+ * // Run from the command line:
+ * // scry_cooker assets/raw assets/cooked
+ */
 int main(int argc, char* argv[]) {
+    assert(argv != nullptr && "Arguments shouldn't be null!");
+    assert(argc >= 1 && "At least the program name should be present.");
+    std::printf("[cooker] Starting the cooking process...\n");
+    std::printf("[cooker] Parsing command line arguments...\n");
+
     if (argc != 3) {
         std::fprintf(stderr, "Usage: scry_cooker <input_dir> <output_dir>\n");
         return 1;

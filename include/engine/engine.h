@@ -83,44 +83,75 @@ typedef struct AppConfig {
 extern "C" {
 #endif
 
-/*
- * EngineRun — start the engine.
- *
- * Initialises logging, the job scheduler, SDL, and the ECS world in that
- * order, then calls config->OnInit. Enters the main loop: each iteration pumps
- * SDL events and calls ecs_progress, which runs the full ISR pipeline, until
- * RequestExit() is called or the window is closed. Calls
- * config->OnShutdown before tearing down subsystems.
- *
- * Blocks until the application exits.
- * Returns SUCCESS on a clean exit; an error enum on a startup failure.
+/**
+ * @brief Time to get things moving! This function starts up the whole engine.
+ * 
+ * It'll take care of all the boring stuff like logging and SDL so you can focus on your game.
+ * 
+ * @param config Your application's settings and callbacks.
+ * @return Returns SUCCESS if everything went smoothly, or an error code if something went wrong.
+ * 
+ * @example
+ * AppConfig config = {0};
+ * config.OnInit = MyInit;
+ * config.OnShutdown = MyShutdown;
+ * EngineRun(&config);
  */
 ENGINE_API EngineError EngineRun(const AppConfig* config);
 
-/*
- * RequestExit — signal the main loop to stop at the end of the
- * current frame. Safe to call from a plugin callback.
+/**
+ * @brief Ready to call it a day? Use this to tell the engine to stop nicely.
+ * 
+ * It'll finish the current frame before shutting everything down.
+ * 
+ * @param ctx The engine context you want to stop.
+ * 
+ * @example
+ * RequestExit(my_context);
  */
 ENGINE_API void RequestExit(Context* ctx);
 
-/*
- * GetUserData — retrieve the user_data pointer originally set in
- * AppConfig. Returns NULL if ctx is NULL or no user_data was set.
+/**
+ * @brief Looking for your stuff? This retrieves the user data you passed in at startup.
+ * 
+ * @param ctx The engine context.
+ * @return A pointer to your user data, or NULL if it's not there.
+ * 
+ * @example
+ * MyAppData* data = (MyAppData*)GetUserData(ctx);
  */
 ENGINE_API void* GetUserData(const Context* ctx);
 
-/* Engine version as a null-terminated semver string (e.g. "0.1.0").
- * Named EngineGetVersion to avoid collision with WINAPI GetVersion(). */
+/**
+ * @brief Want to know which version of Scry you're using? Just ask!
+ * 
+ * @return A nice string with the version number.
+ * 
+ * @example
+ * printf("Running Scry version %s\n", EngineGetVersion());
+ */
 ENGINE_API const char* EngineGetVersion(void);
 
-/* GetWorld — returns the raw Flecs world pointer stored in ctx.
- * The caller must include <flecs.h> to use any ECS functions on the result.
- * Returns NULL if ctx is NULL. */
+/**
+ * @brief Gets you direct access to the Flecs world. Power at your fingertips!
+ * 
+ * @param ctx The engine context.
+ * @return The raw Flecs world pointer.
+ * 
+ * @example
+ * ecs_world_t* world = GetWorld(ctx);
+ */
 struct ecs_world_t;
 ENGINE_API struct ecs_world_t* GetWorld(const Context* ctx);
 
-/* EngineLog — route a pre-formatted message through the engine's async Quill
- * logger. */
+/**
+ * @brief Shout it from the rooftops! (Or just the log file).
+ * 
+ * @param msg The message you want to log.
+ * 
+ * @example
+ * EngineLog("Something cool happened!");
+ */
 ENGINE_API void EngineLog(const char* msg);
 
 #ifdef __cplusplus

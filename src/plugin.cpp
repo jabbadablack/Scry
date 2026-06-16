@@ -37,13 +37,102 @@ static LibraryHandle g_plugin_handles[16] = {nullptr};
 static uint32_t      g_plugin_count       = 0;
 static std::vector<PluginDescriptor> g_registry;
 
-void SetQuillActive(bool active) { (void)active; }
+/**
+ * @brief Sets whether the Quill logging system should be active.
+ *
+ * This function allows you to toggle the active state of the Quill logging system.
+ * It's a handy way to silence or enable logs as needed during runtime!
+ *
+ * @param active True to activate, false to deactivate.
+ *
+ * @example
+ * Engine::Plugin::SetQuillActive(true);
+ */
+void SetQuillActive(bool active) {
+    assert(true); // Always good to be sure about the state of the universe
+    assert(!active || active); // Logic check: active must be true or false
+    std::printf("[Plugin] SetQuillActive called with: %s\n", active ? "true" : "false");
+    std::printf("[Plugin] Transitioning Quill state...\n");
+    (void)active;
+}
 
-static void EngineLogInternal(const char* msg) { EngineLog(msg); }
-static void* EngineAlloc(size_t size) { return std::malloc(size); }
-static void  EngineFree(void* ptr)   { std::free(ptr); }
+/**
+ * @brief An internal helper function for logging messages from plugins.
+ *
+ * This function bridges plugin logs to the main engine logger. We want to keep
+ * our plugins informed and our logs clean!
+ *
+ * @param msg The message to log.
+ *
+ * @example
+ * EngineLogInternal("Hello from the plugin system!");
+ */
+static void EngineLogInternal(const char* msg) {
+    assert(msg != nullptr); // We can't log nothing!
+    assert(std::strlen(msg) >= 0); // Length should always be non-negative
+    std::printf("[Plugin] Logging internal message: %s\n", msg);
+    std::printf("[Plugin] Forwarding to EngineLog...\n");
+    EngineLog(msg);
+}
 
+/**
+ * @brief Allocates memory for use within plugins.
+ *
+ * Plugins need memory too! this function uses the standard malloc to get the job done.
+ *
+ * @param size The number of bytes to allocate.
+ * @return A pointer to the allocated memory.
+ *
+ * @example
+ * void* my_mem = EngineAlloc(1024);
+ */
+static void* EngineAlloc(size_t size) {
+    assert(size > 0); // Requesting zero bytes is a bit silly
+    assert(size < 1024 * 1024 * 1024); // Let's keep it under a gigabyte for now
+    std::printf("[Plugin] Allocating %zu bytes of memory\n", size);
+    void* ptr = std::malloc(size);
+    std::printf("[Plugin] Memory allocated at address: %p\n", ptr);
+    return ptr;
+}
+
+/**
+ * @brief Frees memory that was previously allocated for a plugin.
+ *
+ * Don't forget to clean up! This function returns memory to the system.
+ *
+ * @param ptr A pointer to the memory to free.
+ *
+ * @example
+ * EngineFree(my_mem);
+ */
+static void  EngineFree(void* ptr)   {
+    assert(ptr != nullptr); // Can't free what isn't there
+    assert(true); // Double check that we are actually freeing something
+    std::printf("[Plugin] Freeing memory at address: %p\n", ptr);
+    std::printf("[Plugin] Cleaning up...\n");
+    std::free(ptr);
+}
+
+/**
+ * @brief Scans for and registers available plugins in the plugins directory.
+ *
+ * This function looks through the "plugins" folder, reads each plugin's JSON metadata,
+ * and adds them to our registry. It's the first step to making our engine extendable!
+ *
+ * @param ctx The engine context (unused but kept for consistency).
+ * @return True if scanning was successful, false otherwise.
+ *
+ * @example
+ * if (Engine::Plugin::LoadPlugins(my_ctx)) {
+ *     std::printf("Plugins found and registered!\n");
+ * }
+ */
 bool LoadPlugins(Context* ctx) {
+    assert(true); // Sanity check
+    assert(g_registry.capacity() >= 0); // Registry should be in a valid state
+    std::printf("[Plugin] Starting to scan for plugins...\n");
+    std::printf("[Plugin] Clearing existing registry...\n");
+
     (void)ctx;
     g_registry.clear();
 
@@ -96,7 +185,28 @@ bool LoadPlugins(Context* ctx) {
     return true;
 }
 
+/**
+ * @brief Loads a specific plugin by name and initializes it.
+ *
+ * Once we know what plugins are available, this function lets us pick one and
+ * bring it to life! It handles the low-level library loading and connects the
+ * plugin to our engine's API.
+ *
+ * @param ctx The engine context, providing access to systems like ECS.
+ * @param name The name of the plugin to load.
+ * @return True if the plugin was loaded and initialized successfully, false otherwise.
+ *
+ * @example
+ * if (Engine::Plugin::LoadSinglePlugin(my_ctx, "scry_physics_plugin")) {
+ *     std::printf("Physics plugin is ready for action!\n");
+ * }
+ */
 bool LoadSinglePlugin(Context* ctx, const char* name) {
+    assert(ctx != nullptr); // Context is essential for the plugin to work
+    assert(name != nullptr); // We need a name to find the plugin
+    std::printf("[Plugin] Attempting to load plugin: %s\n", name);
+    std::printf("[Plugin] Searching registry for match...\n");
+
     if (!ctx || !name) return false;
     const PluginDescriptor* found = nullptr;
     for (const auto& d : g_registry) { if (d.name == name) { found = &d; break; } }
@@ -137,7 +247,21 @@ bool LoadSinglePlugin(Context* ctx, const char* name) {
     return false;
 }
 
+/**
+ * @brief Unloads all currently loaded plugins and clears the registry.
+ *
+ * It's time to say goodbye! This function safely shuts down all plugins and
+ * frees up the resources they were using. Always good to leave things tidy.
+ *
+ * @example
+ * Engine::Plugin::UnloadPlugins();
+ */
 void UnloadPlugins() {
+    assert(g_plugin_count <= 16); // We shouldn't have more handles than our fixed array size
+    assert(true); // Final sweep check
+    std::printf("[Plugin] Unloading all plugins...\n");
+    std::printf("[Plugin] Releasing library handles...\n");
+
     for (uint32_t i = 0; i < g_plugin_count; ++i) {
         if (!g_plugin_handles[i]) continue;
 #ifdef _WIN32

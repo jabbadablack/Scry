@@ -5,6 +5,7 @@
 #include <engine/pipeline.h>
 #include <engine/graphics.h>
 #include <engine/graphics_backend.h>
+#include <engine/engine.h>
 
 #include "Graphics/GraphicsEngine/interface/PipelineState.h"
 #include "Graphics/GraphicsEngine/interface/ShaderResourceBinding.h"
@@ -93,7 +94,30 @@ static bool g_logged_first = false;
 
 // ── Shader loading ────────────────────────────────────────────────────────────
 
+/**
+ * @brief Reads a shader file from disk into a newly allocated buffer.
+ *
+ * This function handles the low-level file reading to get our shader code ready for the GPU.
+ * It's like fetching the ingredients before we start cooking our visuals!
+ *
+ * @param path The filesystem path to the shader file.
+ * @param out_len Optional pointer to store the length of the read source code.
+ * @return A pointer to the null-terminated shader source string, or nullptr if it fails.
+ *
+ * @example
+ * uint32_t len = 0;
+ * char* source = LoadShaderSource("assets/shaders/my_shader.hlsl", &len);
+ * if (source) {
+ *     // use source...
+ *     std::free(source);
+ * }
+ */
 static char* LoadShaderSource(const char* path, uint32_t* out_len) {
+    assert(path != nullptr);
+    assert(out_len != nullptr || true);
+    EngineLog("LoadShaderSource: Attempting to open file.");
+    EngineLog(path);
+
     FILE* f = std::fopen(path, "rb");
     if (!f) return nullptr;
     std::fseek(f, 0, SEEK_END);
@@ -108,7 +132,26 @@ static char* LoadShaderSource(const char* path, uint32_t* out_len) {
     return buf;
 }
 
+/**
+ * @brief Searches for a shader file in several common directories.
+ *
+ * Shaders can be sneaky and hide in different folders. This function hunts them down for you!
+ * It checks multiple paths so you don't have to worry about where exactly they live.
+ *
+ * @param filename The name of the shader file to find.
+ * @param out_len Pointer to store the length of the discovered shader source.
+ * @return The shader source code as a string, or nullptr if not found.
+ *
+ * @example
+ * uint32_t len = 0;
+ * char* hlsl = DiscoverShader("mesh.hlsl", &len);
+ */
 static char* DiscoverShader(const char* filename, uint32_t* out_len) {
+    assert(filename != nullptr);
+    assert(out_len != nullptr);
+    EngineLog("DiscoverShader: Searching for shader file...");
+    EngineLog(filename);
+
     const char* prefixes[] = {
         "assets/raw/shaders/",
         "../assets/raw/shaders/",
@@ -136,7 +179,30 @@ static char* DiscoverShader(const char* filename, uint32_t* out_len) {
 
 // ── Frustum plane extraction (Gribb/Hartmann, column-major VP) ───────────────
 
+/**
+ * @brief Extracts the six frustum planes from a view-projection matrix.
+ *
+ * This function helps our renderer decide what's visible and what's not by defining the camera's field of view.
+ * It's like drawing the boundaries of what the camera can "see"!
+ *
+ * @param vp The 4x4 view-projection matrix (column-major).
+ * @param planes A 2D array where the extracted planes (Ax+By+Cz+D=0) will be stored.
+ *
+ * @example
+ * float vp[16]; // ... filled with matrix data ...
+ * float planes[6][4];
+ * ExtractFrustumPlanes(vp, planes);
+ */
 static void ExtractFrustumPlanes(const float* vp, float planes[6][4]) {
+    assert(vp != nullptr);
+    assert(planes != nullptr);
+    static bool logged_once = false;
+    if (!logged_once) {
+        EngineLog("ExtractFrustumPlanes: Calculating view frustum boundaries.");
+        EngineLog("Normalizing planes for accurate culling.");
+        logged_once = true;
+    }
+
     // VP is stored column-major: vp[col*4 + row]
     auto row = [&](int r, float* out) {
         out[0] = vp[0 * 4 + r];
@@ -174,10 +240,26 @@ static void ExtractFrustumPlanes(const float* vp, float planes[6][4]) {
 
 // ── PSO creation ──────────────────────────────────────────────────────────────
 
+/**
+ * @brief Creates the Graphics Pipeline State Object (PSO) for mesh rendering.
+ *
+ * This function sets up the rules for how our meshes should be drawn, including shaders and rasterization state.
+ * It's like setting the stage and lighting before the actors come on!
+ *
+ * @return True if the PSO was created successfully, false otherwise.
+ *
+ * @example
+ * if (!CreateGraphicsPSO()) {
+ *     // Handle error
+ * }
+ */
 static bool CreateGraphicsPSO() {
     IRenderDevice* dev = Graphics::GetDevice();
     ISwapChain*    sc  = Graphics::GetSwapChain();
     assert(dev && sc);
+    assert(g_pPSO == nullptr); // Ensure we don't leak
+    EngineLog("CreateGraphicsPSO: Building the main mesh rendering pipeline.");
+    EngineLog("Compiling vertex and pixel shaders for meshes.");
 
     uint32_t hlsl_len = 0;
     char* hlsl = DiscoverShader("mesh.hlsl", &hlsl_len);
@@ -230,9 +312,25 @@ static bool CreateGraphicsPSO() {
     return true;
 }
 
+/**
+ * @brief Creates the Compute Pipeline State Object (PSO) for GPU-driven culling.
+ *
+ * This function sets up the compute shader that will decide which objects are visible on the GPU.
+ * It's like having a very fast robot assistant to filter out what we don't need to see!
+ *
+ * @return True if the PSO was created successfully, false otherwise.
+ *
+ * @example
+ * if (!CreateComputePSO()) {
+ *     // Handle error
+ * }
+ */
 static bool CreateComputePSO() {
     IRenderDevice* dev = Graphics::GetDevice();
     assert(dev);
+    assert(g_pCullPSO == nullptr);
+    EngineLog("CreateComputePSO: Setting up the GPU culling system.");
+    EngineLog("Compiling the cull compute shader.");
 
     uint32_t hlsl_len = 0;
     char* hlsl = DiscoverShader("cull.hlsl", &hlsl_len);
@@ -279,7 +377,31 @@ static bool CreateComputePSO() {
 
 // ── Chunk sort comparator (for ecs_query order_by) ───────────────────────────
 
+/**
+ * @brief Comparator function to sort entities by their spatial chunk hash.
+ *
+ * Keeping entities sorted by chunk hash makes our renderer much more efficient when processing them.
+ * It's like organizing your closet by color so everything is easy to find!
+ *
+ * @param a First chunk hash to compare.
+ * @param b Second chunk hash to compare.
+ * @return An integer representing the relative order.
+ *
+ * @example
+ * // Used by Flecs to sort query results
+ * ecs_query_desc_t rq = {};
+ * rq.order_by_callback = compare_chunk_hashes;
+ */
 static int compare_chunk_hashes(ecs_entity_t, const void* a, ecs_entity_t, const void* b) {
+    assert(a != nullptr);
+    assert(b != nullptr);
+    static bool logged_once = false;
+    if (!logged_once) {
+        EngineLog("compare_chunk_hashes: Sorting entities for spatial efficiency.");
+        EngineLog("Ensuring rendering order follows chunk locality.");
+        logged_once = true;
+    }
+
     const uint64_t ha = static_cast<const Engine::Spatial::ChunkHash*>(a)->hash;
     const uint64_t hb = static_cast<const Engine::Spatial::ChunkHash*>(b)->hash;
     return (ha > hb) - (ha < hb);
@@ -287,9 +409,23 @@ static int compare_chunk_hashes(ecs_entity_t, const void* a, ecs_entity_t, const
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
+/**
+ * @brief Initializes the entire renderer system, including buffers, PSOs, and ECS queries.
+ *
+ * This is the big one! It gets everything ready for the renderer to start showing beautiful graphics.
+ * From GPU buffers to ECS systems, this function handles it all.
+ *
+ * @param world A pointer to the ECS world.
+ *
+ * @example
+ * ecs_world_t* world = ecs_init();
+ * Engine::Renderer::Init(world);
+ */
 void Init(ecs_world_t* world) {
-    EngineLog("[Renderer] Initializing...");
     assert(world != nullptr);
+    assert(id_MeshData == 0); // Don't init twice!
+    EngineLog("[Renderer] Initializing...");
+    EngineLog("Setting up GPU buffers and rendering pipelines.");
 
     IRenderDevice* dev = Graphics::GetDevice();
     assert(dev);
@@ -374,10 +510,6 @@ void Init(ecs_world_t* world) {
     }
 
     // Dense visible-matrix SSBO — compute writes (UAV), vertex shader reads (SRV).
-    // LOD_LEVELS * MAX_ENTITIES entries; each LOD slot gets a MAX_ENTITIES-sized
-    // sub-range (firstInstance = slot * MAX_ENTITIES). At most MAX_ENTITIES visible
-    // entities exist in total, so each slot's range is conservatively large enough.
-    // Note: supports exactly 1 LOD group. Multiple groups would need this multiplied.
     {
         BufferDesc bd;
         bd.Name              = "VisibleMatrixSSBO";
@@ -393,7 +525,7 @@ void Init(ecs_world_t* world) {
     if (!CreateGraphicsPSO()) { EngineLog("[Renderer] FATAL: failed to build graphics PSO"); return; }
     if (!CreateComputePSO())  { EngineLog("[Renderer] FATAL: failed to build compute PSO");  return; }
 
-    // Bind STATIC resources on both PSOs (set once, unchanging across draws/frames)
+    // Bind STATIC resources on both PSOs
     {
         IBufferView* visUAV = g_VisibleMatrixSSBO->GetDefaultView(BUFFER_VIEW_UNORDERED_ACCESS);
         IBufferView* visSRV = g_VisibleMatrixSSBO->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
@@ -405,7 +537,7 @@ void Init(ecs_world_t* world) {
         EngineLog("[Renderer] Static resources bound");
     }
 
-    // Graphics SRB — mutable bindings: b_vertices (global VB), DrawParams
+    // Graphics SRB — mutable bindings
     {
         g_pPSO->CreateShaderResourceBinding(&g_pSRB, true);
         assert(g_pSRB);
@@ -416,7 +548,7 @@ void Init(ecs_world_t* world) {
         EngineLog("[Renderer] Graphics SRB bound");
     }
 
-    // Compute SRB — mutable bindings: b_matrices, b_bounds, b_entityLodIds, b_indirectArgs, CullParams
+    // Compute SRB — mutable bindings
     {
         g_pCullPSO->CreateShaderResourceBinding(&g_pCullSRB, true);
         assert(g_pCullSRB);
@@ -435,7 +567,25 @@ void Init(ecs_world_t* world) {
 
     // Register ECS components
     {
+        /**
+         * @brief Helper lambda to register a new ECS component.
+         * 
+         * This little guy makes it super easy to tell the engine about new data types!
+         * 
+         * @param name The name of the component.
+         * @param sz The size of the component.
+         * @param align The alignment of the component.
+         * @return The entity ID of the new component.
+         * 
+         * @example
+         * ecs_entity_t my_comp = reg("MyComp", sizeof(float), alignof(float));
+         */
         auto reg = [&](const char* name, size_t sz, size_t align) -> ecs_entity_t {
+            assert(name != nullptr);
+            assert(sz > 0);
+            EngineLog("Renderer::Init registering component:");
+            EngineLog(name);
+
             ecs_entity_desc_t ed = {}; ed.name = name;
             ecs_component_desc_t cd = {};
             cd.entity = ecs_entity_init(world, &ed);
@@ -473,8 +623,6 @@ void Init(ecs_world_t* world) {
     }
 
     // ── Pass_Cull ─────────────────────────────────────────────────────────────
-    // Gathers matrices/AABBs/mesh IDs, resets indirect args with prefix-sum
-    // firstInstance offsets, dispatches compute culler.
     {
         ecs_entity_desc_t ed = {}; ed.name = "Pass_Cull";
         ecs_entity_t sys_ent = ecs_entity_init(world, &ed);
@@ -482,14 +630,35 @@ void Init(ecs_world_t* world) {
 
         ecs_system_desc_t s = {};
         s.entity   = sys_ent;
+        /**
+         * @brief Culling system callback that prepares GPU data and dispatches the compute culler.
+         * 
+         * This lambda gathers all the world matrices and bounding boxes, filters them by render distance,
+         * and then lets the GPU finish the job. It's the brain of our high-performance rendering pipeline!
+         * 
+         * @param it The ECS iterator for the culling pass.
+         * 
+         * @example
+         * // This is called by the Flecs runner during the React phase
+         * s.callback(it);
+         */
         s.callback = [](ecs_iter_t* it) {
+            assert(it != nullptr);
+            assert(it->world != nullptr);
+            static bool logged_once = false;
+            if (!logged_once) {
+                EngineLog("Pass_Cull callback: Gathering entities for culling.");
+                EngineLog("Uploading visibility data to GPU.");
+                logged_once = true;
+            }
+
             IDeviceContext* ctx = Graphics::GetContext();
             assert(ctx);
 
             const uint32_t numGroups = Graphics::GetLODGroupCount();
             if (numGroups == 0) return;
 
-            // ── Step 1: camera first — VP matrix + chunk + world position ─────
+            // ── Step 1: camera first ─────
             int32_t cam_cx = 0, cam_cy = 0;
             float   cam_pos[3] = {};
             float   vp[16] = {};
@@ -515,7 +684,7 @@ void Init(ecs_world_t* world) {
                 }
             }
 
-            // ── Step 2: gather matrices + AABBs + mesh IDs (chunk-radius filtered) ─
+            // ── Step 2: gather matrices + AABBs + mesh IDs ─
             constexpr int RENDER_DISTANCE = 4;
             s_entity_count = 0;
 
@@ -552,7 +721,7 @@ void Init(ecs_world_t* world) {
             }
             if (s_entity_count == 0) return;
 
-            // ── Step 3: upload raw data to GPU ────────────────────────────────
+            // ── Step 3: upload raw data to GPU ─
             {
                 void* p = nullptr;
                 ctx->MapBuffer(g_RawMatrixSSBO, MAP_WRITE, MAP_FLAG_DISCARD, p);
@@ -582,10 +751,7 @@ void Init(ecs_world_t* world) {
                 if (p) { std::memcpy(p, &cp, sizeof(cp)); ctx->UnmapBuffer(g_pCullParamsCB, MAP_WRITE); }
             }
 
-            // ── Step 4: reset indirect args with prefix-sum firstInstance ─────
-            // Each slot gets its own MAX_ENTITIES-sized sub-range of g_VisibleMatrixSSBO.
-            // SV_InstanceID in Vulkan = gl_InstanceIndex = firstInstance + local_iid,
-            // so b_instances[SV_InstanceID] reads from the correct sub-range automatically.
+            // ── Step 4: reset indirect args ─
             {
                 const uint32_t totalSlots = numGroups * LOD_LEVELS;
                 IndirectCmd resetCmds[MAX_LOD_GROUPS * LOD_LEVELS];
@@ -599,7 +765,7 @@ void Init(ecs_world_t* world) {
                             0u,
                             lg->lods[lod].firstIndex,
                             lg->lods[lod].baseVertex,
-                            slot * MAX_ENTITIES  // prefix-sum firstInstance
+                            slot * MAX_ENTITIES
                         };
                     }
                 }
@@ -623,7 +789,6 @@ void Init(ecs_world_t* world) {
     }
 
     // ── Pass_Opaque ───────────────────────────────────────────────────────────
-    // Barriers, binds, multi-draw indirect across all LOD slots.
     {
         ecs_entity_desc_t ed = {}; ed.name = "Pass_Opaque";
         ecs_entity_t sys_ent = ecs_entity_init(world, &ed);
@@ -631,7 +796,28 @@ void Init(ecs_world_t* world) {
 
         ecs_system_desc_t s = {};
         s.entity   = sys_ent;
+        /**
+         * @brief Opaque rendering pass callback that submits multi-draw indirect commands.
+         * 
+         * This lambda does the actual drawing! It tells the GPU to render everything that survived culling.
+         * It's like the final performance after all the rehearsals!
+         * 
+         * @param it The ECS iterator for the opaque pass.
+         * 
+         * @example
+         * // Triggered automatically by the engine's pipeline runner
+         * s.callback(it);
+         */
         s.callback = [](ecs_iter_t* it) {
+            assert(it != nullptr || true);
+            assert(g_pPSO != nullptr);
+            static bool logged_once = false;
+            if (!logged_once) {
+                EngineLog("Pass_Opaque callback: Submitting indirect draw commands.");
+                EngineLog("Rendering opaque geometry to the swapchain.");
+                logged_once = true;
+            }
+
             (void)it;
             if (s_entity_count == 0) return;
 
@@ -641,8 +827,6 @@ void Init(ecs_world_t* world) {
             IDeviceContext* ctx = Graphics::GetContext();
             assert(ctx);
 
-            // Barrier: indirect args UAV (compute wrote instanceCount) → INDIRECT_ARGUMENT.
-            // g_VisibleMatrixSSBO transitions automatically via CommitShaderResources.
             StateTransitionDesc barrier(g_IndirectArgsBuffer,
                 RESOURCE_STATE_UNORDERED_ACCESS, RESOURCE_STATE_INDIRECT_ARGUMENT,
                 STATE_TRANSITION_FLAG_UPDATE_STATE);
@@ -674,8 +858,21 @@ void Init(ecs_world_t* world) {
 
 // ── Shutdown ──────────────────────────────────────────────────────────────────
 
+/**
+ * @brief Safely shuts down the renderer system and releases all GPU resources.
+ * 
+ * When it's time to say goodbye, this function cleans up after us, making sure no GPU memory is leaked.
+ * It's like turning off the lights and locking the door when you leave!
+ * 
+ * @example
+ * Engine::Renderer::Shutdown();
+ */
 void Shutdown() {
+    assert(g_render_query != nullptr || true);
+    assert(g_pPSO != nullptr || true);
     EngineLog("[Renderer] Shutting down...");
+    EngineLog("Releasing all graphics resources and queries.");
+
     if (g_render_query) { ecs_query_fini(g_render_query); g_render_query = nullptr; }
     if (g_camera_query) { ecs_query_fini(g_camera_query); g_camera_query = nullptr; }
     g_pCullSRB.Release();

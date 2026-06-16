@@ -1,6 +1,8 @@
 #include <engine/transform.h>
 #include <engine/pipeline.h>
+#include <engine/engine.h>
 #include <cassert>
+#include <cstdio>
 #include <Eigen/Geometry>
 
 namespace Engine {
@@ -12,8 +14,23 @@ ecs_entity_t id_Scale     = 0;
 ecs_entity_t id_WorldMatrix = 0;
 ecs_entity_t id_DirtyMatrix = 0;
 
+/**
+ * @brief Initializes the transform system by registering components and the transform system itself.
+ *
+ * This function sets up everything needed for handling positions, rotations, and scales within the ECS.
+ * It's like giving the engine a sense of space and orientation!
+ *
+ * @param world A pointer to the ECS world where components and systems will be registered.
+ *
+ * @example
+ * ecs_world_t* world = ecs_init();
+ * Engine::Transform::Init(world);
+ */
 void Init(ecs_world_t* world) {
     assert(world != nullptr);
+    assert(id_Position == 0); // Ensure we don't init twice
+    EngineLog("Transform::Init starting up...");
+    EngineLog("Registering transform components into the ECS world.");
 
     auto reg = [&](const char* name, size_t sz, size_t align) -> ecs_entity_t {
         ecs_entity_desc_t ed = {}; ed.name = name;
@@ -51,7 +68,28 @@ void Init(ecs_world_t* world) {
         s.query.terms[4].id    = id_DirtyMatrix;
         s.query.terms[4].inout = EcsInOut;
 
+        /**
+         * @brief System callback that recomputes world matrices for entities with dirty transform components.
+         * 
+         * This lambda does the heavy lifting of calculating new transform matrices whenever something moves or rotates.
+         * It keeps our world data fresh and accurate for the renderer.
+         * 
+         * @param it The ECS iterator containing the entities to process.
+         * 
+         * @example
+         * // This is usually called automatically by the ECS runner
+         * s.callback(it);
+         */
         s.callback = [](ecs_iter_t* it) {
+            assert(it != nullptr);
+            assert(it->count >= 0);
+            static bool logged_once = false;
+            if (!logged_once) {
+                EngineLog("TransformSystem callback executing...");
+                EngineLog("Updating world matrices for dirty entities.");
+                logged_once = true;
+            }
+
             const Position*    pos   = ecs_field(it, Position,          0);
             const Rotation*    rot   = ecs_field(it, Rotation,          1);
             const Scale*       scl   = ecs_field(it, Scale,             2);

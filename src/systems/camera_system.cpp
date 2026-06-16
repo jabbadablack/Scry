@@ -1,17 +1,44 @@
 #include <engine/camera.h>
 #include <engine/pipeline.h>
 #include <engine/input.h>
+#include <engine/engine.h>
 #include <Eigen/Geometry>
 #include <cmath>
 #include <algorithm>
 #include <cstring>
+#include <cassert>
+#include <cstdio>
 
 namespace Engine {
 namespace Camera {
 
 ecs_entity_t id_Camera = 0;
 
+/**
+ * @brief Computes a Left-Handed LookAt view matrix.
+ *
+ * This function helps position our camera in the world by defining where it's looking.
+ * It's like pointing your eyes in the right direction!
+ *
+ * @param dst Pointer to the 16-float array where the matrix will be stored.
+ * @param eye The position of the camera.
+ * @param at The point the camera is looking at.
+ * @param up The upward direction in the world.
+ *
+ * @example
+ * float view[16];
+ * LH_LookAt(view, {0,0,0}, {0,0,1}, {0,1,0});
+ */
 static void LH_LookAt(float* dst, Eigen::Vector3f eye, Eigen::Vector3f at, Eigen::Vector3f up) {
+    assert(dst != nullptr);
+    assert(up.norm() > 0.0f);
+    static bool logged_once = false;
+    if (!logged_once) {
+        EngineLog("LH_LookAt: Calculating view matrix.");
+        EngineLog("Ensuring the camera is looking at the target.");
+        logged_once = true;
+    }
+
     Eigen::Vector3f f = (at - eye).normalized();
     Eigen::Vector3f r = f.cross(up).normalized();
     Eigen::Vector3f u = r.cross(f);
@@ -24,7 +51,32 @@ static void LH_LookAt(float* dst, Eigen::Vector3f eye, Eigen::Vector3f at, Eigen
     std::memcpy(dst, M.data(), 64);
 }
 
+/**
+ * @brief Computes a Left-Handed Perspective projection matrix.
+ *
+ * This function defines how 3D objects are flattened onto our 2D screen,
+ * taking into account field of view and aspect ratio. It's the "lens" of our camera!
+ *
+ * @param dst Pointer to the 16-float array where the matrix will be stored.
+ * @param fovY_deg Field of view in the Y direction, in degrees.
+ * @param aspect Aspect ratio (width/height).
+ * @param zNear Near clipping plane distance.
+ * @param zFar Far clipping plane distance.
+ * 
+ * @example
+ * float proj[16];
+ * LH_Perspective(proj, 60.0f, 1.77f, 0.1f, 1000.0f);
+ */
 static void LH_Perspective(float* dst, float fovY_deg, float aspect, float zNear, float zFar) {
+    assert(dst != nullptr);
+    assert(zNear < zFar);
+    static bool logged_once = false;
+    if (!logged_once) {
+        EngineLog("LH_Perspective: Building projection matrix.");
+        EngineLog("Setting up the camera lens properties.");
+        logged_once = true;
+    }
+
     const float fovY = fovY_deg * (3.14159265f / 180.0f);
     const float f    = 1.0f / std::tan(fovY * 0.5f);
     const float Q    = zFar / (zFar - zNear);
@@ -38,7 +90,24 @@ static void LH_Perspective(float* dst, float fovY_deg, float aspect, float zNear
     std::memcpy(dst, P.data(), 64);
 }
 
+/**
+ * @brief Initializes the camera system by registering components and input/matrix systems.
+ *
+ * This function gets the whole camera infrastructure ready to roll.
+ * It's what makes it possible for you to fly around and see your world!
+ *
+ * @param world A pointer to the ECS world.
+ *
+ * @example
+ * ecs_world_t* world = ecs_init();
+ * Engine::Camera::Init(world);
+ */
 void Init(ecs_world_t* world) {
+    assert(world != nullptr);
+    assert(id_Camera == 0);
+    EngineLog("Camera::Init: Setting up camera components and systems.");
+    EngineLog("Ready to start capturing the world!");
+
     {
         ecs_entity_desc_t ed = {}; ed.name = "Camera";
         ecs_component_desc_t cd = {};
@@ -58,7 +127,28 @@ void Init(ecs_world_t* world) {
         s.entity = sys_ent;
         s.query.terms[0].id    = id_Camera;
         s.query.terms[0].inout = EcsInOut;
+        /**
+         * @brief System callback that handles user input to move the camera.
+         * 
+         * This lambda listens to your keyboard and mouse to let you navigate the 3D space.
+         * It updates the camera's position and orientation based on how you move!
+         * 
+         * @param it The ECS iterator.
+         * 
+         * @example
+         * // Triggered by Flecs during the Intent phase
+         * s.callback(it);
+         */
         s.callback = [](ecs_iter_t* it) {
+            assert(it != nullptr);
+            assert(it->count >= 0);
+            static bool logged_once = false;
+            if (!logged_once) {
+                EngineLog("CameraInputSystem: Processing user movement.");
+                EngineLog("Updating camera pitch, yaw, and position.");
+                logged_once = true;
+            }
+
             Camera* cam = ecs_field(it, Camera, 0);
             const float speed       = 10.0f * it->delta_time;
             const float sensitivity = 0.002f;
@@ -94,7 +184,28 @@ void Init(ecs_world_t* world) {
         s.entity = sys_ent;
         s.query.terms[0].id    = id_Camera;
         s.query.terms[0].inout = EcsInOut;
+        /**
+         * @brief System callback that recomputes camera view and projection matrices.
+         * 
+         * This lambda ensures that our view and projection matrices are always up-to-date
+         * with the camera's current position and orientation. Essential for rendering!
+         * 
+         * @param it The ECS iterator.
+         * 
+         * @example
+         * // Triggered by Flecs during the StateUpdate phase
+         * s.callback(it);
+         */
         s.callback = [](ecs_iter_t* it) {
+            assert(it != nullptr);
+            assert(it->count >= 0);
+            static bool logged_once = false;
+            if (!logged_once) {
+                EngineLog("CameraMatrixSystem: Updating view and projection matrices.");
+                EngineLog("Ensuring the renderer has the latest camera data.");
+                logged_once = true;
+            }
+
             Camera* cam = ecs_field(it, Camera, 0);
             for (int i = 0; i < it->count; ++i) {
                 Eigen::Quaternionf q =

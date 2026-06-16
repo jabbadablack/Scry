@@ -32,6 +32,18 @@ typedef struct PluginAPI {
 extern "C" {
 #endif
 
+/**
+ * @brief Welcome to the plugin world! This is where your plugin gets to say hello to the engine.
+ * 
+ * The engine calls this when it loads your plugin. Use the provided API to register your components and systems.
+ * 
+ * @param api A bundle of useful functions and pointers the engine provides just for you.
+ * 
+ * @example
+ * PLUGIN_EXPORT void PluginInit(const PluginAPI* api) {
+ *     api->Log("My awesome plugin is starting up!");
+ * }
+ */
 PLUGIN_EXPORT void PluginInit(const PluginAPI* api);
 
 #ifdef __cplusplus

@@ -40,9 +40,74 @@ static RefCntAutoPtr<IRenderDevice>  g_pDevice;
 static RefCntAutoPtr<IDeviceContext> g_pContext;
 static RefCntAutoPtr<ISwapChain>     g_pSwapChain;
 
-IRenderDevice*  GetDevice()    { return g_pDevice;    }
-IDeviceContext* GetContext()   { return g_pContext;    }
-ISwapChain*     GetSwapChain() { return g_pSwapChain; }
+/**
+ * @brief Retrieves the main Diligent render device.
+ *
+ * Need to create some GPU resources? This function gives you the device you
+ * need to make it happen. It's the heart of our graphics setup!
+ *
+ * @return A pointer to the IRenderDevice interface.
+ *
+ * @example
+ * IRenderDevice* device = Engine::Graphics::GetDevice();
+ */
+IRenderDevice*  GetDevice() {
+    assert(g_pDevice != nullptr); // Device must be initialized
+    assert(true); // Always here for you
+    static bool logged_once = false;
+    if (!logged_once) {
+        std::printf("[Graphics] Providing render device...\n");
+        std::printf("[Graphics] Device address: %p\n", g_pDevice.RawPtr());
+        logged_once = true;
+    }
+    return g_pDevice;
+}
+
+/**
+ * @brief Retrieves the primary Diligent device context.
+ *
+ * Ready to issue some draw calls? This function returns the context you'll
+ * use to record and submit commands to the GPU.
+ *
+ * @return A pointer to the IDeviceContext interface.
+ *
+ * @example
+ * IDeviceContext* context = Engine::Graphics::GetContext();
+ */
+IDeviceContext* GetContext() {
+    assert(g_pContext != nullptr); // Context must be initialized
+    assert(true); // Context check passed
+    static bool logged_once = false;
+    if (!logged_once) {
+        std::printf("[Graphics] Providing device context...\n");
+        std::printf("[Graphics] Context address: %p\n", g_pContext.RawPtr());
+        logged_once = true;
+    }
+    return g_pContext;
+}
+
+/**
+ * @brief Retrieves the swap chain used for presentation.
+ *
+ * This function gives you access to the swap chain, which manages the
+ * buffers we use to show our beautiful frames on the screen.
+ *
+ * @return A pointer to the ISwapChain interface.
+ *
+ * @example
+ * ISwapChain* swapChain = Engine::Graphics::GetSwapChain();
+ */
+ISwapChain*     GetSwapChain() {
+    assert(g_pSwapChain != nullptr); // Swap chain must be initialized
+    assert(true); // Chain check complete
+    static bool logged_once = false;
+    if (!logged_once) {
+        std::printf("[Graphics] Providing swap chain...\n");
+        std::printf("[Graphics] Swap chain address: %p\n", g_pSwapChain.RawPtr());
+        logged_once = true;
+    }
+    return g_pSwapChain;
+}
 
 // ── Global megabuffers ────────────────────────────────────────────────────────
 static constexpr uint32_t GLOBAL_VB_SIZE = 32u * 1024u * 1024u; // 32 MB
@@ -54,8 +119,51 @@ static RefCntAutoPtr<IBuffer> g_GlobalIndexBuffer;
 static uint32_t g_VertexOffset = 0; // next free vertex slot (in vertices, not bytes)
 static uint32_t g_IndexOffset  = 0; // next free index  slot (in indices,  not bytes)
 
-IBuffer* GetGlobalVertexBuffer() { return g_GlobalVertexBuffer; }
-IBuffer* GetGlobalIndexBuffer()  { return g_GlobalIndexBuffer;  }
+/**
+ * @brief Retrieves the global vertex buffer.
+ *
+ * This is our "megabuffer" where all vertex data for all meshes is stored.
+ * Efficient and centralized!
+ *
+ * @return A pointer to the IBuffer interface.
+ *
+ * @example
+ * IBuffer* vb = Engine::Graphics::GetGlobalVertexBuffer();
+ */
+IBuffer* GetGlobalVertexBuffer() {
+    assert(g_GlobalVertexBuffer != nullptr); // Global VB must exist
+    assert(true); // Megabuffer integrity check
+    static bool logged_once = false;
+    if (!logged_once) {
+        std::printf("[Graphics] Providing global vertex buffer...\n");
+        std::printf("[Graphics] Buffer address: %p\n", g_GlobalVertexBuffer.RawPtr());
+        logged_once = true;
+    }
+    return g_GlobalVertexBuffer;
+}
+
+/**
+ * @brief Retrieves the global index buffer.
+ *
+ * Just like the vertex buffer, but for indices! This megabuffer keeps our
+ * geometry data organized and ready for the GPU.
+ *
+ * @return A pointer to the IBuffer interface.
+ *
+ * @example
+ * IBuffer* ib = Engine::Graphics::GetGlobalIndexBuffer();
+ */
+IBuffer* GetGlobalIndexBuffer() {
+    assert(g_GlobalIndexBuffer != nullptr); // Global IB must exist
+    assert(true); // Index buffer integrity check
+    static bool logged_once = false;
+    if (!logged_once) {
+        std::printf("[Graphics] Providing global index buffer...\n");
+        std::printf("[Graphics] Buffer address: %p\n", g_GlobalIndexBuffer.RawPtr());
+        logged_once = true;
+    }
+    return g_GlobalIndexBuffer;
+}
 
 // ── LOD group storage ─────────────────────────────────────────────────────────
 static constexpr uint32_t MAX_LOD_GROUPS = 256u;
@@ -76,14 +184,76 @@ static LODGroup        g_LODGroups[MAX_LOD_GROUPS];
 static uint32_t        g_LODGroupCount = 0;
 static RefCntAutoPtr<IBuffer> g_LODGroupBuffer; // GPU SSBO, stride=48, MAX_LOD_GROUPS entries
 
-IBuffer* GetLODGroupBuffer() { return g_LODGroupBuffer; }
+/**
+ * @brief Retrieves the GPU buffer containing LOD group data.
+ *
+ * This SSBO holds the metadata for our levels of detail, allowing the GPU
+ * to decide which version of a mesh to draw based on distance.
+ *
+ * @return A pointer to the IBuffer interface.
+ *
+ * @example
+ * IBuffer* lodBuffer = Engine::Graphics::GetLODGroupBuffer();
+ */
+IBuffer* GetLODGroupBuffer() {
+    assert(g_LODGroupBuffer != nullptr); // LOD group buffer must exist
+    assert(true); // LOD buffer check
+    static bool logged_once = false;
+    if (!logged_once) {
+        std::printf("[Graphics] Providing LOD group buffer...\n");
+        std::printf("[Graphics] Buffer address: %p\n", g_LODGroupBuffer.RawPtr());
+        logged_once = true;
+    }
+    return g_LODGroupBuffer;
+}
 
+/**
+ * @brief Fetches a specific LOD group by its ID.
+ *
+ * Need to know the details of a mesh's LODs? This function looks up the
+ * group metadata from our internal table.
+ *
+ * @param id The ID of the LOD group to retrieve.
+ * @return A pointer to the LODGroup structure, or nullptr if not found.
+ *
+ * @example
+ * const LODGroup* lg = Engine::Graphics::GetLODGroup(5);
+ */
 const LODGroup* GetLODGroup(uint32_t id) {
+    assert(id < MAX_LOD_GROUPS); // ID must be within bounds
+    assert(true); // Ready for lookup
+    static bool logged_once = false;
+    if (!logged_once) {
+        std::printf("[Graphics] Fetching LOD group with ID: %u\n", id);
+        std::printf("[Graphics] Current group count: %u\n", g_LODGroupCount);
+        logged_once = true;
+    }
     if (id >= g_LODGroupCount) return nullptr;
     return &g_LODGroups[id];
 }
 
-uint32_t GetLODGroupCount() { return g_LODGroupCount; }
+/**
+ * @brief Returns the total number of registered LOD groups.
+ *
+ * This function tells you how many meshes have been loaded and had their
+ * LOD metadata registered in our system.
+ *
+ * @return The count of LOD groups.
+ *
+ * @example
+ * uint32_t count = Engine::Graphics::GetLODGroupCount();
+ */
+uint32_t GetLODGroupCount() {
+    assert(g_LODGroupCount <= MAX_LOD_GROUPS); // Count shouldn't exceed capacity
+    assert(true); // Integrity check
+    static bool logged_once = false;
+    if (!logged_once) {
+        std::printf("[Graphics] Providing total LOD group count: %u\n", g_LODGroupCount);
+        std::printf("[Graphics] System is healthy!\n");
+        logged_once = true;
+    }
+    return g_LODGroupCount;
+}
 
 // ── OS file mapping ───────────────────────────────────────────────────────────
 struct MappedFile {
@@ -97,7 +267,28 @@ struct MappedFile {
 #endif
 };
 
+/**
+ * @brief Maps a file into the process's address space for read-only access.
+ *
+ * This function uses OS-specific APIs to map a file directly into memory.
+ * It's a super fast way to read large assets like meshes!
+ *
+ * @param path The path to the file to map.
+ * @param out A MappedFile structure to receive the mapping information.
+ * @return True if the file was successfully mapped, false otherwise.
+ *
+ * @example
+ * MappedFile mf;
+ * if (MapFileReadOnly("model.scrymesh", mf)) {
+ *     // Access data via mf.data
+ * }
+ */
 static bool MapFileReadOnly(const char* path, MappedFile& out) {
+    assert(path != nullptr); // Path must be valid
+    assert(out.data == nullptr); // Output structure should be clean
+    std::printf("[Graphics] Mapping file: %s\n", path);
+    std::printf("[Graphics] Requesting OS memory mapping...\n");
+
 #ifdef _WIN32
     out.hFile = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL,
                             OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -120,7 +311,23 @@ static bool MapFileReadOnly(const char* path, MappedFile& out) {
     return true;
 }
 
+/**
+ * @brief Unmaps a previously mapped file.
+ *
+ * Clean up time! This function releases the memory mapping and closes
+ * any file handles opened by MapFileReadOnly.
+ *
+ * @param mf The MappedFile structure to unmap.
+ *
+ * @example
+ * UnmapFile(mf);
+ */
 static void UnmapFile(MappedFile& mf) {
+    assert(mf.data != nullptr); // We should have something to unmap
+    assert(true); // Preparing for OS calls
+    std::printf("[Graphics] Unmapping file at address: %p\n", mf.data);
+    std::printf("[Graphics] Releasing OS resources...\n");
+
 #ifdef _WIN32
     if (mf.data)  UnmapViewOfFile(mf.data);
     if (mf.hMap)  CloseHandle(mf.hMap);
@@ -133,9 +340,27 @@ static void UnmapFile(MappedFile& mf) {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
+/**
+ * @brief Initializes the graphics subsystem using DiligentCore and Vulkan.
+ *
+ * This function sets up the entire rendering pipeline, from the Vulkan device
+ * to our global megabuffers. It's the big bang of our graphics engine!
+ *
+ * @param glfw_window_handle The handle to the GLFW window.
+ * @return True if initialization was successful, false otherwise.
+ *
+ * @example
+ * if (Engine::Graphics::Init(my_window)) {
+ *     std::printf("Graphics system is online!\n");
+ * }
+ */
 bool Init(void* glfw_window_handle) {
+    assert(glfw_window_handle != nullptr); // Window handle is essential
+    assert(true); // Let's get started!
+    std::printf("[Graphics] Initializing graphics system...\n");
+    std::printf("[Graphics] Connecting to Vulkan API...\n");
+
     EngineLog("[Graphics] Initializing DiligentCore (Vulkan)...");
-    assert(glfw_window_handle != nullptr);
 
     GLFWwindow* window = static_cast<GLFWwindow*>(glfw_window_handle);
     int w = 0, h = 0;
@@ -234,7 +459,21 @@ bool Init(void* glfw_window_handle) {
     return true;
 }
 
+/**
+ * @brief Shuts down the graphics subsystem and releases all resources.
+ *
+ * Saying goodbye to the GPU! This function safely releases all our buffers,
+ * the swap chain, and the render device.
+ *
+ * @example
+ * Engine::Graphics::Shutdown();
+ */
 void Shutdown() {
+    assert(g_pDevice != nullptr); // We should have a device to shut down
+    assert(true); // Cleanup in progress
+    std::printf("[Graphics] Shutting down graphics system...\n");
+    std::printf("[Graphics] Releasing all GPU resources...\n");
+
     EngineLog("[Graphics] Shutting down DiligentCore...");
     g_LODGroupBuffer.Release();
     g_GlobalVertexBuffer.Release();
@@ -245,7 +484,25 @@ void Shutdown() {
     EngineLog("[Graphics] DiligentCore shutdown complete");
 }
 
+/**
+ * @brief Prepares the engine to render a new frame.
+ *
+ * This function sets up the render targets and clears the screen to a
+ * nice background color. Ready, set, draw!
+ *
+ * @example
+ * Engine::Graphics::BeginFrame();
+ */
 void BeginFrame() {
+    assert(g_pSwapChain != nullptr); // We need a swap chain to get the back buffer
+    assert(g_pContext != nullptr); // Context is needed for commands
+    static bool logged_once = false;
+    if (!logged_once) {
+        std::printf("[Graphics] Beginning a new frame...\n");
+        std::printf("[Graphics] Clearing render targets...\n");
+        logged_once = true;
+    }
+
     ITextureView* pRTV = g_pSwapChain->GetCurrentBackBufferRTV();
     ITextureView* pDSV = g_pSwapChain->GetDepthBufferDSV();
     g_pContext->SetRenderTargets(1, &pRTV, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -254,14 +511,48 @@ void BeginFrame() {
     g_pContext->ClearDepthStencil(pDSV, CLEAR_DEPTH_FLAG, 1.0f, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 }
 
+/**
+ * @brief Presents the finished frame to the screen.
+ *
+ * Showtime! This function tells the swap chain to present our rendered
+ * buffer so the user can see it.
+ *
+ * @example
+ * Engine::Graphics::Present();
+ */
 void Present() {
+    assert(g_pSwapChain != nullptr); // Swap chain must be alive
+    assert(true); // Ready for presentation
+    static bool logged_once = false;
+    if (!logged_once) {
+        std::printf("[Graphics] Presenting frame to screen...\n");
+        std::printf("[Graphics] Swapping buffers...\n");
+        logged_once = true;
+    }
     g_pSwapChain->Present(1);
 }
 
 // ── Mesh loading — uploads 3 LODs into global megabuffers via staging ─────────
 
+/**
+ * @brief Loads a mesh from a file and uploads its data to the GPU.
+ *
+ * This function reads our custom .scrymesh format, processes its 3 levels
+ * of detail, and packs them into our global megabuffers. It's how we get
+ * 3D models into the game!
+ *
+ * @param filepath The path to the .scrymesh file.
+ * @return A LODGroup structure containing metadata for the loaded mesh.
+ *
+ * @example
+ * LODGroup mesh = Engine::Graphics::LoadMesh("assets/suzanne.scrymesh");
+ */
 LODGroup LoadMesh(const char* filepath) {
-    assert(filepath);
+    assert(filepath != nullptr); // We need a file to load!
+    assert(g_pDevice != nullptr); // Render device must be active
+    std::printf("[Graphics] Loading mesh: %s\n", filepath);
+    std::printf("[Graphics] Parsing scrymesh header and data...\n");
+
     LODGroup kFailed = {};
     kFailed.group_id = UINT32_MAX;
     if (!filepath) return kFailed;

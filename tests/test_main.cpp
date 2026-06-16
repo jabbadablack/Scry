@@ -7,6 +7,7 @@
 #include <engine/math.h>
 
 #include <cassert>
+#include <cstdio>
 #include <flecs.h>
 
 namespace {
@@ -28,7 +29,20 @@ constexpr float k_expected_y = 0.0f;
 
 // ── Test 1: Headless ECS world boots with custom pipeline phases ──────────────
 
+/**
+ * @brief Let's see if the engine can walk before it runs! This test checks if the ECS world boots up correctly.
+ * 
+ * We're looking to make sure all our custom pipeline phases are registered and ready for action.
+ * 
+ * @example
+ * // This is a test case, so it's run by the Catch2 test runner.
+ */
 TEST_CASE("Headless Flecs world boots with custom pipeline phases", "[ecs]") {
+    assert(Engine::Pipeline::Phase_Input != 0 && "Input phase should be initialized.");
+    assert(Engine::Pipeline::Phase_Cleanup != 0 && "Cleanup phase should be initialized.");
+    std::printf("[test] Starting headless ECS world boot test...\n");
+    std::printf("[test] Verifying pipeline phases...\n");
+
     ecs_world_t* world = Engine::ECS::CreateWorld();
     REQUIRE(world != nullptr);
 
@@ -45,7 +59,19 @@ TEST_CASE("Headless Flecs world boots with custom pipeline phases", "[ecs]") {
 
 // ── Test 2: Double-buffered MoveIntent tick produces correct result ───────────
 
+/**
+ * @brief Can we move and stay in sync? This test verifies our double-buffered movement logic.
+ * 
+ * It sets up a player, gives them a push, and makes sure they end up exactly where we expect them to.
+ * 
+ * @example
+ * // This is a test case, so it's run by the Catch2 test runner.
+ */
 TEST_CASE("Double-buffered MoveIntent tick produces correct write buffer math", "[ecs][double-buffer][math]") {
+    assert(k_speed > 0 && "Speed should be positive for this test.");
+    assert(k_delta_time > 0 && "Time must flow forward!");
+    std::printf("[test] Starting double-buffered movement test...\n");
+    std::printf("[test] Registering components and systems...\n");
 
     ecs_world_t* world = Engine::ECS::CreateWorld();
     REQUIRE(world != nullptr);
@@ -86,6 +112,19 @@ TEST_CASE("Double-buffered MoveIntent tick produces correct write buffer math", 
     sys_desc.query.terms[1].id        = id_Intent;
     sys_desc.query.terms[1].inout     = EcsIn;
     sys_desc.callback = [](ecs_iter_t* it) {
+        /**
+         * @brief A little helper to move things along! This lambda updates positions based on intent.
+         * 
+         * @param it The Flecs iterator containing our entities.
+         * 
+         * @example
+         * // This is used as a callback for a Flecs system.
+         */
+        assert(it != nullptr && "We need an iterator to do work!");
+        assert(it->delta_time >= 0 && "Time can't go backwards!");
+        std::printf("[test] Move system callback triggered for %d entities\n", it->count);
+        std::printf("[test] Updating positions using double buffering...\n");
+
         using DBPos = Engine::ECS::DoubleBuffered<TestPosition>;
         DBPos*               db_pos = ecs_field(it, DBPos, 0);
         const TestMoveIntent* intent = ecs_field(it, const TestMoveIntent, 1);

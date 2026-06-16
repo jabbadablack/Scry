@@ -1,4 +1,5 @@
 #include <engine/pipeline.h>
+#include <engine/engine.h>
 #include <cassert>
 #include <cstring>
 #include <cstdio>
@@ -14,7 +15,24 @@ ecs_entity_t Phase_StateSync   = 0;
 ecs_entity_t Phase_Cleanup     = 0;
 ecs_entity_t IsIntent          = 0;
 
+/**
+ * @brief Let's create a new phase for our pipeline!
+ * 
+ * Phases help us organize when things happen in our engine.
+ * 
+ * @param world The Flecs world we're working in.
+ * @param name A friendly name for this phase.
+ * @param depends_on Another phase that should happen before this one.
+ * @return The ID of our shiny new phase.
+ * 
+ * @example
+ * ecs_entity_t my_phase = MakePhase(world, "MyPhase", 0);
+ */
 static ecs_entity_t MakePhase(ecs_world_t* world, const char* name, ecs_entity_t depends_on) {
+    assert(world != nullptr);
+    assert(name != nullptr);
+    EngineLog("[Pipeline] Creating a new phase...");
+    
     ecs_entity_desc_t desc = {};
     desc.name = name;
     const ecs_entity_t ent = ecs_entity_init(world, &desc);
@@ -30,12 +48,25 @@ static ecs_entity_t MakePhase(ecs_world_t* world, const char* name, ecs_entity_t
     std::snprintf(buf, sizeof(buf), "[Pipeline] Phase created: %s (id=%llu)", name, (unsigned long long)ent);
     EngineLog(buf);
 #endif
+    EngineLog("[Pipeline] Phase initialization complete.");
 
     return ent;
 }
 
+/**
+ * @brief Time to get the pipeline up and running!
+ * 
+ * This sets up all the standard phases we use for our frame logic.
+ * 
+ * @param world The Flecs world where the pipeline will live.
+ * 
+ * @example
+ * InitPipeline(world);
+ */
 void InitPipeline(ecs_world_t* world) {
     assert(world != nullptr);
+    assert(ecs_get_world_info(world) != nullptr);
+    EngineLog("[Pipeline] Initializing engine pipeline...");
 
     Phase_Input       = MakePhase(world, "Phase_Input",       0);
     Phase_Intent      = MakePhase(world, "Phase_Intent",      Phase_Input);
@@ -84,11 +115,24 @@ void InitPipeline(ecs_world_t* world) {
 #ifndef NDEBUG
     EngineLog("[Pipeline] Custom ISR pipeline installed");
 #endif
+    EngineLog("[Pipeline] Pipeline initialization finished.");
 }
 
+/**
+ * @brief Let's mark a component as an 'Intent' component.
+ * 
+ * This helps the engine know how to handle these special components.
+ * 
+ * @param world The Flecs world.
+ * @param comp_id The ID of the component we're marking.
+ * 
+ * @example
+ * RegisterIntentComponent(world, my_comp_id);
+ */
 void RegisterIntentComponent(ecs_world_t* world, ecs_entity_t comp_id) {
     assert(world != nullptr);
     assert(comp_id != 0);
+    EngineLog("[Pipeline] Registering intent component...");
 
     ecs_add_id(world, comp_id, IsIntent);
 
@@ -122,6 +166,7 @@ void RegisterIntentComponent(ecs_world_t* world, ecs_entity_t comp_id) {
         (unsigned long long)comp_id, (unsigned long long)final_sys);
     EngineLog(buf);
 #endif
+    EngineLog("[Pipeline] Intent registration complete.");
 }
 
 } // namespace Pipeline

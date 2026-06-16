@@ -1,7 +1,9 @@
 #include <engine/spatial.h>
 #include <engine/transform.h>
 #include <engine/pipeline.h>
+#include <engine/engine.h>
 #include <cassert>
+#include <cstdio>
 #include <cmath>
 
 namespace Engine {
@@ -10,8 +12,23 @@ namespace Spatial {
 ecs_entity_t id_ChunkCoord = 0;
 ecs_entity_t id_ChunkHash  = 0;
 
+/**
+ * @brief Sets up the spatial partitioning system by registering chunking components and systems.
+ *
+ * This function prepares the engine to handle large worlds by dividing them into manageable chunks.
+ * It's the foundation of our spatial awareness!
+ *
+ * @param world A pointer to the ECS world.
+ *
+ * @example
+ * ecs_world_t* world = ecs_init();
+ * Engine::Spatial::Init(world);
+ */
 void Init(ecs_world_t* world) {
     assert(world != nullptr);
+    assert(id_ChunkCoord == 0); // Avoid double init
+    EngineLog("Spatial::Init: Starting spatial system setup.");
+    EngineLog("Registering ChunkCoord and ChunkHash components.");
 
     auto reg = [&](const char* name, size_t sz, size_t align) -> ecs_entity_t {
         ecs_entity_desc_t ed = {}; ed.name = name;
@@ -41,7 +58,28 @@ void Init(ecs_world_t* world) {
         s.query.terms[2].id    = id_ChunkHash;
         s.query.terms[2].inout = EcsInOut;
 
+        /**
+         * @brief System callback that updates chunk coordinates and hashes based on entity positions.
+         * 
+         * This lambda keeps track of which chunk every entity belongs to, making spatial queries a breeze!
+         * It only updates when an entity actually crosses a chunk boundary.
+         * 
+         * @param it The ECS iterator.
+         * 
+         * @example
+         * // Triggered by the ECS system runner
+         * s.callback(it);
+         */
         s.callback = [](ecs_iter_t* it) {
+            assert(it != nullptr);
+            assert(it->count >= 0);
+            static bool logged_once = false;
+            if (!logged_once) {
+                EngineLog("SpatialSystem callback: Updating entity spatial data.");
+                EngineLog("Checking chunk boundaries for entities...");
+                logged_once = true;
+            }
+
             const Engine::Transform::Position* pos   = ecs_field(it, Engine::Transform::Position, 0);
             ChunkCoord*                        coord = ecs_field(it, ChunkCoord,                  1);
             ChunkHash*                         hash  = ecs_field(it, ChunkHash,                   2);

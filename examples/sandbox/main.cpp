@@ -60,9 +60,9 @@ static void OnInit(Context* ctx) {
     if (suzanne_handle == Engine::Graphics::INVALID_MESH) return;
 
     // Spawn 1000 entities using SoA transform components
-    for (int i = 0; i < 10000; ++i) {
-        int row = i / 100;
-        int col = i % 100;
+    for (int i = 0; i < 5000; ++i) {
+        int row = i / 50;
+        int col = i % 50;
 
         char name[32];
         std::snprintf(name, sizeof(name), "Entity_%d", i);

@@ -48,12 +48,11 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
     Assimp::Importer imp;
     const aiScene* scene = imp.ReadFile(
         input.string().c_str(),
-        aiProcess_Triangulate            |
-        aiProcess_JoinIdenticalVertices  |
-        aiProcess_GenSmoothNormals       |
-        aiProcess_CalcTangentSpace       |
-        aiProcess_ConvertToLeftHanded    |   // fixes winding order + UV flips for BGFX
-        aiProcess_PreTransformVertices);     // bakes root-node rotation, fixing sideways models
+        aiProcess_Triangulate           |
+        aiProcess_JoinIdenticalVertices |
+        aiProcess_PreTransformVertices  |  // bakes node hierarchy, fixes sideways FBX models
+        aiProcess_ImproveCacheLocality  |
+        aiProcess_SortByPType);            // isolates triangle meshes from lines/points
 
     if (!scene || !scene->HasMeshes()) {
         std::fprintf(stderr, "[cooker] ERROR: assimp failed on %s: %s\n",
@@ -61,13 +60,15 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
         return false;
     }
 
-    /* Flatten all meshes in the scene into a single vertex + index list. */
-    std::vector<ScryVertex> verts;
-    std::vector<uint32_t>   idxs;
+    // ── Step 1: Raw extraction — combine all sub-meshes with index offsets ───
+    std::vector<ScryVertex> unoptimized_verts;
+    std::vector<uint32_t>   combined_idxs;
 
     for (unsigned m = 0; m < scene->mNumMeshes; ++m) {
         const aiMesh* mesh = scene->mMeshes[m];
-        const uint32_t base = static_cast<uint32_t>(verts.size());
+        if (!(mesh->mPrimitiveTypes & aiPrimitiveType_TRIANGLE)) continue;
+
+        const uint32_t index_offset = static_cast<uint32_t>(unoptimized_verts.size());
 
         for (unsigned v = 0; v < mesh->mNumVertices; ++v) {
             ScryVertex sv{};
@@ -83,52 +84,57 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
                 sv.u = mesh->mTextureCoords[0][v].x;
                 sv.v = mesh->mTextureCoords[0][v].y;
             }
-            verts.push_back(sv);
+            unoptimized_verts.push_back(sv);
         }
 
         for (unsigned f = 0; f < mesh->mNumFaces; ++f) {
             const aiFace& face = mesh->mFaces[f];
-            for (unsigned i = 0; i < face.mNumIndices; ++i) {
-                idxs.push_back(base + face.mIndices[i]);
-            }
+            for (unsigned j = 0; j < face.mNumIndices; ++j)
+                combined_idxs.push_back(face.mIndices[j] + index_offset);
         }
     }
 
-    if (verts.empty() || idxs.empty()) {
+    if (unoptimized_verts.empty() || combined_idxs.empty()) {
         std::fprintf(stderr, "[cooker] WARN: %s produced no geometry — skipped\n",
             input.string().c_str());
         return false;
     }
 
-    /* ── Deduplication ── */
-    {
-        // generateVertexRemap strips duplicate verts Assimp leaves behind
-        std::vector<unsigned int> remap(idxs.size());
-        size_t total_verts = meshopt_generateVertexRemap(
-            remap.data(),
-            idxs.data(), idxs.size(),
-            verts.data(), verts.size(), sizeof(ScryVertex));
+    const size_t raw_vertex_count = unoptimized_verts.size();
 
-        std::vector<ScryVertex> dedup_verts(total_verts);
-        std::vector<uint32_t>   dedup_idxs(idxs.size());
-        meshopt_remapIndexBuffer (dedup_idxs.data(),  idxs.data(),  idxs.size(),  remap.data());
-        meshopt_remapVertexBuffer(dedup_verts.data(), verts.data(), verts.size(), sizeof(ScryVertex), remap.data());
+    // ── Step 2: Remap pass (deduplication) ───────────────────────────────────
+    std::vector<unsigned int> remap(combined_idxs.size());
+    const size_t unique_vertices = meshopt_generateVertexRemap(
+        remap.data(),
+        combined_idxs.data(), combined_idxs.size(),
+        unoptimized_verts.data(), unoptimized_verts.size(), sizeof(ScryVertex));
 
-        verts = std::move(dedup_verts);
-        idxs  = std::move(dedup_idxs);
-    }
+    // ── Step 3: Allocate dense output arrays ─────────────────────────────────
+    std::vector<ScryVertex> optimized_verts(unique_vertices);
+    std::vector<uint32_t>   optimized_idxs(combined_idxs.size());
 
-    /* ── Optimization ── */
-    {
-        meshopt_optimizeVertexCache(idxs.data(), idxs.data(), idxs.size(), verts.size());
+    // ── Step 4: Apply remap ──────────────────────────────────────────────────
+    meshopt_remapIndexBuffer(
+        optimized_idxs.data(),
+        combined_idxs.data(), combined_idxs.size(),
+        remap.data());
+    meshopt_remapVertexBuffer(
+        optimized_verts.data(),
+        unoptimized_verts.data(), unoptimized_verts.size(), sizeof(ScryVertex),
+        remap.data());
 
-        std::vector<ScryVertex> optimized_verts(verts.size());
-        meshopt_optimizeVertexFetch(optimized_verts.data(), idxs.data(), idxs.size(),
-            verts.data(), verts.size(), sizeof(ScryVertex));
-        verts = std::move(optimized_verts);
-    }
+    // ── Step 5: GPU vertex cache optimization ────────────────────────────────
+    meshopt_optimizeVertexCache(
+        optimized_idxs.data(), optimized_idxs.data(),
+        optimized_idxs.size(), optimized_verts.size());
 
-    /* Write .scrymesh */
+    // ── Step 6: Memory fetch optimization ────────────────────────────────────
+    meshopt_optimizeVertexFetch(
+        optimized_verts.data(),
+        optimized_idxs.data(), optimized_idxs.size(),
+        optimized_verts.data(), optimized_verts.size(), sizeof(ScryVertex));
+
+    // ── Step 7: Write .scrymesh ──────────────────────────────────────────────
     const fs::path out = out_dir / swap_ext(input, ".scrymesh");
     FILE* f = std::fopen(out.string().c_str(), "wb");
     if (!f) {
@@ -139,18 +145,19 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
     ScryMeshHeader hdr{};
     hdr.magic        = SCRY_MESH_MAGIC;
     hdr.version      = SCRY_MESH_VERSION;
-    hdr.vertex_count = static_cast<uint32_t>(verts.size());
-    hdr.index_count  = static_cast<uint32_t>(idxs.size());
+    hdr.vertex_count = static_cast<uint32_t>(optimized_verts.size());
+    hdr.index_count  = static_cast<uint32_t>(optimized_idxs.size());
 
-    std::fwrite(&hdr,        sizeof(hdr),               1,           f);
-    std::fwrite(verts.data(), sizeof(ScryVertex),  verts.size(), f);
-    std::fwrite(idxs.data(),  sizeof(uint32_t),    idxs.size(),  f);
+    std::fwrite(&hdr,                  sizeof(hdr),         1,                      f);
+    std::fwrite(optimized_verts.data(), sizeof(ScryVertex),  optimized_verts.size(), f);
+    std::fwrite(optimized_idxs.data(),  sizeof(uint32_t),    optimized_idxs.size(),  f);
     std::fclose(f);
 
-    std::printf("[cooker] %s -> %s  (v=%u i=%u)\n",
+    std::printf("[cooker] %s -> %s  (%zu verts -> %zu verts, %u indices)\n",
         input.filename().string().c_str(),
         out.filename().string().c_str(),
-        hdr.vertex_count, hdr.index_count);
+        raw_vertex_count, unique_vertices,
+        hdr.index_count);
     return true;
 }
 

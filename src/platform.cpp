@@ -166,6 +166,8 @@ ENGINE_API EngineError EngineRun(const AppConfig* config) {
     {
         uint64_t last_tick = Engine::Platform::GetTime();
         while (ctx.running) {
+            auto frame_start = std::chrono::steady_clock::now();
+
             Engine::Platform::PumpEvents(&ctx);
             if (!ctx.running) break;
             if (Engine::Input::g_input_buffer.IsKeyDown(Engine::Input::Key::Escape)) {
@@ -179,9 +181,16 @@ ENGINE_API EngineError EngineRun(const AppConfig* config) {
             if (!ecs_progress(world, dt)) { ctx.running = 0; break; }
             Engine::Graphics::Present();
 
-            // Only sleep when we're running faster than 1ms/frame to avoid busy-spinning
-            // on integrated GPUs without VSync (Present(1) handles throttling otherwise)
-            if (dt < 0.001f) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            // Kernel-level yield until 16ms have elapsed since frame start.
+            // sleep_for(1ms) suspends at the OS scheduler level, keeping the core
+            // near 0% rather than letting the Vulkan driver spin-lock on VSync.
+            while (true) {
+                const float elapsed_ms = std::chrono::duration<float, std::milli>(
+                    std::chrono::steady_clock::now() - frame_start).count();
+                if (elapsed_ms >= 16.0f) break;
+                if (elapsed_ms < 15.0f)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
         }
     }
 

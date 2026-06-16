@@ -45,8 +45,8 @@ IDeviceContext* GetContext()   { return g_pContext;    }
 ISwapChain*     GetSwapChain() { return g_pSwapChain; }
 
 // ── Global megabuffers ────────────────────────────────────────────────────────
-static constexpr uint32_t GLOBAL_VB_SIZE = 128u * 1024u * 1024u; // 128 MB
-static constexpr uint32_t GLOBAL_IB_SIZE =  64u * 1024u * 1024u; //  64 MB
+static constexpr uint32_t GLOBAL_VB_SIZE = 32u * 1024u * 1024u; // 32 MB
+static constexpr uint32_t GLOBAL_IB_SIZE = 16u * 1024u * 1024u; // 16 MB
 
 static RefCntAutoPtr<IBuffer> g_GlobalVertexBuffer;
 static RefCntAutoPtr<IBuffer> g_GlobalIndexBuffer;

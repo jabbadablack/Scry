@@ -2,16 +2,21 @@
 #include <stdint.h>
 
 /* ── Binary mesh format ──────────────────────────────────────────────────────
- * A .scrymesh file (version 2) is a single contiguous block:
- *   [ScryMeshHeader][ScryVertex × vertex_count]
- *   [uint32_t × lod0_index_count]   ← LOD0: ~15% of original triangles
- *   [uint32_t × lod1_index_count]   ← LOD1: ~50% of LOD0 triangles
- *   [uint32_t × lod2_index_count]   ← LOD2: ~10% of LOD0 triangles
- * Load with a single fread into an arena; no pointer fixup needed.
+ * A .scrymesh file (version 3) layout:
+ *   [ScryMeshHeader]
+ *   [ScryVertex × lod0_vertex_count]   ← LOD0 vertex buffer (full mesh)
+ *   [uint32_t   × lod0_index_count]    ← LOD0 index buffer
+ *   [ScryVertex × lod1_vertex_count]   ← LOD1 vertex buffer (50% — compact)
+ *   [uint32_t   × lod1_index_count]    ← LOD1 index buffer
+ *   [ScryVertex × lod2_vertex_count]   ← LOD2 vertex buffer (10% — compact)
+ *   [uint32_t   × lod2_index_count]    ← LOD2 index buffer
+ * Each LOD vertex buffer only contains the vertices referenced by its index
+ * buffer (extracted via meshopt_optimizeVertexFetch), so distant draw calls
+ * pull from a tightly-packed, cache-local memory region.
  */
 
 #define SCRY_MESH_MAGIC   0x59524353u  /* little-endian 'SCRY' */
-#define SCRY_MESH_VERSION 2u
+#define SCRY_MESH_VERSION 3u
 
 #pragma pack(push, 1)
 
@@ -24,9 +29,11 @@ typedef struct {
 typedef struct {
     uint32_t magic;
     uint32_t version;
-    uint32_t vertex_count;
+    uint32_t lod0_vertex_count;
     uint32_t lod0_index_count;
+    uint32_t lod1_vertex_count;
     uint32_t lod1_index_count;
+    uint32_t lod2_vertex_count;
     uint32_t lod2_index_count;
 } ScryMeshHeader;
 
@@ -50,6 +57,6 @@ typedef struct {
 
 #ifdef __cplusplus
 static_assert(sizeof(ScryVertex)     == 32u, "ScryVertex layout changed");
-static_assert(sizeof(ScryMeshHeader) == 24u, "ScryMeshHeader layout changed");
+static_assert(sizeof(ScryMeshHeader) == 32u, "ScryMeshHeader layout changed");
 static_assert(sizeof(ScryTexHeader)  == 16u, "ScryTexHeader layout changed");
 #endif

@@ -9,7 +9,6 @@
 #include <engine/camera.h>
 #include <engine/spatial.h>
 #include <cassert>
-#include <flecs.h>
 #include <cstdio>
 #include <exception>
 #include <filesystem>
@@ -65,9 +64,9 @@ static void OnInit(Context* ctx) {
     if (lodGroup.group_id == UINT32_MAX) return;
 
     // Spawn 10000 entities in a 100×100 grid
-    for (int i = 0; i < 10000; ++i) {
-        int row = i / 100;
-        int col = i % 100;
+    for (int i = 0; i < 5000; ++i) {
+        int row = i / 50;
+        int col = i % 50;
 
         char name[32];
         std::snprintf(name, sizeof(name), "Entity_%d", i);

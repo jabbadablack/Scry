@@ -156,24 +156,30 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
     meshopt_optimizeVertexCache(
         lod2_idxs.data(), lod2_idxs.data(), lod2_idxs.size(), optimized_verts.size());
 
-    // ── Step 8: Fetch remap from LOD0 — applied consistently to all three LODs ─
-    // LOD1/LOD2 only reference a subset of LOD0's vertices, so this remap is safe.
-    std::vector<unsigned int> fetch_remap(optimized_verts.size());
-    const size_t final_vertex_count = meshopt_optimizeVertexFetchRemap(
-        fetch_remap.data(),
-        lod0_idxs.data(), lod0_idxs.size(),
-        optimized_verts.size());
+    // ── Step 8: Per-LOD independent vertex extraction ────────────────────────────
+    // All three simplifications above ran before any fetch-opt call, so lod1_idxs
+    // and lod2_idxs still reference optimized_verts index space here.
+    // meshopt_optimizeVertexFetch modifies each index buffer IN PLACE to reference
+    // the new compact per-LOD vertex buffer; optimized_verts is never written to.
+    std::vector<ScryVertex> lod0_verts(optimized_verts.size());
+    size_t lod0_v_count = meshopt_optimizeVertexFetch(
+        lod0_verts.data(), lod0_idxs.data(), lod0_idxs.size(),
+        optimized_verts.data(), optimized_verts.size(), sizeof(ScryVertex));
+    lod0_verts.resize(lod0_v_count);
 
-    for (auto& i : lod0_idxs) i = fetch_remap[i];
-    for (auto& i : lod1_idxs) i = fetch_remap[i];
-    for (auto& i : lod2_idxs) i = fetch_remap[i];
+    std::vector<ScryVertex> lod1_verts(optimized_verts.size());
+    size_t lod1_v_count = meshopt_optimizeVertexFetch(
+        lod1_verts.data(), lod1_idxs.data(), lod1_idxs.size(),
+        optimized_verts.data(), optimized_verts.size(), sizeof(ScryVertex));
+    lod1_verts.resize(lod1_v_count);
 
-    std::vector<ScryVertex> final_verts(final_vertex_count);
-    for (size_t i = 0; i < optimized_verts.size(); ++i)
-        if (fetch_remap[i] != ~0u)
-            final_verts[fetch_remap[i]] = optimized_verts[i];
+    std::vector<ScryVertex> lod2_verts(optimized_verts.size());
+    size_t lod2_v_count = meshopt_optimizeVertexFetch(
+        lod2_verts.data(), lod2_idxs.data(), lod2_idxs.size(),
+        optimized_verts.data(), optimized_verts.size(), sizeof(ScryVertex));
+    lod2_verts.resize(lod2_v_count);
 
-    // ── Step 10: Write .scrymesh ──────────────────────────────────────────────
+    // ── Step 9: Write .scrymesh ───────────────────────────────────────────────
     const fs::path out = out_dir / swap_ext(input, ".scrymesh");
     FILE* f = std::fopen(out.string().c_str(), "wb");
     if (!f) {
@@ -184,27 +190,32 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
     ScryMeshHeader hdr{};
     hdr.magic             = SCRY_MESH_MAGIC;
     hdr.version           = SCRY_MESH_VERSION;
-    hdr.vertex_count      = static_cast<uint32_t>(final_vertex_count);
+    hdr.lod0_vertex_count = static_cast<uint32_t>(lod0_v_count);
     hdr.lod0_index_count  = static_cast<uint32_t>(lod0_idxs.size());
+    hdr.lod1_vertex_count = static_cast<uint32_t>(lod1_v_count);
     hdr.lod1_index_count  = static_cast<uint32_t>(lod1_index_count);
+    hdr.lod2_vertex_count = static_cast<uint32_t>(lod2_v_count);
     hdr.lod2_index_count  = static_cast<uint32_t>(lod2_index_count);
 
-    std::fwrite(&hdr,            sizeof(hdr),        1,                    f);
-    std::fwrite(final_verts.data(), sizeof(ScryVertex), final_vertex_count,    f);
-    std::fwrite(lod0_idxs.data(),  sizeof(uint32_t),  lod0_idxs.size(),       f);
-    std::fwrite(lod1_idxs.data(),  sizeof(uint32_t),  lod1_index_count,        f);
-    std::fwrite(lod2_idxs.data(),  sizeof(uint32_t),  lod2_index_count,        f);
+    // [Header][LOD0_Verts][LOD0_Idxs][LOD1_Verts][LOD1_Idxs][LOD2_Verts][LOD2_Idxs]
+    std::fwrite(&hdr,              sizeof(hdr),        1,                f);
+    std::fwrite(lod0_verts.data(), sizeof(ScryVertex), lod0_v_count,     f);
+    std::fwrite(lod0_idxs.data(),  sizeof(uint32_t),   lod0_idxs.size(), f);
+    std::fwrite(lod1_verts.data(), sizeof(ScryVertex), lod1_v_count,     f);
+    std::fwrite(lod1_idxs.data(),  sizeof(uint32_t),   lod1_index_count, f);
+    std::fwrite(lod2_verts.data(), sizeof(ScryVertex), lod2_v_count,     f);
+    std::fwrite(lod2_idxs.data(),  sizeof(uint32_t),   lod2_index_count, f);
     std::fclose(f);
 
     std::printf(
-        "[cooker] %s -> %s  (%zu raw -> %zu dedup -> %zu final verts | "
-        "LOD0=%zu LOD1=%zu(err=%.4f) LOD2=%zu(err=%.4f) idx)\n",
+        "[cooker] %s -> %s  (%zu raw -> %zu dedup | "
+        "LOD0: %zu v / %zu idx | LOD1: %zu v / %zu idx (err=%.4f) | LOD2: %zu v / %zu idx (err=%.4f))\n",
         input.filename().string().c_str(),
         out.filename().string().c_str(),
-        raw_vertex_count, unique_vertices, final_vertex_count,
-        lod0_idxs.size(),
-        lod1_index_count, static_cast<double>(lod1_error),
-        lod2_index_count, static_cast<double>(lod2_error));
+        raw_vertex_count, unique_vertices,
+        lod0_v_count, lod0_idxs.size(),
+        lod1_v_count, lod1_index_count, static_cast<double>(lod1_error),
+        lod2_v_count, lod2_index_count, static_cast<double>(lod2_error));
     return true;
 }
 

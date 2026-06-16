@@ -287,92 +287,154 @@ LODGroup LoadMesh(const char* filepath) {
         return kFailed;
     }
 
-    const auto*    verts    = reinterpret_cast<const ScryVertex*>(hdr + 1);
-    const auto*    lod0_idx = reinterpret_cast<const uint32_t*>(verts + hdr->vertex_count);
-    const auto*    lod1_idx = lod0_idx + hdr->lod0_index_count;
-    const auto*    lod2_idx = lod1_idx + hdr->lod1_index_count;
+    // ── Cursor walk through interleaved [LOD_Verts][LOD_Idxs] layout ─────────
+    const uint8_t* cursor = reinterpret_cast<const uint8_t*>(hdr + 1);
 
-    const uint32_t vb_bytes   = hdr->vertex_count      * static_cast<uint32_t>(sizeof(ScryVertex));
-    const uint32_t ib0_bytes  = hdr->lod0_index_count  * static_cast<uint32_t>(sizeof(uint32_t));
-    const uint32_t ib1_bytes  = hdr->lod1_index_count  * static_cast<uint32_t>(sizeof(uint32_t));
-    const uint32_t ib2_bytes  = hdr->lod2_index_count  * static_cast<uint32_t>(sizeof(uint32_t));
-    const uint32_t ib_total   = ib0_bytes + ib1_bytes + ib2_bytes;
+    const auto* lod0_verts = reinterpret_cast<const ScryVertex*>(cursor);
+    cursor += hdr->lod0_vertex_count * sizeof(ScryVertex);
+    const auto* lod0_idx   = reinterpret_cast<const uint32_t*>(cursor);
+    cursor += hdr->lod0_index_count  * sizeof(uint32_t);
 
-    if (g_VertexOffset * static_cast<uint32_t>(sizeof(ScryVertex)) + vb_bytes > GLOBAL_VB_SIZE ||
+    const auto* lod1_verts = reinterpret_cast<const ScryVertex*>(cursor);
+    cursor += hdr->lod1_vertex_count * sizeof(ScryVertex);
+    const auto* lod1_idx   = reinterpret_cast<const uint32_t*>(cursor);
+    cursor += hdr->lod1_index_count  * sizeof(uint32_t);
+
+    const auto* lod2_verts = reinterpret_cast<const ScryVertex*>(cursor);
+    cursor += hdr->lod2_vertex_count * sizeof(ScryVertex);
+    const auto* lod2_idx   = reinterpret_cast<const uint32_t*>(cursor);
+
+    const uint32_t vb0_bytes = hdr->lod0_vertex_count * static_cast<uint32_t>(sizeof(ScryVertex));
+    const uint32_t ib0_bytes = hdr->lod0_index_count  * static_cast<uint32_t>(sizeof(uint32_t));
+    const uint32_t vb1_bytes = hdr->lod1_vertex_count * static_cast<uint32_t>(sizeof(ScryVertex));
+    const uint32_t ib1_bytes = hdr->lod1_index_count  * static_cast<uint32_t>(sizeof(uint32_t));
+    const uint32_t vb2_bytes = hdr->lod2_vertex_count * static_cast<uint32_t>(sizeof(ScryVertex));
+    const uint32_t ib2_bytes = hdr->lod2_index_count  * static_cast<uint32_t>(sizeof(uint32_t));
+    const uint32_t vb_total  = vb0_bytes + vb1_bytes + vb2_bytes;
+    const uint32_t ib_total  = ib0_bytes + ib1_bytes + ib2_bytes;
+
+    if (g_VertexOffset * static_cast<uint32_t>(sizeof(ScryVertex)) + vb_total > GLOBAL_VB_SIZE ||
         g_IndexOffset  * static_cast<uint32_t>(sizeof(uint32_t))   + ib_total > GLOBAL_IB_SIZE) {
         EngineLog("[Graphics] LoadMesh: megabuffer full");
         UnmapFile(mf);
         return kFailed;
     }
 
-    // ── Upload vertices via staging buffer ────────────────────────────────────
+    // ── LOD0 upload — vertices then indices ───────────────────────────────────
+    const uint32_t bv0 = g_VertexOffset;
+    const uint32_t fi0 = g_IndexOffset;
     {
-        RefCntAutoPtr<IBuffer> pStaging;
+        RefCntAutoPtr<IBuffer> pStagingV;
         BufferDesc bd;
-        bd.Name           = "StagingVB";
-        bd.Usage          = USAGE_STAGING;
-        bd.BindFlags      = BIND_NONE;
-        bd.CPUAccessFlags = CPU_ACCESS_WRITE;
-        bd.Size           = vb_bytes;
-        g_pDevice->CreateBuffer(bd, nullptr, &pStaging);
-        assert(pStaging);
-
-        void* pMapped = nullptr;
-        g_pContext->MapBuffer(pStaging, MAP_WRITE, MAP_FLAG_DO_NOT_WAIT, pMapped);
-        assert(pMapped);
-        std::memcpy(pMapped, verts, vb_bytes);
-        g_pContext->UnmapBuffer(pStaging, MAP_WRITE);
-
-        g_pContext->CopyBuffer(
-            pStaging, 0,
-            RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
-            g_GlobalVertexBuffer,
-            g_VertexOffset * static_cast<uint32_t>(sizeof(ScryVertex)),
-            vb_bytes,
-            RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        bd.Name = "StagingVB0"; bd.Usage = USAGE_STAGING; bd.BindFlags = BIND_NONE;
+        bd.CPUAccessFlags = CPU_ACCESS_WRITE; bd.Size = vb0_bytes;
+        g_pDevice->CreateBuffer(bd, nullptr, &pStagingV);
+        assert(pStagingV);
+        void* p = nullptr;
+        g_pContext->MapBuffer(pStagingV, MAP_WRITE, MAP_FLAG_DO_NOT_WAIT, p);
+        std::memcpy(p, lod0_verts, vb0_bytes);
+        g_pContext->UnmapBuffer(pStagingV, MAP_WRITE);
+        g_pContext->CopyBuffer(pStagingV, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+            g_GlobalVertexBuffer, bv0 * static_cast<uint32_t>(sizeof(ScryVertex)),
+            vb0_bytes, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
     }
-
-    // ── Upload all 3 LOD index ranges via a single staging buffer ─────────────
     {
-        RefCntAutoPtr<IBuffer> pStaging;
+        RefCntAutoPtr<IBuffer> pStagingI;
         BufferDesc bd;
-        bd.Name           = "StagingIB";
-        bd.Usage          = USAGE_STAGING;
-        bd.BindFlags      = BIND_NONE;
-        bd.CPUAccessFlags = CPU_ACCESS_WRITE;
-        bd.Size           = ib_total;
-        g_pDevice->CreateBuffer(bd, nullptr, &pStaging);
-        assert(pStaging);
-
-        void* pMapped = nullptr;
-        g_pContext->MapBuffer(pStaging, MAP_WRITE, MAP_FLAG_DO_NOT_WAIT, pMapped);
-        assert(pMapped);
-        auto* dst = static_cast<uint8_t*>(pMapped);
-        std::memcpy(dst,                        lod0_idx, ib0_bytes);
-        std::memcpy(dst + ib0_bytes,            lod1_idx, ib1_bytes);
-        std::memcpy(dst + ib0_bytes + ib1_bytes,lod2_idx, ib2_bytes);
-        g_pContext->UnmapBuffer(pStaging, MAP_WRITE);
-
-        g_pContext->CopyBuffer(
-            pStaging, 0,
-            RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
-            g_GlobalIndexBuffer,
-            g_IndexOffset * static_cast<uint32_t>(sizeof(uint32_t)),
-            ib_total,
-            RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        bd.Name = "StagingIB0"; bd.Usage = USAGE_STAGING; bd.BindFlags = BIND_NONE;
+        bd.CPUAccessFlags = CPU_ACCESS_WRITE; bd.Size = ib0_bytes;
+        g_pDevice->CreateBuffer(bd, nullptr, &pStagingI);
+        assert(pStagingI);
+        void* p = nullptr;
+        g_pContext->MapBuffer(pStagingI, MAP_WRITE, MAP_FLAG_DO_NOT_WAIT, p);
+        std::memcpy(p, lod0_idx, ib0_bytes);
+        g_pContext->UnmapBuffer(pStagingI, MAP_WRITE);
+        g_pContext->CopyBuffer(pStagingI, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+            g_GlobalIndexBuffer, fi0 * static_cast<uint32_t>(sizeof(uint32_t)),
+            ib0_bytes, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
     }
+    g_VertexOffset += hdr->lod0_vertex_count;
+    g_IndexOffset  += hdr->lod0_index_count;
 
-    // ── Build LODGroup record ─────────────────────────────────────────────────
-    const uint32_t group_id    = g_LODGroupCount;
-    const uint32_t baseVertex  = g_VertexOffset;
-    const uint32_t fi0         = g_IndexOffset;
-    const uint32_t fi1         = fi0 + hdr->lod0_index_count;
-    const uint32_t fi2         = fi1 + hdr->lod1_index_count;
+    // ── LOD1 upload ───────────────────────────────────────────────────────────
+    const uint32_t bv1 = g_VertexOffset;
+    const uint32_t fi1 = g_IndexOffset;
+    {
+        RefCntAutoPtr<IBuffer> pStagingV;
+        BufferDesc bd;
+        bd.Name = "StagingVB1"; bd.Usage = USAGE_STAGING; bd.BindFlags = BIND_NONE;
+        bd.CPUAccessFlags = CPU_ACCESS_WRITE; bd.Size = vb1_bytes;
+        g_pDevice->CreateBuffer(bd, nullptr, &pStagingV);
+        assert(pStagingV);
+        void* p = nullptr;
+        g_pContext->MapBuffer(pStagingV, MAP_WRITE, MAP_FLAG_DO_NOT_WAIT, p);
+        std::memcpy(p, lod1_verts, vb1_bytes);
+        g_pContext->UnmapBuffer(pStagingV, MAP_WRITE);
+        g_pContext->CopyBuffer(pStagingV, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+            g_GlobalVertexBuffer, bv1 * static_cast<uint32_t>(sizeof(ScryVertex)),
+            vb1_bytes, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    }
+    {
+        RefCntAutoPtr<IBuffer> pStagingI;
+        BufferDesc bd;
+        bd.Name = "StagingIB1"; bd.Usage = USAGE_STAGING; bd.BindFlags = BIND_NONE;
+        bd.CPUAccessFlags = CPU_ACCESS_WRITE; bd.Size = ib1_bytes;
+        g_pDevice->CreateBuffer(bd, nullptr, &pStagingI);
+        assert(pStagingI);
+        void* p = nullptr;
+        g_pContext->MapBuffer(pStagingI, MAP_WRITE, MAP_FLAG_DO_NOT_WAIT, p);
+        std::memcpy(p, lod1_idx, ib1_bytes);
+        g_pContext->UnmapBuffer(pStagingI, MAP_WRITE);
+        g_pContext->CopyBuffer(pStagingI, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+            g_GlobalIndexBuffer, fi1 * static_cast<uint32_t>(sizeof(uint32_t)),
+            ib1_bytes, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    }
+    g_VertexOffset += hdr->lod1_vertex_count;
+    g_IndexOffset  += hdr->lod1_index_count;
+
+    // ── LOD2 upload ───────────────────────────────────────────────────────────
+    const uint32_t bv2 = g_VertexOffset;
+    const uint32_t fi2 = g_IndexOffset;
+    {
+        RefCntAutoPtr<IBuffer> pStagingV;
+        BufferDesc bd;
+        bd.Name = "StagingVB2"; bd.Usage = USAGE_STAGING; bd.BindFlags = BIND_NONE;
+        bd.CPUAccessFlags = CPU_ACCESS_WRITE; bd.Size = vb2_bytes;
+        g_pDevice->CreateBuffer(bd, nullptr, &pStagingV);
+        assert(pStagingV);
+        void* p = nullptr;
+        g_pContext->MapBuffer(pStagingV, MAP_WRITE, MAP_FLAG_DO_NOT_WAIT, p);
+        std::memcpy(p, lod2_verts, vb2_bytes);
+        g_pContext->UnmapBuffer(pStagingV, MAP_WRITE);
+        g_pContext->CopyBuffer(pStagingV, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+            g_GlobalVertexBuffer, bv2 * static_cast<uint32_t>(sizeof(ScryVertex)),
+            vb2_bytes, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    }
+    {
+        RefCntAutoPtr<IBuffer> pStagingI;
+        BufferDesc bd;
+        bd.Name = "StagingIB2"; bd.Usage = USAGE_STAGING; bd.BindFlags = BIND_NONE;
+        bd.CPUAccessFlags = CPU_ACCESS_WRITE; bd.Size = ib2_bytes;
+        g_pDevice->CreateBuffer(bd, nullptr, &pStagingI);
+        assert(pStagingI);
+        void* p = nullptr;
+        g_pContext->MapBuffer(pStagingI, MAP_WRITE, MAP_FLAG_DO_NOT_WAIT, p);
+        std::memcpy(p, lod2_idx, ib2_bytes);
+        g_pContext->UnmapBuffer(pStagingI, MAP_WRITE);
+        g_pContext->CopyBuffer(pStagingI, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+            g_GlobalIndexBuffer, fi2 * static_cast<uint32_t>(sizeof(uint32_t)),
+            ib2_bytes, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    }
+    g_VertexOffset += hdr->lod2_vertex_count;
+    g_IndexOffset  += hdr->lod2_index_count;
+
+    // ── Build LODGroup record — each LOD has its own baseVertex ──────────────
+    const uint32_t group_id = g_LODGroupCount;
 
     LODGroup lg;
-    lg.lods[0] = { hdr->lod0_index_count, fi0, baseVertex, 150.0f };
-    lg.lods[1] = { hdr->lod1_index_count, fi1, baseVertex, 300.0f };
-    lg.lods[2] = { hdr->lod2_index_count, fi2, baseVertex, 600.0f };
+    lg.lods[0] = { hdr->lod0_index_count, fi0, bv0, 150.0f };
+    lg.lods[1] = { hdr->lod1_index_count, fi1, bv1, 300.0f };
+    lg.lods[2] = { hdr->lod2_index_count, fi2, bv2, 600.0f };
     lg.group_id = group_id;
     g_LODGroups[group_id] = lg;
 
@@ -393,17 +455,19 @@ LODGroup LoadMesh(const char* filepath) {
             RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
     }
 
-    g_VertexOffset += hdr->vertex_count;
-    g_IndexOffset  += hdr->lod0_index_count + hdr->lod1_index_count + hdr->lod2_index_count;
     ++g_LODGroupCount;
 
     {
         char buf[512];
         std::snprintf(buf, sizeof(buf),
-            "[Graphics] Mesh loaded: %s (v=%u LOD0=%u LOD1=%u LOD2=%u idx, group_id=%u)",
+            "[Graphics] Mesh loaded: %s | "
+            "LOD0: %u v / %u idx (bv=%u fi=%u) | "
+            "LOD1: %u v / %u idx (bv=%u fi=%u) | "
+            "LOD2: %u v / %u idx (bv=%u fi=%u) | group_id=%u",
             filepath,
-            hdr->vertex_count,
-            hdr->lod0_index_count, hdr->lod1_index_count, hdr->lod2_index_count,
+            hdr->lod0_vertex_count, hdr->lod0_index_count, bv0, fi0,
+            hdr->lod1_vertex_count, hdr->lod1_index_count, bv1, fi1,
+            hdr->lod2_vertex_count, hdr->lod2_index_count, bv2, fi2,
             group_id);
         EngineLog(buf);
     }

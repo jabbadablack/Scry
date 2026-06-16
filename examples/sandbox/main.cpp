@@ -7,6 +7,7 @@
 #include <engine/renderer.h>
 #include <engine/transform.h>
 #include <engine/camera.h>
+#include <engine/spatial.h>
 #include <cassert>
 #include <flecs.h>
 #include <cstdio>
@@ -100,6 +101,13 @@ static void OnInit(Context* ctx) {
 
         Engine::Renderer::Material mat = { 0, {1.0f, 1.0f, 1.0f, 1.0f} };
         ecs_set_id(world, ent, Engine::Renderer::id_Material, sizeof(mat), &mat);
+
+        // Default chunk (0,0) — SpatialSystem corrects these on frame 1
+        Engine::Spatial::ChunkCoord coord = {0, 0};
+        ecs_set_id(world, ent, Engine::Spatial::id_ChunkCoord, sizeof(coord), &coord);
+
+        Engine::Spatial::ChunkHash chash = {0};
+        ecs_set_id(world, ent, Engine::Spatial::id_ChunkHash, sizeof(chash), &chash);
     }
 
     // Create camera

@@ -2,6 +2,7 @@
 #include <engine/pipeline.h>
 #include <engine/transform.h>
 #include <engine/camera.h>
+#include <engine/spatial.h>
 #include <engine/memory.h>
 #include <cassert>
 #include <cstring>
@@ -33,6 +34,7 @@ ecs_world_t* CreateWorld() {
     EngineLog("[ECS] Pipeline ready");
     Transform::Init(world);
     Camera::Init(world);
+    Spatial::Init(world);
 
     return world;
 }

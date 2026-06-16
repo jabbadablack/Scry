@@ -1,6 +1,7 @@
 #include <engine/renderer.h>
 #include <engine/transform.h>
 #include <engine/camera.h>
+#include <engine/spatial.h>
 #include <engine/pipeline.h>
 #include <engine/graphics.h>
 #include <engine/graphics_backend.h>
@@ -272,6 +273,14 @@ static bool CreateComputePSO() {
     return true;
 }
 
+// ── Chunk sort comparator (for ecs_query order_by) ───────────────────────────
+
+static int compare_chunk_hashes(ecs_entity_t, const void* a, ecs_entity_t, const void* b) {
+    const uint64_t ha = static_cast<const Engine::Spatial::ChunkHash*>(a)->hash;
+    const uint64_t hb = static_cast<const Engine::Spatial::ChunkHash*>(b)->hash;
+    return (ha > hb) - (ha < hb);
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 void Init(ecs_world_t* world) {
@@ -425,10 +434,16 @@ void Init(ecs_world_t* world) {
         assert(g_camera_query);
 
         ecs_query_desc_t rq = {};
-        rq.terms[0].id = Engine::Transform::id_WorldMatrix;
-        rq.terms[1].id = id_MeshData;
-        rq.terms[2].id = id_EntityIntent;
-        rq.terms[3].id = id_AABB;
+        rq.terms[0].id    = Engine::Transform::id_WorldMatrix;
+        rq.terms[1].id    = id_MeshData;
+        rq.terms[2].id    = id_EntityIntent;
+        rq.terms[3].id    = id_AABB;
+        rq.terms[4].id    = Engine::Spatial::id_ChunkCoord;
+        rq.terms[4].inout = EcsIn;
+        rq.terms[5].id    = Engine::Spatial::id_ChunkHash;
+        rq.terms[5].inout = EcsIn;
+        rq.order_by          = Engine::Spatial::id_ChunkHash;
+        rq.order_by_callback = compare_chunk_hashes;
         g_render_query = ecs_query_init(world, &rq);
         assert(g_render_query);
     }
@@ -447,7 +462,30 @@ void Init(ecs_world_t* world) {
             IDeviceContext* ctx = Graphics::GetContext();
             assert(ctx);
 
-            // Gather matrices, AABBs, and mesh alloc from the render query
+            // ── Step 1: camera first — VP matrix + chunk coordinate ───────────
+            int32_t cam_cx = 0, cam_cy = 0;
+            float vp[16] = {};
+            if (g_camera_query) {
+                ecs_iter_t ci = ecs_query_iter(it->world, g_camera_query);
+                while (ecs_query_next(&ci)) {
+                    const Engine::Camera::Camera* cam = ecs_field(&ci, Engine::Camera::Camera, 0);
+                    if (ci.count == 0) continue;
+                    cam_cx = static_cast<int32_t>(std::floor(cam[0].position.x() / Engine::Spatial::CHUNK_SIZE));
+                    cam_cy = static_cast<int32_t>(std::floor(cam[0].position.z() / Engine::Spatial::CHUNK_SIZE));
+                    Eigen::Map<const Eigen::Matrix4f> V(cam[0].view);
+                    Eigen::Map<const Eigen::Matrix4f> P(cam[0].proj);
+                    Eigen::Matrix4f VP_mat = P * V;
+                    std::memcpy(vp, VP_mat.data(), 64u);
+                    void* p = nullptr;
+                    ctx->MapBuffer(g_pDrawParamsCB, MAP_WRITE, MAP_FLAG_DISCARD, p);
+                    if (p) { std::memcpy(p, vp, 64u); ctx->UnmapBuffer(g_pDrawParamsCB, MAP_WRITE); }
+                    ecs_iter_fini(&ci);
+                    break;
+                }
+            }
+
+            // ── Step 2: gather matrices + AABBs, chunk-radius filtered ────────
+            constexpr int RENDER_DISTANCE = 4; // chunks
             s_entity_count = 0;
             MeshData first_mesh_data = {};
             bool have_mesh = false;
@@ -455,14 +493,18 @@ void Init(ecs_world_t* world) {
             if (g_render_query) {
                 ecs_iter_t ri = ecs_query_iter(it->world, g_render_query);
                 while (ecs_query_next(&ri)) {
-                    const Engine::Transform::WorldMatrix* wm    = ecs_field(&ri, Engine::Transform::WorldMatrix, 0);
-                    const MeshData*                       md    = ecs_field(&ri, MeshData, 1);
-                    const Intent*                         intent= ecs_field(&ri, Intent,   2);
-                    const AABB*                           ab    = ecs_field(&ri, AABB,     3);
+                    const Engine::Transform::WorldMatrix*      wm     = ecs_field(&ri, Engine::Transform::WorldMatrix, 0);
+                    const MeshData*                            md     = ecs_field(&ri, MeshData, 1);
+                    const Intent*                              intent = ecs_field(&ri, Intent,   2);
+                    const AABB*                                ab     = ecs_field(&ri, AABB,     3);
+                    const Engine::Spatial::ChunkCoord*         chunk  = ecs_field(&ri, Engine::Spatial::ChunkCoord, 4);
 
                     for (int i = 0; i < ri.count && s_entity_count < MAX_ENTITIES; ++i) {
                         if ((intent[i].mask & INTENT_VISIBLE)   == 0) continue;
                         if ((intent[i].mask & INTENT_DESTROYED) != 0) continue;
+                        // CPU chunk-radius cull — only upload entities near the camera
+                        if (std::abs(chunk[i].x - cam_cx) > RENDER_DISTANCE) continue;
+                        if (std::abs(chunk[i].y - cam_cy) > RENDER_DISTANCE) continue;
 
                         std::memcpy(&s_mat_flat[s_entity_count * 16], wm[i].value.data(), 64u);
 
@@ -482,39 +524,16 @@ void Init(ecs_world_t* world) {
             }
             if (s_entity_count == 0 || !have_mesh) return;
 
-            // Upload matrix SSBO
+            // ── Step 3: upload to GPU ─────────────────────────────────────────
             {
                 void* p = nullptr;
                 ctx->MapBuffer(g_pMatrixBuffer, MAP_WRITE, MAP_FLAG_DISCARD, p);
                 if (p) { std::memcpy(p, s_mat_flat, s_entity_count * 64u); ctx->UnmapBuffer(g_pMatrixBuffer, MAP_WRITE); }
             }
-
-            // Upload AABB SSBO
             {
                 void* p = nullptr;
                 ctx->MapBuffer(g_pAABBBuffer, MAP_WRITE, MAP_FLAG_DISCARD, p);
                 if (p) { std::memcpy(p, s_aabb_flat, s_entity_count * 32u); ctx->UnmapBuffer(g_pAABBBuffer, MAP_WRITE); }
-            }
-
-            // Build VP matrix from camera, extract frustum planes, upload CullParamsCB
-            float vp[16] = {};
-            if (g_camera_query) {
-                ecs_iter_t ci = ecs_query_iter(it->world, g_camera_query);
-                while (ecs_query_next(&ci)) {
-                    const Engine::Camera::Camera* cam = ecs_field(&ci, Engine::Camera::Camera, 0);
-                    if (ci.count == 0) continue;
-                    Eigen::Map<const Eigen::Matrix4f> V(cam[0].view);
-                    Eigen::Map<const Eigen::Matrix4f> P(cam[0].proj);
-                    Eigen::Matrix4f VP = P * V;
-                    std::memcpy(vp, VP.data(), 64u);
-
-                    void* p = nullptr;
-                    ctx->MapBuffer(g_pDrawParamsCB, MAP_WRITE, MAP_FLAG_DISCARD, p);
-                    if (p) { std::memcpy(p, vp, 64u); ctx->UnmapBuffer(g_pDrawParamsCB, MAP_WRITE); }
-
-                    ecs_iter_fini(&ci);
-                    break;
-                }
             }
 
             CullParamsCPU cp = {};

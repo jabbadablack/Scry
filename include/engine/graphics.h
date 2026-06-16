@@ -5,17 +5,22 @@
 namespace Engine {
 namespace Graphics {
 
-static constexpr uint32_t MAX_MESHES   = 256u;
-static constexpr uint32_t INVALID_MESH = 0xFFFFFFFFu;
+// Describes where a mesh lives inside the global megabuffers.
+// Returned by LoadMesh; stored in MeshData ECS component.
+struct MeshAllocation {
+    uint32_t indexCount;   // number of indices for this mesh
+    uint32_t firstIndex;   // byte offset in units of indices into the global IB
+    uint32_t baseVertex;   // index into the global VB for vertex 0 of this mesh
+};
 
-ENGINE_API bool     Init(void* glfw_window_handle);
-ENGINE_API void     Shutdown();
-ENGINE_API void     BeginFrame();
-ENGINE_API void     Present();
+ENGINE_API bool Init(void* glfw_window_handle);
+ENGINE_API void Shutdown();
+ENGINE_API void BeginFrame();
+ENGINE_API void Present();
 
-ENGINE_API uint32_t LoadMesh(const char* filepath);
-ENGINE_API void     FreeMesh(uint32_t handle);
-ENGINE_API uint32_t GetIndexCount(uint32_t handle);
+// Uploads a .scrymesh into the global vertex/index megabuffers and returns
+// the allocation. Returns {0,0,0} on failure (check indexCount == 0).
+ENGINE_API MeshAllocation LoadMesh(const char* filepath);
 
 } // namespace Graphics
 } // namespace Engine

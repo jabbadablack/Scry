@@ -248,19 +248,32 @@ target_link_libraries(scry_cooker PRIVATE assimp::assimp meshoptimizer)
 # ─── Shader copy ─────────────────────────────────────────────────────────────
 # DiligentCore compiles HLSL at runtime; just copy mesh.hlsl to the output tree.
 
-set(SHADER_SRC "${CMAKE_CURRENT_SOURCE_DIR}/assets/raw/shaders/mesh.hlsl")
-set(SHADER_DST "${CMAKE_BINARY_DIR}/bin/assets/raw/shaders/mesh.hlsl")
+set(SHADER_DIR_SRC "${CMAKE_CURRENT_SOURCE_DIR}/assets/raw/shaders")
+set(SHADER_DIR_DST "${CMAKE_BINARY_DIR}/bin/assets/raw/shaders")
 
-file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bin/assets/raw/shaders")
+file(MAKE_DIRECTORY "${SHADER_DIR_DST}")
 
 add_custom_command(
-    OUTPUT  "${SHADER_DST}"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SHADER_SRC}" "${SHADER_DST}"
-    DEPENDS "${SHADER_SRC}"
+    OUTPUT  "${SHADER_DIR_DST}/mesh.hlsl"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${SHADER_DIR_SRC}/mesh.hlsl" "${SHADER_DIR_DST}/mesh.hlsl"
+    DEPENDS "${SHADER_DIR_SRC}/mesh.hlsl"
     COMMENT "Copying mesh.hlsl to output"
 )
 
-add_custom_target(copy_shaders DEPENDS "${SHADER_DST}")
+add_custom_command(
+    OUTPUT  "${SHADER_DIR_DST}/cull.hlsl"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${SHADER_DIR_SRC}/cull.hlsl" "${SHADER_DIR_DST}/cull.hlsl"
+    DEPENDS "${SHADER_DIR_SRC}/cull.hlsl"
+    COMMENT "Copying cull.hlsl to output"
+)
+
+add_custom_target(copy_shaders
+    DEPENDS
+        "${SHADER_DIR_DST}/mesh.hlsl"
+        "${SHADER_DIR_DST}/cull.hlsl"
+)
 
 # ─── cook_assets custom target ───────────────────────────────────────────────
 add_custom_target(cook_assets

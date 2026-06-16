@@ -1,10 +1,16 @@
 #pragma once
-#include <cstdint>
+#include <engine/graphics.h>
+#include <engine/math.h>
 
 namespace Engine {
 namespace Renderer {
 
-struct MeshInstance { uint32_t mesh_id; };
+struct MeshData { Engine::Graphics::MeshAllocation alloc; };
+
+struct AABB {
+    Engine::Math::ScryVec3 min;
+    Engine::Math::ScryVec3 max;
+};
 
 struct Intent { uint32_t mask; };
 

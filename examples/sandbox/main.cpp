@@ -20,7 +20,7 @@ static void AppLog(const char* msg) {
     std::fflush(stdout);
 }
 
-static uint32_t DiscoverAndLoadMesh(const char* filename) {
+static Engine::Graphics::MeshAllocation DiscoverAndLoadMesh(const char* filename) {
     std::string paths[] = {
         std::string("assets/cooked/") + filename,
         std::string("../assets/cooked/") + filename,
@@ -42,12 +42,14 @@ static uint32_t DiscoverAndLoadMesh(const char* filename) {
     }
 
     char err_msg[512];
-    std::snprintf(err_msg, sizeof(err_msg), "[Init] FATAL: Could not find asset %s in any candidate path.", filename);
+    std::snprintf(err_msg, sizeof(err_msg),
+        "[Init] FATAL: Could not find asset %s in any candidate path.", filename);
     EngineLog(err_msg);
-    std::snprintf(err_msg, sizeof(err_msg), "[Init] Current working directory: %s", fs::current_path().string().c_str());
+    std::snprintf(err_msg, sizeof(err_msg),
+        "[Init] Current working directory: %s", fs::current_path().string().c_str());
     EngineLog(err_msg);
 
-    return Engine::Graphics::INVALID_MESH;
+    return {0, 0, 0};
 }
 
 static void OnInit(Context* ctx) {
@@ -56,13 +58,13 @@ static void OnInit(Context* ctx) {
 
     ecs_world_t* world = GetWorld(ctx);
 
-    uint32_t suzanne_handle = DiscoverAndLoadMesh("suzanne.scrymesh");
-    if (suzanne_handle == Engine::Graphics::INVALID_MESH) return;
+    Engine::Graphics::MeshAllocation alloc = DiscoverAndLoadMesh("suzanne.scrymesh");
+    if (alloc.indexCount == 0) return;
 
-    // Spawn 1000 entities using SoA transform components
-    for (int i = 0; i < 5000; ++i) {
-        int row = i / 50;
-        int col = i % 50;
+    // Spawn 10000 entities in a 100×100 grid
+    for (int i = 0; i < 10000; ++i) {
+        int row = i / 100;
+        int col = i % 100;
 
         char name[32];
         std::snprintf(name, sizeof(name), "Entity_%d", i);
@@ -70,7 +72,7 @@ static void OnInit(Context* ctx) {
         e.name = name;
         ecs_entity_t ent = ecs_entity_init(world, &e);
 
-        Engine::Transform::Position pos = { {(float)(col - 5) * 3.0f, 0.0f, (float)(row - 5) * 3.0f} };
+        Engine::Transform::Position pos = { {(float)(col - 50) * 3.0f, 0.0f, (float)(row - 50) * 3.0f} };
         ecs_set_id(world, ent, Engine::Transform::id_Position, sizeof(pos), &pos);
 
         Engine::Transform::Rotation rot = { {0.0f, 0.0f, 0.0f} };
@@ -82,12 +84,16 @@ static void OnInit(Context* ctx) {
         Engine::Transform::WorldMatrix wm = { Engine::Math::ScryMat4::Identity() };
         ecs_set_id(world, ent, Engine::Transform::id_WorldMatrix, sizeof(wm), &wm);
 
-        // Mark dirty so TransformSystem computes initial matrix on first frame
         Engine::Transform::DirtyMatrixIntent dirty = { 1 };
         ecs_set_id(world, ent, Engine::Transform::id_DirtyMatrix, sizeof(dirty), &dirty);
 
-        Engine::Renderer::MeshInstance mi = { suzanne_handle };
-        ecs_set_id(world, ent, Engine::Renderer::id_MeshInstance, sizeof(mi), &mi);
+        Engine::Renderer::MeshData md = { alloc };
+        ecs_set_id(world, ent, Engine::Renderer::id_MeshData, sizeof(md), &md);
+
+        Engine::Renderer::AABB aabb;
+        aabb.min = Engine::Math::ScryVec3(-2.0f, -2.0f, -2.0f);
+        aabb.max = Engine::Math::ScryVec3( 2.0f,  2.0f,  2.0f);
+        ecs_set_id(world, ent, Engine::Renderer::id_AABB, sizeof(aabb), &aabb);
 
         Engine::Renderer::Intent intent = { Engine::Renderer::INTENT_VISIBLE };
         ecs_set_id(world, ent, Engine::Renderer::id_EntityIntent, sizeof(intent), &intent);
@@ -113,7 +119,7 @@ static void OnInit(Context* ctx) {
         ecs_set_id(world, cam_ent, Engine::Camera::id_Camera, sizeof(cam), &cam);
     }
 
-    // RotateSystem: update yaw and set dirty flag so TransformSystem recomputes
+    // RotateSystem: yaw each entity and mark transform dirty
     {
         ecs_entity_desc_t ed = {};
         ed.name = "RotateSystem";

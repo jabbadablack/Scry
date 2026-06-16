@@ -1,7 +1,6 @@
 #include <engine/graphics.h>
 #include <engine/graphics_backend.h>
 #include <engine/CookedAsset.h>
-#include <engine/renderer.h>
 
 #include "Graphics/GraphicsEngineVulkan/interface/EngineFactoryVk.h"
 #include "Platforms/Win32/interface/Win32NativeWindow.h"
@@ -41,29 +40,22 @@ static RefCntAutoPtr<IRenderDevice>  g_pDevice;
 static RefCntAutoPtr<IDeviceContext> g_pContext;
 static RefCntAutoPtr<ISwapChain>     g_pSwapChain;
 
-IRenderDevice*  GetDevice()   { return g_pDevice;   }
-IDeviceContext* GetContext()  { return g_pContext;   }
-ISwapChain*     GetSwapChain(){ return g_pSwapChain; }
+IRenderDevice*  GetDevice()    { return g_pDevice;    }
+IDeviceContext* GetContext()   { return g_pContext;    }
+ISwapChain*     GetSwapChain() { return g_pSwapChain; }
 
-// ── Mesh table ────────────────────────────────────────────────────────────────
-struct MeshBuffers {
-    RefCntAutoPtr<IBuffer> vb;           // vertex SSBO (BIND_SHADER_RESOURCE)
-    RefCntAutoPtr<IBuffer> ib;           // index buffer
-    uint32_t               index_count = 0;
-    bool                   in_use      = false;
-};
+// ── Global megabuffers ────────────────────────────────────────────────────────
+static constexpr uint32_t GLOBAL_VB_SIZE = 128u * 1024u * 1024u; // 128 MB
+static constexpr uint32_t GLOBAL_IB_SIZE =  64u * 1024u * 1024u; //  64 MB
 
-static MeshBuffers g_meshes[MAX_MESHES];
-static uint32_t    g_mesh_count = 0;
+static RefCntAutoPtr<IBuffer> g_GlobalVertexBuffer;
+static RefCntAutoPtr<IBuffer> g_GlobalIndexBuffer;
 
-IBuffer* GetVertexBuffer(uint32_t handle) {
-    if (handle < MAX_MESHES && g_meshes[handle].in_use) return g_meshes[handle].vb;
-    return nullptr;
-}
-IBuffer* GetIndexBuffer(uint32_t handle) {
-    if (handle < MAX_MESHES && g_meshes[handle].in_use) return g_meshes[handle].ib;
-    return nullptr;
-}
+static uint32_t g_VertexOffset = 0; // next free vertex slot (in vertices, not bytes)
+static uint32_t g_IndexOffset  = 0; // next free index  slot (in indices,  not bytes)
+
+IBuffer* GetGlobalVertexBuffer() { return g_GlobalVertexBuffer; }
+IBuffer* GetGlobalIndexBuffer()  { return g_GlobalIndexBuffer;  }
 
 // ── OS file mapping ───────────────────────────────────────────────────────────
 struct MappedFile {
@@ -79,7 +71,8 @@ struct MappedFile {
 
 static bool MapFileReadOnly(const char* path, MappedFile& out) {
 #ifdef _WIN32
-    out.hFile = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    out.hFile = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL,
+                            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (out.hFile == INVALID_HANDLE_VALUE) return false;
     LARGE_INTEGER li;
     if (!GetFileSizeEx(out.hFile, &li)) { CloseHandle(out.hFile); return false; }
@@ -159,6 +152,36 @@ bool Init(void* glfw_window_handle) {
     }
     g_pSwapChain.Attach(pSwapChain);
 
+    // Global vertex megabuffer — bindless SSBO for vertex pulling
+    {
+        BufferDesc bd;
+        bd.Name              = "GlobalVB";
+        bd.Usage             = USAGE_DEFAULT;
+        bd.BindFlags         = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
+        bd.Mode              = BUFFER_MODE_STRUCTURED;
+        bd.ElementByteStride = static_cast<uint32_t>(sizeof(ScryVertex)); // 32
+        bd.Size              = GLOBAL_VB_SIZE;
+        g_pDevice->CreateBuffer(bd, nullptr, &g_GlobalVertexBuffer);
+        if (!g_GlobalVertexBuffer) {
+            EngineLog("[Graphics] FATAL: global vertex buffer creation failed");
+            return false;
+        }
+    }
+
+    // Global index buffer
+    {
+        BufferDesc bd;
+        bd.Name      = "GlobalIB";
+        bd.Usage     = USAGE_DEFAULT;
+        bd.BindFlags = BIND_INDEX_BUFFER;
+        bd.Size      = GLOBAL_IB_SIZE;
+        g_pDevice->CreateBuffer(bd, nullptr, &g_GlobalIndexBuffer);
+        if (!g_GlobalIndexBuffer) {
+            EngineLog("[Graphics] FATAL: global index buffer creation failed");
+            return false;
+        }
+    }
+
     {
         char buf[128];
         std::snprintf(buf, sizeof(buf), "[Graphics] DiligentCore Vulkan initialized (%dx%d)", w, h);
@@ -169,9 +192,8 @@ bool Init(void* glfw_window_handle) {
 
 void Shutdown() {
     EngineLog("[Graphics] Shutting down DiligentCore...");
-    for (uint32_t i = 0; i < MAX_MESHES; ++i) {
-        if (g_meshes[i].in_use) FreeMesh(i);
-    }
+    g_GlobalVertexBuffer.Release();
+    g_GlobalIndexBuffer.Release();
     g_pSwapChain.Release();
     g_pContext.Release();
     g_pDevice.Release();
@@ -182,95 +204,123 @@ void BeginFrame() {
     ITextureView* pRTV = g_pSwapChain->GetCurrentBackBufferRTV();
     ITextureView* pDSV = g_pSwapChain->GetDepthBufferDSV();
     g_pContext->SetRenderTargets(1, &pRTV, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-    const float clear[4] = { 0.1875f, 0.1875f, 0.1875f, 1.0f };  // 0x303030FF
+    const float clear[4] = { 0.1875f, 0.1875f, 0.1875f, 1.0f };
     g_pContext->ClearRenderTarget(pRTV, clear, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
     g_pContext->ClearDepthStencil(pDSV, CLEAR_DEPTH_FLAG, 1.0f, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 }
 
 void Present() {
-    g_pSwapChain->Present(1);  // SyncInterval=1: VSync on
+    g_pSwapChain->Present(1);
 }
 
-// ── Mesh loading ──────────────────────────────────────────────────────────────
+// ── Mesh loading — uploads into global megabuffers via staging ────────────────
 
-uint32_t LoadMesh(const char* filepath) {
-    assert(filepath && g_mesh_count < MAX_MESHES);
-    if (!filepath || g_mesh_count >= MAX_MESHES) return INVALID_MESH;
+MeshAllocation LoadMesh(const char* filepath) {
+    assert(filepath);
+    const MeshAllocation kFailed = {0, 0, 0};
+    if (!filepath) return kFailed;
 
     MappedFile mf = {};
     if (!MapFileReadOnly(filepath, mf)) {
         char err[256];
         std::snprintf(err, sizeof(err), "[Graphics] LoadMesh: not found: %s", filepath);
         EngineLog(err);
-        return INVALID_MESH;
+        return kFailed;
     }
 
     const auto* hdr = static_cast<const ScryMeshHeader*>(mf.data);
-    if (mf.size < sizeof(ScryMeshHeader) || hdr->magic != SCRY_MESH_MAGIC || hdr->version != SCRY_MESH_VERSION) {
+    if (mf.size < sizeof(ScryMeshHeader) ||
+        hdr->magic   != SCRY_MESH_MAGIC  ||
+        hdr->version != SCRY_MESH_VERSION) {
         EngineLog("[Graphics] LoadMesh: invalid .scrymesh");
         UnmapFile(mf);
-        return INVALID_MESH;
+        return kFailed;
     }
 
-    const auto* verts   = reinterpret_cast<const ScryVertex*>(hdr + 1);
-    const auto* indices = reinterpret_cast<const uint32_t*>(verts + hdr->vertex_count);
-    const uint32_t slot = g_mesh_count++;
+    const auto*    verts    = reinterpret_cast<const ScryVertex*>(hdr + 1);
+    const auto*    indices  = reinterpret_cast<const uint32_t*>(verts + hdr->vertex_count);
+    const uint32_t vb_bytes = hdr->vertex_count * static_cast<uint32_t>(sizeof(ScryVertex));
+    const uint32_t ib_bytes = hdr->index_count  * static_cast<uint32_t>(sizeof(uint32_t));
 
-    // Vertex buffer — BIND_SHADER_RESOURCE for SSBO vertex pulling
+    if (g_VertexOffset * sizeof(ScryVertex) + vb_bytes > GLOBAL_VB_SIZE ||
+        g_IndexOffset  * sizeof(uint32_t)   + ib_bytes > GLOBAL_IB_SIZE) {
+        EngineLog("[Graphics] LoadMesh: megabuffer full");
+        UnmapFile(mf);
+        return kFailed;
+    }
+
+    // ── Upload vertices via staging buffer ────────────────────────────────────
     {
+        RefCntAutoPtr<IBuffer> pStaging;
         BufferDesc bd;
-        bd.Name              = "MeshVB";
-        bd.Usage             = USAGE_IMMUTABLE;
-        bd.BindFlags         = BIND_SHADER_RESOURCE;
-        bd.Mode              = BUFFER_MODE_STRUCTURED;
-        bd.ElementByteStride = static_cast<uint32_t>(sizeof(ScryVertex)); // 32
-        bd.Size              = hdr->vertex_count * sizeof(ScryVertex);
+        bd.Name           = "StagingVB";
+        bd.Usage          = USAGE_STAGING;
+        bd.BindFlags      = BIND_NONE;
+        bd.CPUAccessFlags = CPU_ACCESS_WRITE;
+        bd.Size           = vb_bytes;
+        g_pDevice->CreateBuffer(bd, nullptr, &pStaging);
+        assert(pStaging);
 
-        BufferData data;
-        data.pData    = verts;
-        data.DataSize = bd.Size;
-        g_pDevice->CreateBuffer(bd, &data, &g_meshes[slot].vb);
+        void* pMapped = nullptr;
+        g_pContext->MapBuffer(pStaging, MAP_WRITE, MAP_FLAG_DO_NOT_WAIT, pMapped);
+        assert(pMapped);
+        std::memcpy(pMapped, verts, vb_bytes);
+        g_pContext->UnmapBuffer(pStaging, MAP_WRITE);
+
+        g_pContext->CopyBuffer(
+            pStaging, 0,
+            RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+            g_GlobalVertexBuffer,
+            g_VertexOffset * static_cast<uint32_t>(sizeof(ScryVertex)),
+            vb_bytes,
+            RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
     }
 
-    // Index buffer
+    // ── Upload indices via staging buffer ─────────────────────────────────────
     {
+        RefCntAutoPtr<IBuffer> pStaging;
         BufferDesc bd;
-        bd.Name      = "MeshIB";
-        bd.Usage     = USAGE_IMMUTABLE;
-        bd.BindFlags = BIND_INDEX_BUFFER;
-        bd.Size      = hdr->index_count * sizeof(uint32_t);
+        bd.Name           = "StagingIB";
+        bd.Usage          = USAGE_STAGING;
+        bd.BindFlags      = BIND_NONE;
+        bd.CPUAccessFlags = CPU_ACCESS_WRITE;
+        bd.Size           = ib_bytes;
+        g_pDevice->CreateBuffer(bd, nullptr, &pStaging);
+        assert(pStaging);
 
-        BufferData data;
-        data.pData    = indices;
-        data.DataSize = bd.Size;
-        g_pDevice->CreateBuffer(bd, &data, &g_meshes[slot].ib);
+        void* pMapped = nullptr;
+        g_pContext->MapBuffer(pStaging, MAP_WRITE, MAP_FLAG_DO_NOT_WAIT, pMapped);
+        assert(pMapped);
+        std::memcpy(pMapped, indices, ib_bytes);
+        g_pContext->UnmapBuffer(pStaging, MAP_WRITE);
+
+        g_pContext->CopyBuffer(
+            pStaging, 0,
+            RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+            g_GlobalIndexBuffer,
+            g_IndexOffset * static_cast<uint32_t>(sizeof(uint32_t)),
+            ib_bytes,
+            RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
     }
 
-    assert(g_meshes[slot].vb && g_meshes[slot].ib);
-    g_meshes[slot].index_count = hdr->index_count;
-    g_meshes[slot].in_use      = true;
+    MeshAllocation alloc;
+    alloc.indexCount  = hdr->index_count;
+    alloc.firstIndex  = g_IndexOffset;
+    alloc.baseVertex  = g_VertexOffset;
+
+    g_VertexOffset += hdr->vertex_count;
+    g_IndexOffset  += hdr->index_count;
 
     {
-        char buf[128];
-        std::snprintf(buf, sizeof(buf), "[Graphics] Mesh: %s (v=%u i=%u slot=%u)",
-            filepath, hdr->vertex_count, hdr->index_count, slot);
+        char buf[256];
+        std::snprintf(buf, sizeof(buf),
+            "[Graphics] Mesh loaded: %s (v=%u i=%u baseVertex=%u firstIndex=%u)",
+            filepath, hdr->vertex_count, hdr->index_count,
+            alloc.baseVertex, alloc.firstIndex);
         EngineLog(buf);
     }
     UnmapFile(mf);
-    return slot;
-}
-
-void FreeMesh(uint32_t handle) {
-    if (handle >= MAX_MESHES || !g_meshes[handle].in_use) return;
-    g_meshes[handle].vb.Release();
-    g_meshes[handle].ib.Release();
-    g_meshes[handle].index_count = 0;
-    g_meshes[handle].in_use      = false;
-}
-
-uint32_t GetIndexCount(uint32_t handle) {
-    if (handle < MAX_MESHES && g_meshes[handle].in_use) return g_meshes[handle].index_count;
-    return 0;
+    return alloc;
 }
 
 } // namespace Graphics

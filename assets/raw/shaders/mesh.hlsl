@@ -6,8 +6,9 @@
 struct ScryVertex { float4 v0; float4 v1; };
 struct ScryMat4   { float4 c0; float4 c1; float4 c2; float4 c3; };
 
-StructuredBuffer<ScryVertex> b_vertices  : register(t0);
-StructuredBuffer<ScryMat4>   b_instances : register(t1);
+StructuredBuffer<ScryVertex> b_vertices        : register(t0);
+StructuredBuffer<ScryMat4>   b_instances       : register(t1);
+StructuredBuffer<uint>        b_visibleInstances: register(t2);
 
 // viewProj stored as four column vectors — avoids row/column-major ambiguity
 cbuffer DrawParams : register(b0)
@@ -31,7 +32,8 @@ PSInput VSMain(uint vID : SV_VertexID, uint iID : SV_InstanceID)
     float3 position = vert.v0.xyz;
     float3 normal   = float3(vert.v0.w, vert.v1.x, vert.v1.y);
 
-    ScryMat4 m = b_instances[iID];
+    uint realID = b_visibleInstances[iID];
+    ScryMat4 m = b_instances[realID];
 
     // Column-major world transform
     float4 worldPos = m.c0 * position.x + m.c1 * position.y + m.c2 * position.z + m.c3;

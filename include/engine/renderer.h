@@ -6,7 +6,8 @@
 namespace Engine {
 namespace Renderer {
 
-ENGINE_API extern ecs_entity_t id_MeshInstance;
+ENGINE_API extern ecs_entity_t id_MeshData;
+ENGINE_API extern ecs_entity_t id_AABB;
 ENGINE_API extern ecs_entity_t id_EntityIntent;
 ENGINE_API extern ecs_entity_t id_Material;
 

@@ -629,7 +629,8 @@ void Init(ecs_world_t* world) {
         ecs_add_pair(world, sys_ent, EcsDependsOn, Engine::Pipeline::Phase_React);
 
         ecs_system_desc_t s = {};
-        s.entity   = sys_ent;
+        s.entity          = sys_ent;
+        s.multi_threaded  = false; // IDeviceContext is not thread-safe; must run on main thread
         /**
          * @brief Culling system callback that prepares GPU data and dispatches the compute culler.
          * 
@@ -795,7 +796,8 @@ void Init(ecs_world_t* world) {
         ecs_add_pair(world, sys_ent, EcsDependsOn, Engine::Pipeline::Phase_React);
 
         ecs_system_desc_t s = {};
-        s.entity   = sys_ent;
+        s.entity          = sys_ent;
+        s.multi_threaded  = false; // IDeviceContext is not thread-safe; must run on main thread
         /**
          * @brief Opaque rendering pass callback that submits multi-draw indirect commands.
          * 

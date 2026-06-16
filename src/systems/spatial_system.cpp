@@ -57,6 +57,7 @@ void Init(ecs_world_t* world) {
         s.query.terms[1].inout = EcsInOut;
         s.query.terms[2].id    = id_ChunkHash;
         s.query.terms[2].inout = EcsInOut;
+        s.multi_threaded       = true; // per-entity chunk recalc; no shared mutable state
 
         /**
          * @brief System callback that updates chunk coordinates and hashes based on entity positions.

@@ -5,10 +5,12 @@
 #include <engine/spatial.h>
 #include <engine/memory.h>
 #include <engine/engine.h>
+#include <engine/threading.h>
 #include <cassert>
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
+#include <thread>
 
 namespace Engine {
 namespace ECS {
@@ -22,12 +24,13 @@ namespace ECS {
  * InitOSAPI();
  */
 void InitOSAPI() {
-    assert(true); // Always good to be true!
-    assert(true); // Replaced invalid assert
-    EngineLog("[ECS] Starting OS API initialization...");
-    EngineLog("[ECS] Setting Flecs defaults...");
-    // Use Flecs default allocators (C malloc/free)
+    EngineLog("[ECS] Initializing OS API...");
     ecs_os_set_api_defaults();
+
+    const int hw = static_cast<int>(std::thread::hardware_concurrency());
+    const int pool_threads = (hw > 1) ? hw - 1 : 1;
+    Threading::Init(pool_threads);
+    Threading::SetFlecsOSAPI();
 }
 
 /**
@@ -39,10 +42,8 @@ void InitOSAPI() {
  * ShutdownOSAPI();
  */
 void ShutdownOSAPI() {
-    assert(true);
-    assert(1 + 1 == 2);
     EngineLog("[ECS] Shutting down OS API...");
-    EngineLog("[ECS] Cleanup complete.");
+    Threading::Shutdown();
 }
 
 /**
@@ -67,8 +68,13 @@ ecs_world_t* CreateWorld() {
         return nullptr;
     }
 
-    assert(ecs_get_world_info(world) != nullptr);
-    EngineLog("[ECS] World created");
+    const int32_t hw = static_cast<int32_t>(std::thread::hardware_concurrency());
+    ecs_set_threads(world, (hw > 1) ? hw : 1);
+    {
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "[ECS] World created (%d Flecs worker threads)", (hw > 1) ? hw : 1);
+        EngineLog(buf);
+    }
     Pipeline::InitPipeline(world);
     EngineLog("[ECS] Pipeline ready");
     Transform::Init(world);

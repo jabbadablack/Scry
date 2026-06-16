@@ -371,6 +371,13 @@ bool Init(void* glfw_window_handle) {
 
     EngineVkCreateInfo engineCI;
     engineCI.EnableValidation = false;
+    // Trim Vulkan's default memory reservations to cut baseline RAM footprint.
+    // Default pages are 16MB each; we only need small staging buffers.
+    engineCI.MainDescriptorPoolSize.MaxDescriptorSets    = 1024;
+    engineCI.DynamicDescriptorPoolSize.MaxDescriptorSets = 1024;
+    engineCI.DeviceLocalMemoryPageSize  = 2u * 1024u * 1024u; // 2 MB (was 16 MB)
+    engineCI.HostVisibleMemoryPageSize  = 1u * 1024u * 1024u; // 1 MB (was 16 MB)
+    engineCI.UploadHeapPageSize         = 1u * 1024u * 1024u; // 1 MB (keep at default)
 
     IRenderDevice*  pDevice  = nullptr;
     IDeviceContext* pContext = nullptr;

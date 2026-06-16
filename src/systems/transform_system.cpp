@@ -67,6 +67,7 @@ void Init(ecs_world_t* world) {
         s.query.terms[3].inout = EcsInOut;
         s.query.terms[4].id    = id_DirtyMatrix;
         s.query.terms[4].inout = EcsInOut;
+        s.multi_threaded       = true; // each entity is independent; Flecs slices chunks across workers
 
         /**
          * @brief System callback that recomputes world matrices for entities with dirty transform components.

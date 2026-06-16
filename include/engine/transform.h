@@ -1,6 +1,6 @@
 #pragma once
 #include <engine/engine.h>
-#include <engine/components/transform.h>
+#include <components/transform.h>
 #include <flecs.h>
 
 namespace Engine {

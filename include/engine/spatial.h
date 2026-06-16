@@ -1,6 +1,6 @@
 #pragma once
 #include <engine/engine.h>
-#include <engine/components/spatial.h>
+#include <components/spatial.h>
 #include <flecs.h>
 
 namespace Engine {

@@ -1,6 +1,6 @@
 #pragma once
 #include <engine/engine.h>
-#include <engine/components/camera.h>
+#include <components/camera.h>
 #include <flecs.h>
 
 namespace Engine {

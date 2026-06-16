@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <exception>
 #include <filesystem>
+#include <cglm/cglm.h>
 
 namespace fs = std::filesystem;
 
@@ -42,14 +43,6 @@ static Engine::Graphics::LODGroup DiscoverAndLoadMesh(const char* filename) {
         }
     }
 
-    char err_msg[512];
-    std::snprintf(err_msg, sizeof(err_msg),
-        "[Init] FATAL: Could not find asset %s in any candidate path.", filename);
-    EngineLog(err_msg);
-    std::snprintf(err_msg, sizeof(err_msg),
-        "[Init] Current working directory: %s", fs::current_path().string().c_str());
-    EngineLog(err_msg);
-
     Engine::Graphics::LODGroup failed = {};
     failed.group_id = UINT32_MAX;
     return failed;
@@ -64,7 +57,6 @@ static void OnInit(Context* ctx) {
     Engine::Graphics::LODGroup lodGroup = DiscoverAndLoadMesh("suzanne.scrymesh");
     if (lodGroup.group_id == UINT32_MAX) return;
 
-    // Spawn 10000 entities in a 100×100 grid
     for (int i = 0; i < 5000; ++i) {
         int row = i / 50;
         int col = i % 50;
@@ -84,7 +76,8 @@ static void OnInit(Context* ctx) {
         Engine::Transform::Scale scl = { {1.0f, 1.0f, 1.0f} };
         ecs_set_id(world, ent, Engine::Transform::id_Scale, sizeof(scl), &scl);
 
-        Engine::Transform::WorldMatrix wm = { Engine::Math::ScryMat4::Identity() };
+        Engine::Transform::WorldMatrix wm;
+        glm_mat4_identity(wm.value);
         ecs_set_id(world, ent, Engine::Transform::id_WorldMatrix, sizeof(wm), &wm);
 
         Engine::Transform::DirtyMatrixIntent dirty = { 1 };
@@ -94,8 +87,8 @@ static void OnInit(Context* ctx) {
         ecs_set_id(world, ent, Engine::Renderer::id_MeshData, sizeof(md), &md);
 
         Engine::Renderer::AABB aabb;
-        aabb.min = Engine::Math::ScryVec3(-2.0f, -2.0f, -2.0f);
-        aabb.max = Engine::Math::ScryVec3( 2.0f,  2.0f,  2.0f);
+        glm_vec3_copy((vec3){-2.0f, -2.0f, -2.0f}, aabb.min);
+        glm_vec3_copy((vec3){ 2.0f,  2.0f,  2.0f}, aabb.max);
         ecs_set_id(world, ent, Engine::Renderer::id_AABB, sizeof(aabb), &aabb);
 
         Engine::Renderer::Intent intent = { Engine::Renderer::INTENT_VISIBLE };
@@ -104,7 +97,6 @@ static void OnInit(Context* ctx) {
         Engine::Renderer::Material mat = { 0, {1.0f, 1.0f, 1.0f, 1.0f} };
         ecs_set_id(world, ent, Engine::Renderer::id_Material, sizeof(mat), &mat);
 
-        // Default chunk (0,0) — SpatialSystem corrects these on frame 1
         Engine::Spatial::ChunkCoord coord = {0, 0};
         ecs_set_id(world, ent, Engine::Spatial::id_ChunkCoord, sizeof(coord), &coord);
 
@@ -112,24 +104,23 @@ static void OnInit(Context* ctx) {
         ecs_set_id(world, ent, Engine::Spatial::id_ChunkHash, sizeof(chash), &chash);
     }
 
-    // Create camera
     {
         ecs_entity_desc_t ed = {};
         ed.name = "MainCamera";
         ecs_entity_t cam_ent = ecs_entity_init(world, &ed);
 
         Engine::Camera::Camera cam = {};
-        cam.position  = {0, 5, -15};
+        glm_vec3_copy((vec3){0, 5, -15}, cam.position);
         cam.pitch     = 0.2f;
         cam.yaw       = 0.0f;
-        for (int i = 0; i < 16; ++i) cam.view[i] = cam.proj[i] = 0.0f;
-        cam.view[0] = cam.view[5] = cam.view[10] = cam.view[15] = 1.0f;
-        cam.proj[0] = cam.proj[5] = cam.proj[10] = cam.proj[15] = 1.0f;
+        
+        mat4 identity = GLM_MAT4_IDENTITY_INIT;
+        glm_mat4_copy(identity, (vec4*)cam.view);
+        glm_mat4_copy(identity, (vec4*)cam.proj);
 
         ecs_set_id(world, cam_ent, Engine::Camera::id_Camera, sizeof(cam), &cam);
     }
 
-    // RotateSystem: yaw each entity and mark transform dirty
     {
         ecs_entity_desc_t ed = {};
         ed.name = "RotateSystem";
@@ -144,10 +135,10 @@ static void OnInit(Context* ctx) {
         s.query.terms[1].inout = EcsInOut;
 
         s.callback = [](ecs_iter_t* it) {
-            Engine::Transform::Rotation*          rot   = ecs_field(it, Engine::Transform::Rotation,          0);
-            Engine::Transform::DirtyMatrixIntent* dirty = ecs_field(it, Engine::Transform::DirtyMatrixIntent, 1);
+            Engine::Transform::Rotation*          rot   = (Engine::Transform::Rotation*)ecs_field(it, Engine::Transform::Rotation,          0);
+            Engine::Transform::DirtyMatrixIntent* dirty = (Engine::Transform::DirtyMatrixIntent*)ecs_field(it, Engine::Transform::DirtyMatrixIntent, 1);
             for (int i = 0; i < it->count; ++i) {
-                rot[i].value.y() += it->delta_time;
+                rot[i].value[1] += it->delta_time;
                 dirty[i].active   = 1;
             }
         };
@@ -178,16 +169,8 @@ int main(int argc, char* argv[]) {
 
     try {
         const EngineError err = EngineRun(&config);
-        if (err != SUCCESS) {
-            std::fprintf(stderr, "[Main] Engine failed to start with error code: %d\n", (int)err);
-            std::printf("Press ENTER to exit...");
-            std::getchar();
-            return 1;
-        }
+        if (err != SUCCESS) return 1;
     } catch (const std::exception& ex) {
-        std::fprintf(stderr, "[Main] Fatal exception: %s\n", ex.what());
-        std::printf("Press ENTER to exit...");
-        std::getchar();
         return 1;
     }
 

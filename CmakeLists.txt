@@ -93,8 +93,8 @@ FetchContent_Declare(Catch2
     GIT_TAG        v3.4.0
 )
 
-FetchContent_Declare(eigen
-    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+FetchContent_Declare(cglm
+    GIT_REPOSITORY https://github.com/recp/cglm.git
     GIT_TAG        master
 )
 
@@ -135,12 +135,12 @@ if(MINGW)
     endif()
 endif()
 
-FetchContent_MakeAvailable(glfw assimp stb meshoptimizer flecs yyjson Catch2 eigen)
+FetchContent_MakeAvailable(glfw assimp stb meshoptimizer flecs yyjson Catch2 cglm)
 
 if(MSVC)
     set(SCRY_WARNING_FLAGS /W4 /WX)
 else()
-    set(SCRY_WARNING_FLAGS -Wall -Wextra -Wpedantic -Wno-tautological-compare -Wno-deprecated-enum-enum-conversion -Wno-deprecated-copy -Wno-deprecated-declarations -Wno-template-body -Wno-attributes)
+    set(SCRY_WARNING_FLAGS -Wall -Wextra -Wpedantic -Wno-tautological-compare -Wno-deprecated-enum-enum-conversion -Wno-deprecated-copy -Wno-deprecated-declarations -Wno-template-body -Wno-attributes -Wno-gnu-anonymous-struct -Wno-nested-anon-types)
 endif()
 
 include(cmake/EngineHelpers.cmake)
@@ -159,12 +159,10 @@ else()
     target_compile_options(scry PRIVATE -O3 -ffast-math -mavx2)
 endif()
 
-target_compile_definitions(scry PUBLIC EIGEN_NO_DEBUG EIGEN_MPL2_ONLY)
-
 target_include_directories(scry PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
-    "${eigen_SOURCE_DIR}"
+    "${cglm_SOURCE_DIR}/include"
 )
 
 # DiligentCore root — SYSTEM suppresses -Wpedantic warnings from their headers
@@ -185,6 +183,7 @@ target_link_libraries(scry
         flecs
         glfw
         yyjson
+        cglm
     PRIVATE
         Diligent-GraphicsEngineVk-static
 )

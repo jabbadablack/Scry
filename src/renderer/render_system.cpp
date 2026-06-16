@@ -12,7 +12,8 @@
 #include "Graphics/GraphicsEngine/interface/Shader.h"
 #include "Graphics/GraphicsEngine/interface/GraphicsTypes.h"
 
-#include <Eigen/Core>
+#include <cglm/cglm.h>
+#include <cglm/struct.h>
 #include <cassert>
 #include <cstring>
 #include <cstdlib>
@@ -26,41 +27,33 @@ namespace fs = std::filesystem;
 namespace Engine {
 namespace Renderer {
 
-// ── ECS component IDs ────────────────────────────────────────────────────────
 ecs_entity_t id_MeshData     = 0;
 ecs_entity_t id_AABB         = 0;
 ecs_entity_t id_EntityIntent = 0;
 ecs_entity_t id_Material     = 0;
 
-// ── Capacity ─────────────────────────────────────────────────────────────────
 static constexpr uint32_t MAX_ENTITIES    = 16384u;
 static constexpr uint32_t MAX_LOD_GROUPS  = 256u;
 static constexpr uint32_t LOD_LEVELS      = 3u;
 
-// ── Graphics PSO / SRB ───────────────────────────────────────────────────────
 static RefCntAutoPtr<IPipelineState>         g_pPSO;
 static RefCntAutoPtr<IShaderResourceBinding> g_pSRB;
 static RefCntAutoPtr<IBuffer>                g_pDrawParamsCB;
 
-// ── Compute PSO / SRB ────────────────────────────────────────────────────────
 static RefCntAutoPtr<IPipelineState>         g_pCullPSO;
 static RefCntAutoPtr<IShaderResourceBinding> g_pCullSRB;
 
-// ── Per-frame raw input buffers (CPU→GPU each frame) ─────────────────────────
-static RefCntAutoPtr<IBuffer> g_RawMatrixSSBO;     // DYNAMIC SRV, raw world matrices
-static RefCntAutoPtr<IBuffer> g_pAABBBuffer;       // DYNAMIC SRV, per-entity AABB
-static RefCntAutoPtr<IBuffer> g_EntityMeshIdBuffer;// DYNAMIC SRV, per-entity lod_group_id
-static RefCntAutoPtr<IBuffer> g_pCullParamsCB;     // DYNAMIC cbuffer, frustum + camera
+static RefCntAutoPtr<IBuffer> g_RawMatrixSSBO;
+static RefCntAutoPtr<IBuffer> g_pAABBBuffer;
+static RefCntAutoPtr<IBuffer> g_EntityMeshIdBuffer;
+static RefCntAutoPtr<IBuffer> g_pCullParamsCB;
 
-// ── MDI + dense output buffers (DEFAULT, GPU writes / GPU reads) ──────────────
-static RefCntAutoPtr<IBuffer> g_IndirectArgsBuffer; // MAX_LOD_GROUPS*3 IndirectCommands
-static RefCntAutoPtr<IBuffer> g_VisibleMatrixSSBO;  // dense ScryMat4 output, MAX_LOD_GROUPS*3*MAX_ENTITIES
+static RefCntAutoPtr<IBuffer> g_IndirectArgsBuffer;
+static RefCntAutoPtr<IBuffer> g_VisibleMatrixSSBO;
 
-// ── ECS queries ──────────────────────────────────────────────────────────────
 static ecs_query_t* g_render_query = nullptr;
 static ecs_query_t* g_camera_query = nullptr;
 
-// ── Per-frame scratch ────────────────────────────────────────────────────────
 struct alignas(16) ShaderAABB {
     float aabb_min[3]; float pad0;
     float aabb_max[3]; float pad1;
@@ -86,20 +79,18 @@ struct CullParamsCPU {
     uint32_t _pad[3];
 };
 
-static bool g_logged_first = false;
-
 static char* LoadShaderSource(const char* path, uint32_t* out_len) {
     FILE* f = std::fopen(path, "rb");
     if (!f) return nullptr;
     std::fseek(f, 0, SEEK_END);
     long sz = std::ftell(f);
     std::fseek(f, 0, SEEK_SET);
-    char* buf = static_cast<char*>(std::malloc(static_cast<size_t>(sz) + 1));
+    char* buf = (char*)std::malloc((size_t)sz + 1);
     if (!buf) { std::fclose(f); return nullptr; }
-    std::fread(buf, 1, static_cast<size_t>(sz), f);
+    std::fread(buf, 1, (size_t)sz, f);
     buf[sz] = '\0';
     std::fclose(f);
-    if (out_len) *out_len = static_cast<uint32_t>(sz);
+    if (out_len) *out_len = (uint32_t)sz;
     return buf;
 }
 
@@ -122,36 +113,35 @@ static char* DiscoverShader(const char* filename, uint32_t* out_len) {
 }
 
 static void ExtractFrustumPlanes(const float* vp, float planes[6][4]) {
-    auto row = [&](int r, float* out) {
-        out[0] = vp[0 * 4 + r];
-        out[1] = vp[1 * 4 + r];
-        out[2] = vp[2 * 4 + r];
-        out[3] = vp[3 * 4 + r];
-    };
-    float r0[4], r1[4], r2[4], r3[4];
-    row(0, r0); row(1, r1); row(2, r2); row(3, r3);
+    // cglm matrix is float[4][4] column-major.
+    // Transpose to Row-Contiguous format to use standard Gribb-Hartmann.
+    mat4 vpt;
+    glm_mat4_transpose_to((float (*)[4])vp, vpt);
 
-    auto combine = [](const float* a, const float* b, float s, float* out) {
-        out[0] = a[0] + s * b[0];
-        out[1] = a[1] + s * b[1];
-        out[2] = a[2] + s * b[2];
-        out[3] = a[3] + s * b[3];
-    };
-    combine(r3, r0,  1.f, planes[0]);
-    combine(r3, r0, -1.f, planes[1]);
-    combine(r3, r1,  1.f, planes[2]);
-    combine(r3, r1, -1.f, planes[3]);
-    combine(r3, r2,  1.f, planes[4]);
-    combine(r3, r2, -1.f, planes[5]);
+    // Left:   row3 + row0
+    glm_vec4_add(vpt[3], vpt[0], planes[0]);
+    // Right:  row3 - row0
+    glm_vec4_sub(vpt[3], vpt[0], planes[1]);
+    // Bottom: row3 + row1
+    glm_vec4_add(vpt[3], vpt[1], planes[2]);
+    // Top:    row3 - row1
+    glm_vec4_sub(vpt[3], vpt[1], planes[3]);
+    // Near:   row2 (for 0 to 1 depth, Vulkan style)
+    glm_vec4_copy(vpt[2], planes[4]);
+    // Far:    row3 - row2 (for 0 to 1 depth, Vulkan style)
+    glm_vec4_sub(vpt[3], vpt[2], planes[5]);
 
-    for (int p = 0; p < 6; ++p) {
-        float len = std::sqrtf(planes[p][0]*planes[p][0] +
-                               planes[p][1]*planes[p][1] +
-                               planes[p][2]*planes[p][2]);
+    // Plane normalization: divide by length of normal (A, B, C)
+    for (int i = 0; i < 6; ++i) {
+        float len = std::sqrt(planes[i][0] * planes[i][0] + 
+                              planes[i][1] * planes[i][1] + 
+                              planes[i][2] * planes[i][2]);
         if (len > 1e-6f) {
-            float inv = 1.0f / len;
-            planes[p][0] *= inv; planes[p][1] *= inv;
-            planes[p][2] *= inv; planes[p][3] *= inv;
+            float invLen = 1.0f / len;
+            planes[i][0] *= invLen;
+            planes[i][1] *= invLen;
+            planes[i][2] *= invLen;
+            planes[i][3] *= invLen;
         }
     }
 }
@@ -189,6 +179,7 @@ static bool CreateGraphicsPSO() {
     psoCI.PSODesc.PipelineType                = PIPELINE_TYPE_GRAPHICS;
     psoCI.PSODesc.ResourceLayout.Variables    = vars;
     psoCI.PSODesc.ResourceLayout.NumVariables = 3u;
+    psoCI.GraphicsPipeline.InputLayout.NumElements       = 0;
     psoCI.GraphicsPipeline.NumRenderTargets              = 1;
     psoCI.GraphicsPipeline.RTVFormats[0]                 = scd.ColorBufferFormat;
     psoCI.GraphicsPipeline.DSVFormat                     = scd.DepthBufferFormat;
@@ -197,7 +188,7 @@ static bool CreateGraphicsPSO() {
     psoCI.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = True;
     psoCI.GraphicsPipeline.DepthStencilDesc.DepthFunc        = COMPARISON_FUNC_LESS;
     psoCI.GraphicsPipeline.RasterizerDesc.CullMode              = CULL_MODE_BACK;
-    psoCI.GraphicsPipeline.RasterizerDesc.FrontCounterClockwise = True;
+    psoCI.GraphicsPipeline.RasterizerDesc.FrontCounterClockwise = False;
     psoCI.pVS = pVS;
     psoCI.pPS = pPS;
 
@@ -248,15 +239,14 @@ static bool CreateComputePSO() {
 }
 
 static int compare_chunk_hashes(ecs_entity_t, const void* a, ecs_entity_t, const void* b) {
-    const uint64_t ha = static_cast<const Engine::Spatial::ChunkHash*>(a)->hash;
-    const uint64_t hb = static_cast<const Engine::Spatial::ChunkHash*>(b)->hash;
+    const uint64_t ha = ((const Engine::Spatial::ChunkHash*)a)->hash;
+    const uint64_t hb = ((const Engine::Spatial::ChunkHash*)b)->hash;
     return (ha > hb) - (ha < hb);
 }
 
 void Init(ecs_world_t* world) {
     IRenderDevice* dev = Graphics::GetDevice();
 
-    // Buffers setup
     {
         BufferDesc bd;
         bd.Name              = "RawMatrixSSBO";
@@ -408,21 +398,18 @@ void Init(ecs_world_t* world) {
 
             int32_t cam_cx = 0, cam_cy = 0;
             float   cam_pos[3] = {};
-            float   vp[16] = {};
+            mat4    vp = GLM_MAT4_IDENTITY_INIT;
             if (g_camera_query) {
                 ecs_iter_t ci = ecs_query_iter(it->world, g_camera_query);
                 while (ecs_query_next(&ci)) {
-                    const Engine::Camera::Camera* cam = ecs_field(&ci, Engine::Camera::Camera, 0);
+                    const Engine::Camera::Camera* cam = (const Engine::Camera::Camera*)ecs_field(&ci, Engine::Camera::Camera, 0);
                     if (ci.count == 0) continue;
-                    cam_cx    = static_cast<int32_t>(std::floor(cam[0].position.x() / Engine::Spatial::CHUNK_SIZE));
-                    cam_cy    = static_cast<int32_t>(std::floor(cam[0].position.z() / Engine::Spatial::CHUNK_SIZE));
-                    cam_pos[0] = cam[0].position.x();
-                    cam_pos[1] = cam[0].position.y();
-                    cam_pos[2] = cam[0].position.z();
-                    Eigen::Map<const Eigen::Matrix4f> V(cam[0].view);
-                    Eigen::Map<const Eigen::Matrix4f> P(cam[0].proj);
-                    Eigen::Matrix4f VP_mat = P * V;
-                    std::memcpy(vp, VP_mat.data(), 64u);
+                    cam_cx    = (int32_t)floorf(cam[0].position[0] / Engine::Spatial::CHUNK_SIZE);
+                    cam_cy    = (int32_t)floorf(cam[0].position[2] / Engine::Spatial::CHUNK_SIZE);
+                    glm_vec3_copy((float*)cam[0].position, cam_pos);
+                    
+                    glm_mat4_mul((float (*)[4])cam[0].proj, (float (*)[4])cam[0].view, vp);
+
                     void* p = nullptr;
                     ctx->MapBuffer(g_pDrawParamsCB, MAP_WRITE, MAP_FLAG_DISCARD, p);
                     if (p) { std::memcpy(p, vp, 64u); ctx->UnmapBuffer(g_pDrawParamsCB, MAP_WRITE); }
@@ -437,11 +424,11 @@ void Init(ecs_world_t* world) {
             if (g_render_query) {
                 ecs_iter_t ri = ecs_query_iter(it->world, g_render_query);
                 while (ecs_query_next(&ri)) {
-                    const Engine::Transform::WorldMatrix*      wm     = ecs_field(&ri, Engine::Transform::WorldMatrix, 0);
-                    const MeshData*                            md     = ecs_field(&ri, MeshData, 1);
-                    const Intent*                              intent = ecs_field(&ri, Intent,   2);
-                    const AABB*                                ab     = ecs_field(&ri, AABB,     3);
-                    const Engine::Spatial::ChunkCoord*         chunk  = ecs_field(&ri, Engine::Spatial::ChunkCoord, 4);
+                    const Engine::Transform::WorldMatrix*      wm     = (const Engine::Transform::WorldMatrix*)ecs_field(&ri, Engine::Transform::WorldMatrix, 0);
+                    const MeshData*                            md     = (const MeshData*)ecs_field(&ri, MeshData, 1);
+                    const Intent*                              intent = (const Intent*)ecs_field(&ri, Intent,   2);
+                    const AABB*                                ab     = (const AABB*)ecs_field(&ri, AABB,     3);
+                    const Engine::Spatial::ChunkCoord*         chunk  = (const Engine::Spatial::ChunkCoord*)ecs_field(&ri, Engine::Spatial::ChunkCoord, 4);
 
                     for (int i = 0; i < ri.count && s_entity_count < MAX_ENTITIES; ++i) {
                         if ((intent[i].mask & INTENT_VISIBLE)   == 0) continue;
@@ -449,15 +436,11 @@ void Init(ecs_world_t* world) {
                         if (std::abs(chunk[i].x - cam_cx) > RENDER_DISTANCE) continue;
                         if (std::abs(chunk[i].y - cam_cy) > RENDER_DISTANCE) continue;
 
-                        std::memcpy(&s_mat_flat[s_entity_count * 16], wm[i].value.data(), 64u);
+                        std::memcpy(&s_mat_flat[s_entity_count * 16], wm[i].value, 64u);
 
-                        s_aabb_flat[s_entity_count].aabb_min[0] = ab[i].min.x();
-                        s_aabb_flat[s_entity_count].aabb_min[1] = ab[i].min.y();
-                        s_aabb_flat[s_entity_count].aabb_min[2] = ab[i].min.z();
+                        glm_vec3_copy((float*)ab[i].min, s_aabb_flat[s_entity_count].aabb_min);
                         s_aabb_flat[s_entity_count].pad0 = 0.f;
-                        s_aabb_flat[s_entity_count].aabb_max[0] = ab[i].max.x();
-                        s_aabb_flat[s_entity_count].aabb_max[1] = ab[i].max.y();
-                        s_aabb_flat[s_entity_count].aabb_max[2] = ab[i].max.z();
+                        glm_vec3_copy((float*)ab[i].max, s_aabb_flat[s_entity_count].aabb_max);
                         s_aabb_flat[s_entity_count].pad1 = 0.f;
 
                         s_mesh_ids[s_entity_count] = md[i].lod_group_id;
@@ -484,10 +467,8 @@ void Init(ecs_world_t* world) {
             }
 
             CullParamsCPU cp = {};
-            ExtractFrustumPlanes(vp, cp.frustumPlanes);
-            cp.cameraWorldPos[0] = cam_pos[0];
-            cp.cameraWorldPos[1] = cam_pos[1];
-            cp.cameraWorldPos[2] = cam_pos[2];
+            ExtractFrustumPlanes((float*)vp, cp.frustumPlanes);
+            glm_vec3_copy(cam_pos, cp.cameraWorldPos);
             cp.cameraWorldPos[3] = 0.f;
             cp.entityCount = s_entity_count;
             {
@@ -504,17 +485,15 @@ void Init(ecs_world_t* world) {
                     if (!lg) continue;
                     for (uint32_t lod = 0; lod < LOD_LEVELS; ++lod) {
                         const uint32_t slot = g * LOD_LEVELS + lod;
-                        resetCmds[slot] = {
-                            lg->lods[lod].indexCount,
-                            0u,
-                            lg->lods[lod].firstIndex,
-                            lg->lods[lod].baseVertex,
-                            slot * MAX_ENTITIES
-                        };
+                        resetCmds[slot].indexCount = lg->lods[lod].indexCount;
+                        resetCmds[slot].instanceCount = 0u;
+                        resetCmds[slot].firstIndex = lg->lods[lod].firstIndex;
+                        resetCmds[slot].baseVertex = lg->lods[lod].baseVertex;
+                        resetCmds[slot].firstInstance = slot * MAX_ENTITIES;
                     }
                 }
                 ctx->UpdateBuffer(g_IndirectArgsBuffer, 0,
-                    totalSlots * static_cast<uint32_t>(sizeof(IndirectCmd)),
+                    totalSlots * (uint32_t)sizeof(IndirectCmd),
                     resetCmds,
                     RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
             }

@@ -31,8 +31,7 @@ namespace JSON {
  * uint64_t my_hash = HashString("MyCoolString");
  */
 static uint64_t HashString(const char* str) {
-    assert(str != nullptr); // We need something to hash!
-    assert(std::strlen(str) >= 0); // Logic check: length must be non-negative
+    assert(str != nullptr);
     std::printf("[JSON] Hashing string: %s\n", str);
     std::printf("[JSON] Performing FNV-1a magic...\n");
 
@@ -171,10 +170,10 @@ static void ParseDoubleBufferedPosition(ecs_world_t* world, ecs_entity_t entity,
     yyjson_val* w = yyjson_obj_get(comp_val, "write");
     if (!r || !w) return;
     Engine::ECS::DoubleBuffered<Position> pos = {};
-    pos.read.pos.x()  = static_cast<float>(yyjson_get_real(yyjson_obj_get(r, "x")));
-    pos.read.pos.y()  = static_cast<float>(yyjson_get_real(yyjson_obj_get(r, "y")));
-    pos.write.pos.x() = static_cast<float>(yyjson_get_real(yyjson_obj_get(w, "x")));
-    pos.write.pos.y() = static_cast<float>(yyjson_get_real(yyjson_obj_get(w, "y")));
+    pos.read.pos[0]  = static_cast<float>(yyjson_get_real(yyjson_obj_get(r, "x")));
+    pos.read.pos[1]  = static_cast<float>(yyjson_get_real(yyjson_obj_get(r, "y")));
+    pos.write.pos[0] = static_cast<float>(yyjson_get_real(yyjson_obj_get(w, "x")));
+    pos.write.pos[1] = static_cast<float>(yyjson_get_real(yyjson_obj_get(w, "y")));
     ecs_set_id(world, entity, comp_id, sizeof(pos), &pos);
 }
 
@@ -199,8 +198,8 @@ static void ParseMoveIntent(ecs_world_t* world, ecs_entity_t entity, ecs_entity_
     std::printf("[JSON] Extracting direction vectors...\n");
 
     MoveIntent intent = {};
-    intent.dir.x() = static_cast<float>(yyjson_get_real(yyjson_obj_get(comp_val, "dx")));
-    intent.dir.y() = static_cast<float>(yyjson_get_real(yyjson_obj_get(comp_val, "dy")));
+    intent.dir[0] = static_cast<float>(yyjson_get_real(yyjson_obj_get(comp_val, "dx")));
+    intent.dir[1] = static_cast<float>(yyjson_get_real(yyjson_obj_get(comp_val, "dy")));
     ecs_set_id(world, entity, comp_id, sizeof(intent), &intent);
 }
 
@@ -268,7 +267,7 @@ bool LoadProjectConfig(Context* ctx, const char* filepath) {
     std::printf("[JSON] Resolving full path to config file...\n");
 
     if (!ctx || !ctx->ecs_world) return false;
-    if (!filepath || !std::strlen(filepath)) filepath = "project.json";
+    if (!filepath || !strlen(filepath)) filepath = "project.json";
 
     fs::path full_path = fs::current_path() / filepath;
     if (!fs::exists(full_path))

@@ -12,6 +12,7 @@
 #include <cassert>
 #include <cstdlib>
 #include <cstdio>
+#include <cstring>
 #include <thread>
 #include <chrono>
 
@@ -409,7 +410,7 @@ ENGINE_API void RequestExit(Context* ctx) {
     assert(ctx != nullptr); // Context is required to request exit
     assert(ctx->initialized == 1); // Engine must be initialized
     std::printf("[Platform] Requesting engine exit...\n");
-    std::printf("[Platform] Context address: %p\n", ctx);
+    std::printf("[Platform] Context address: %p\n", (void*)ctx);
     if (ctx) ctx->running = 0;
 }
 
@@ -429,7 +430,7 @@ ENGINE_API void* GetUserData(const Context* ctx) {
     assert(ctx != nullptr); // Context must be valid
     assert(true); // Always ready to help
     std::printf("[Platform] Retrieving user data from context...\n");
-    std::printf("[Platform] Context address: %p\n", ctx);
+    std::printf("[Platform] Context address: %p\n", (void*)ctx);
     if (!ctx) return nullptr;
     return ctx->user_data;
 }
@@ -450,7 +451,7 @@ ENGINE_API struct ecs_world_t* GetWorld(const Context* ctx) {
     assert(ctx != nullptr); // Context must be valid
     assert(ctx->ecs_world != nullptr); // World should be initialized
     std::printf("[Platform] Retrieving ECS world from context...\n");
-    std::printf("[Platform] Context address: %p\n", ctx);
+    std::printf("[Platform] Context address: %p\n", (void*)ctx);
     if (!ctx) return nullptr;
     return ctx->ecs_world;
 }

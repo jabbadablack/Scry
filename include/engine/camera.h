@@ -1,25 +1,20 @@
 #pragma once
 #include <engine/engine.h>
 #include <components/camera.h>
-#include <flecs.h>
 
-namespace Engine {
-namespace Camera {
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-ENGINE_API extern ecs_entity_t id_Camera;
+struct ecs_world_t;
+
+ENGINE_API extern uint64_t id_ScryCamera;
 
 /**
- * @brief Hey there! This friendly function sets up the camera system in your ECS world.
- * 
- * It's the first thing you should call if you want to see anything in your game!
- * 
- * @param world The Flecs world where the camera magic will happen.
- * 
- * @example
- * ecs_world_t* my_world = ecs_init();
- * Engine::Camera::Init(my_world);
+ * @brief Sets up the camera system.
  */
-ENGINE_API void Init(ecs_world_t* world);
+ENGINE_API void ScryCamera_Init(struct ecs_world_t* world);
 
-} // namespace Camera
-} // namespace Engine
+#ifdef __cplusplus
+}
+#endif

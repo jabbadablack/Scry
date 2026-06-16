@@ -1,33 +1,64 @@
 #include <catch2/catch_test_macros.hpp>
-#include <engine/memory.hpp>
-#include <cassert>
-#include <cstdio>
+#include <engine/memory.h>
 
-/**
- * @brief Let's play in the sand! This test checks if our Arena Allocator is behaving.
- * 
- * We're looking to make sure it can hand out memory chunks and keep track of how much it has left.
- * 
- * @example
- * // This is a test case, so it's run by the Catch2 test runner.
- */
-TEST_CASE("Arena Allocator basic allocation", "[memory]") {
-    const size_t arena_size = 1024;
-    void* backing = ::operator new(arena_size);
-    assert(arena_size > 0 && "We need some space for the arena!");
-    assert(backing != nullptr && "Operator new should have given us some memory.");
-    std::printf("[test] Starting Arena Allocator basic allocation test...\n");
-    std::printf("[test] Initializing arena with %zu bytes...\n", arena_size);
-    REQUIRE(backing != nullptr);
+TEST_CASE("Arena Allocator basic functionality", "[memory]") {
+    uint8_t buffer[1024];
+    ScryArena arena;
+    ScryMemory_ArenaInit(&arena, buffer, 1024);
 
-    Engine::Memory::Arena arena;
-    Engine::Memory::ArenaInit(&arena, backing, arena_size);
-    REQUIRE(Engine::Memory::ArenaGetTotalSize(&arena) == arena_size);
-    REQUIRE(Engine::Memory::ArenaGetUsedMemory(&arena) == 0);
+    SECTION("Allocation is aligned and within bounds") {
+        void* p1 = ScryMemory_ArenaAllocate(&arena, 10, 8);
+        REQUIRE(p1 != nullptr);
+        REQUIRE(((uintptr_t)p1 % 8) == 0);
+        
+        void* p2 = ScryMemory_ArenaAllocate(&arena, 20, 16);
+        REQUIRE(p2 != nullptr);
+        REQUIRE(((uintptr_t)p2 % 16) == 0);
+        REQUIRE((uint8_t*)p2 >= (uint8_t*)p1 + 10);
+    }
 
-    void* p1 = Engine::Memory::ArenaAllocate(&arena, 128, 8);
-    REQUIRE(p1 != nullptr);
-    REQUIRE(Engine::Memory::ArenaGetUsedMemory(&arena) == 128);
+    SECTION("Arena exhaustion returns NULL") {
+        void* p = ScryMemory_ArenaAllocate(&arena, 1000, 1);
+        REQUIRE(p != nullptr);
+        void* p2 = ScryMemory_ArenaAllocate(&arena, 50, 1);
+        REQUIRE(p2 == nullptr);
+    }
 
-    ::operator delete(backing);
+    SECTION("Arena reset works") {
+        ScryMemory_ArenaAllocate(&arena, 500, 1);
+        ScryMemory_ArenaReset(&arena);
+        void* p = ScryMemory_ArenaAllocate(&arena, 1024, 1);
+        REQUIRE(p != nullptr);
+    }
+}
+
+TEST_CASE("Pool Allocator basic functionality", "[memory]") {
+    const size_t block_size = 64;
+    const uint32_t capacity = 10;
+    size_t needed = ScryMemory_PoolGetRequiredSize(block_size, capacity);
+    void* buffer = malloc(needed);
+    
+    ScryPoolAllocator pool;
+    ScryMemory_PoolInit(&pool, buffer, needed, block_size, capacity);
+
+    SECTION("Allocating and freeing works") {
+        uint32_t i1 = ScryMemory_PoolAllocate(&pool);
+        REQUIRE(i1 != 0xFFFFFFFF);
+        
+        void* p1 = ScryMemory_PoolGet(&pool, i1);
+        REQUIRE(p1 != nullptr);
+
+        ScryMemory_PoolFree(&pool, i1);
+        uint32_t i2 = ScryMemory_PoolAllocate(&pool);
+        REQUIRE(i2 == i1); // Should reuse the block
+    }
+
+    SECTION("Pool exhaustion") {
+        for (uint32_t i = 0; i < capacity; ++i) {
+            REQUIRE(ScryMemory_PoolAllocate(&pool) != 0xFFFFFFFF);
+        }
+        REQUIRE(ScryMemory_PoolAllocate(&pool) == 0xFFFFFFFF);
+    }
+
+    free(buffer);
 }

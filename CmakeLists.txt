@@ -138,20 +138,28 @@ endif()
 FetchContent_MakeAvailable(glfw assimp stb meshoptimizer flecs yyjson Catch2 cglm)
 
 if(MSVC)
-    set(SCRY_WARNING_FLAGS /W4 /WX)
+    set(SCRY_COMMON_FLAGS /W4 /WX)
+    set(SCRY_C_FLAGS ${SCRY_COMMON_FLAGS})
+    set(SCRY_CXX_FLAGS ${SCRY_COMMON_FLAGS})
 else()
-    set(SCRY_WARNING_FLAGS -Wall -Wextra -Wpedantic -Wno-tautological-compare -Wno-deprecated-enum-enum-conversion -Wno-deprecated-copy -Wno-deprecated-declarations -Wno-template-body -Wno-attributes -Wno-gnu-anonymous-struct -Wno-nested-anon-types)
+    set(SCRY_COMMON_FLAGS -Wall -Wextra -Wpedantic -Wno-tautological-compare -Wno-attributes)
+    set(SCRY_C_FLAGS ${SCRY_COMMON_FLAGS})
+    set(SCRY_CXX_FLAGS ${SCRY_COMMON_FLAGS} -Wno-deprecated-enum-enum-conversion -Wno-deprecated-copy -Wno-deprecated-declarations -Wno-template-body -Wno-gnu-anonymous-struct -Wno-nested-anon-types)
 endif()
 
 include(cmake/EngineHelpers.cmake)
 
 # ─── Engine Library ──────────────────────────────────────────────────────────
 
-file(GLOB_RECURSE SCRY_SRC CONFIGURE_DEPENDS "src/*.cpp" "src/systems/*.cpp")
-file(GLOB_RECURSE SCRY_INC CONFIGURE_DEPENDS "include/*.h")
+file(GLOB_RECURSE SCRY_SRC_C   CONFIGURE_DEPENDS "src/*.c"   "src/systems/*.c")
+file(GLOB_RECURSE SCRY_SRC_CPP CONFIGURE_DEPENDS "src/*.cpp" "src/renderer/*.cpp")
+file(GLOB_RECURSE SCRY_INC     CONFIGURE_DEPENDS "include/*.h")
 
-add_library(scry SHARED ${SCRY_SRC} ${SCRY_INC})
-target_compile_options(scry PRIVATE ${SCRY_WARNING_FLAGS})
+add_library(scry SHARED ${SCRY_SRC_C} ${SCRY_SRC_CPP} ${SCRY_INC})
+target_compile_options(scry PRIVATE 
+    $<$<COMPILE_LANGUAGE:C>:${SCRY_C_FLAGS}>
+    $<$<COMPILE_LANGUAGE:CXX>:${SCRY_CXX_FLAGS}>
+)
 
 if(MSVC)
     target_compile_options(scry PRIVATE /O2 /fp:fast /arch:AVX2)

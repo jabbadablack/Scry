@@ -1,21 +1,35 @@
 #pragma once
 #include <engine/math.h>
-#include <cstdint>
+#include <stdint.h>
 
-namespace Engine {
-namespace Transform {
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // Discrete SoA components — Flecs stores each in its own contiguous array.
-// A system iterating only Position touches a pure dense Vec3 array.
 
-struct Position          { Math::ScryVec3 value; };
-struct Rotation          { Math::ScryVec3 value; };  // Euler radians: x=pitch, y=yaw, z=roll
-struct Scale             { Math::ScryVec3 value; };
-struct WorldMatrix       { Math::ScryMat4 value; };
+typedef struct ScryPosition {
+    ScryVec3 value;
+} ScryPosition;
+
+typedef struct ScryRotation {
+    ScryVec3 value; // Euler radians: x=pitch, y=yaw, z=roll
+} ScryRotation;
+
+typedef struct ScryScale {
+    ScryVec3 value;
+} ScryScale;
+
+typedef struct ScryWorldMatrix {
+    ScryMat4 value;
+} ScryWorldMatrix;
 
 // Set active=1 on any entity whose spatial data changed this frame.
-// TransformSystem reads and clears it; avoids redundant matrix math.
-struct DirtyMatrixIntent { uint8_t active; };
+// ScryTransform_System reads and clears it; avoids redundant matrix math.
+typedef struct ScryDirtyMatrixIntent {
+    uint8_t active;
+} ScryDirtyMatrixIntent;
 
-} // namespace Transform
-} // namespace Engine
+#ifdef __cplusplus
+}
+#endif

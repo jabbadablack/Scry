@@ -1,3 +1,7 @@
+#ifndef FLECS_NO_CPP
+#define FLECS_NO_CPP
+#endif
+
 #include <engine/renderer/renderer.h>
 #include <engine/renderer/core.h>
 #include <engine/renderer/backend.h>
@@ -6,6 +10,7 @@
 #include <engine/spatial.h>
 #include <engine/pipeline.h>
 #include <engine/engine.h>
+#include <flecs.h>
 
 #include "Graphics/GraphicsEngine/interface/PipelineState.h"
 #include "Graphics/GraphicsEngine/interface/ShaderResourceBinding.h"
@@ -19,22 +24,19 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cmath>
-#include <filesystem>
 
 using namespace Diligent;
-namespace fs = std::filesystem;
 
-namespace Engine {
-namespace Renderer {
+extern "C" {
 
-ecs_entity_t id_MeshData     = 0;
-ecs_entity_t id_AABB         = 0;
-ecs_entity_t id_EntityIntent = 0;
-ecs_entity_t id_Material     = 0;
+ENGINE_API uint64_t id_ScryMeshData     = 0;
+ENGINE_API uint64_t id_ScryAABB         = 0;
+ENGINE_API uint64_t id_ScryEntityIntent = 0;
+ENGINE_API uint64_t id_ScryMaterial     = 0;
 
-static constexpr uint32_t MAX_ENTITIES    = 16384u;
-static constexpr uint32_t MAX_LOD_GROUPS  = 256u;
-static constexpr uint32_t LOD_LEVELS      = 3u;
+static const uint32_t MAX_ENTITIES    = 16384u;
+static const uint32_t MAX_LOD_GROUPS  = 256u;
+static const uint32_t LOD_LEVELS      = 3u;
 
 static RefCntAutoPtr<IPipelineState>         g_pPSO;
 static RefCntAutoPtr<IShaderResourceBinding> g_pSRB;
@@ -51,46 +53,44 @@ static RefCntAutoPtr<IBuffer> g_pCullParamsCB;
 static RefCntAutoPtr<IBuffer> g_IndirectArgsBuffer;
 static RefCntAutoPtr<IBuffer> g_VisibleMatrixSSBO;
 
-static ecs_query_t* g_render_query = nullptr;
-static ecs_query_t* g_camera_query = nullptr;
+static ecs_query_t* g_render_query = NULL;
+static ecs_query_t* g_camera_query = NULL;
 
-struct alignas(16) ShaderAABB {
-    float aabb_min[3]; float pad0;
-    float aabb_max[3]; float pad1;
-};
-
-static float      s_mat_flat[MAX_ENTITIES * 16];
-static ShaderAABB s_aabb_flat[MAX_ENTITIES];
-static uint32_t   s_mesh_ids[MAX_ENTITIES];
-static uint32_t   s_entity_count = 0;
-
-struct IndirectCmd {
+typedef struct IndirectCmd {
     uint32_t indexCount;
     uint32_t instanceCount;
     uint32_t firstIndex;
     uint32_t baseVertex;
     uint32_t firstInstance;
-};
+} IndirectCmd;
 
-struct CullParamsCPU {
+typedef struct CullParamsCPU {
     float    frustumPlanes[6][4];
     float    cameraWorldPos[4];
     uint32_t entityCount;
     uint32_t _pad[3];
-};
+} CullParamsCPU;
+
+static float    s_mat_flat[MAX_ENTITIES * 16];
+static ScryAABB s_aabb_flat[MAX_ENTITIES];
+static uint32_t s_mesh_ids[MAX_ENTITIES];
+static uint32_t s_entity_count = 0;
+
+// Scratch buffer for resetting IndirectArgs each frame (instanceCount cleared, mesh data preserved).
+static IndirectCmd s_clear_cmds[MAX_LOD_GROUPS * LOD_LEVELS];
 
 static char* LoadShaderSource(const char* path, uint32_t* out_len) {
-    FILE* f = std::fopen(path, "rb");
-    if (!f) return nullptr;
-    std::fseek(f, 0, SEEK_END);
-    long sz = std::ftell(f);
-    std::fseek(f, 0, SEEK_SET);
-    char* buf = (char*)std::malloc((size_t)sz + 1);
-    if (!buf) { std::fclose(f); return nullptr; }
-    std::fread(buf, 1, (size_t)sz, f);
-    buf[sz] = '\0';
-    std::fclose(f);
-    if (out_len) *out_len = (uint32_t)sz;
+    FILE* f = fopen(path, "rb");
+    if (!f) return NULL;
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char* buf = (char*)malloc((size_t)sz + 1);
+    if (!buf) { fclose(f); return NULL; }
+    size_t readCount = fread(buf, 1, (size_t)sz, f);
+    buf[readCount] = '\0';
+    fclose(f);
+    if (out_len) *out_len = (uint32_t)readCount;
     return buf;
 }
 
@@ -98,154 +98,172 @@ static char* DiscoverShader(const char* filename, uint32_t* out_len) {
     const char* prefixes[] = {
         "assets/raw/shaders/",
         "../assets/raw/shaders/",
-        "shaders/",
-        "../shaders/",
+        "../../assets/raw/shaders/",
     };
     char path[512];
-    for (const char* pre : prefixes) {
-        std::snprintf(path, sizeof(path), "%s%s", pre, filename);
-        if (fs::exists(path)) {
-            char* src = LoadShaderSource(path, out_len);
-            if (src) return src;
+    for (int i = 0; i < 3; ++i) {
+        snprintf(path, sizeof(path), "%s%s", prefixes[i], filename);
+        FILE* f = fopen(path, "rb");
+        if (f) {
+            fclose(f);
+            return LoadShaderSource(path, out_len);
         }
     }
-    return nullptr;
+    return NULL;
 }
 
-static void ExtractFrustumPlanes(const float* vp, float planes[6][4]) {
-    // cglm matrix is float[4][4] column-major.
-    // Transpose to Row-Contiguous format to use standard Gribb-Hartmann.
-    mat4 vpt;
-    glm_mat4_transpose_to((float (*)[4])vp, vpt);
+static void Renderer_DrawMDI(uint32_t entity_count) {
+    if (entity_count == 0) return;
+    const uint32_t numGroups = ScryGraphics_GetLODGroupCount();
+    if (numGroups == 0 || !g_pPSO || !g_pSRB) return;
 
-    // Left:   row3 + row0
-    glm_vec4_add(vpt[3], vpt[0], planes[0]);
-    // Right:  row3 - row0
-    glm_vec4_sub(vpt[3], vpt[0], planes[1]);
-    // Bottom: row3 + row1
-    glm_vec4_add(vpt[3], vpt[1], planes[2]);
-    // Top:    row3 - row1
-    glm_vec4_sub(vpt[3], vpt[1], planes[3]);
-    // Near:   row2 (for 0 to 1 depth, Vulkan style)
-    glm_vec4_copy(vpt[2], planes[4]);
-    // Far:    row3 - row2 (for 0 to 1 depth, Vulkan style)
-    glm_vec4_sub(vpt[3], vpt[2], planes[5]);
+    IDeviceContext* ctx = (IDeviceContext*)ScryGraphics_GetContext();
 
-    // Plane normalization: divide by length of normal (A, B, C)
-    for (int i = 0; i < 6; ++i) {
-        float len = std::sqrt(planes[i][0] * planes[i][0] + 
-                              planes[i][1] * planes[i][1] + 
-                              planes[i][2] * planes[i][2]);
-        if (len > 1e-6f) {
-            float invLen = 1.0f / len;
-            planes[i][0] *= invLen;
-            planes[i][1] *= invLen;
-            planes[i][2] *= invLen;
-            planes[i][3] *= invLen;
+    StateTransitionDesc barrier(g_IndirectArgsBuffer,
+        RESOURCE_STATE_UNORDERED_ACCESS, RESOURCE_STATE_INDIRECT_ARGUMENT,
+        STATE_TRANSITION_FLAG_UPDATE_STATE);
+    ctx->TransitionResourceStates(1, &barrier);
+
+    ctx->SetIndexBuffer((IBuffer*)ScryGraphics_GetGlobalIndexBuffer(), 0,
+        RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    ctx->SetPipelineState(g_pPSO);
+    ctx->CommitShaderResources(g_pSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+    DrawIndexedIndirectAttribs draw;
+    draw.IndexType      = VT_UINT32;
+    draw.pAttribsBuffer = g_IndirectArgsBuffer;
+    draw.DrawCount      = numGroups * LOD_LEVELS;
+    draw.DrawArgsStride = static_cast<Uint32>(sizeof(IndirectCmd));
+    draw.Flags          = DRAW_FLAG_VERIFY_ALL;
+    ctx->DrawIndexedIndirect(draw);
+}
+
+static void PassCullCallback(ecs_iter_t* it) {
+    if (it->count == 0 || !g_render_query) return;
+    if (!g_pCullPSO || !g_pCullSRB) return;
+
+    const ScryCamera* cam = ecs_field(it, ScryCamera, 0);
+
+    // Gather all visible entities into flat CPU arrays.
+    s_entity_count = 0;
+    ecs_iter_t ri = ecs_query_iter(it->world, g_render_query);
+    while (ecs_query_next(&ri)) {
+        ScryWorldMatrix*    wm     = ecs_field(&ri, ScryWorldMatrix,    0);
+        ScryMeshData*       md     = ecs_field(&ri, ScryMeshData,       1);
+        ScryRendererIntent* intent = ecs_field(&ri, ScryRendererIntent, 2);
+        ScryAABB*           aabb   = ecs_field(&ri, ScryAABB,           3);
+        for (int i = 0; i < ri.count; ++i) {
+            if (s_entity_count >= MAX_ENTITIES) break;
+            if (!(intent[i].mask & SCRY_INTENT_VISIBLE)) continue;
+            memcpy(&s_mat_flat[s_entity_count * 16], wm[i].value, 64u);
+            s_aabb_flat[s_entity_count] = aabb[i];
+            s_mesh_ids[s_entity_count]  = md[i].lod_group_id;
+            ++s_entity_count;
         }
     }
+
+    if (s_entity_count == 0) {
+        printf("[Renderer] WARNING: 0 entities matched the cull query!\n");
+        fflush(stdout);
+        return;
+    }
+
+    IDeviceContext* ctx = (IDeviceContext*)ScryGraphics_GetContext();
+
+    // Upload world matrices.
+    { PVoid p = nullptr; ctx->MapBuffer(g_RawMatrixSSBO, MAP_WRITE, MAP_FLAG_DISCARD, p);
+      if (p) { memcpy(p, s_mat_flat, s_entity_count * 64u); ctx->UnmapBuffer(g_RawMatrixSSBO, MAP_WRITE); } }
+
+    // Upload AABBs.
+    { PVoid p = nullptr; ctx->MapBuffer(g_pAABBBuffer, MAP_WRITE, MAP_FLAG_DISCARD, p);
+      if (p) { memcpy(p, s_aabb_flat, s_entity_count * sizeof(ScryAABB)); ctx->UnmapBuffer(g_pAABBBuffer, MAP_WRITE); } }
+
+    // Upload mesh/LOD group IDs.
+    { PVoid p = nullptr; ctx->MapBuffer(g_EntityMeshIdBuffer, MAP_WRITE, MAP_FLAG_DISCARD, p);
+      if (p) { memcpy(p, s_mesh_ids, s_entity_count * sizeof(uint32_t)); ctx->UnmapBuffer(g_EntityMeshIdBuffer, MAP_WRITE); } }
+
+    // Upload view-projection matrix into DrawParamsCB for the vertex shader.
+    // USAGE_DYNAMIC buffers must be mapped at least once per frame before CommitShaderResources.
+    {
+        mat4 vp;
+        glm_mat4_mul((float (*)[4])cam[0].proj, (float (*)[4])cam[0].view, vp);
+        PVoid p = nullptr; ctx->MapBuffer(g_pDrawParamsCB, MAP_WRITE, MAP_FLAG_DISCARD, p);
+        if (p) { memcpy(p, vp, 64u); ctx->UnmapBuffer(g_pDrawParamsCB, MAP_WRITE); }
+    }
+
+    // Upload cull params (frustum planes + camera position come from the camera component).
+    {
+        CullParamsCPU params = {};
+        memcpy(params.frustumPlanes, cam[0].frustum_planes, sizeof(cam[0].frustum_planes));
+        params.cameraWorldPos[0] = cam[0].position[0];
+        params.cameraWorldPos[1] = cam[0].position[1];
+        params.cameraWorldPos[2] = cam[0].position[2];
+        params.cameraWorldPos[3] = 1.0f;
+        params.entityCount = s_entity_count;
+        PVoid p = nullptr; ctx->MapBuffer(g_pCullParamsCB, MAP_WRITE, MAP_FLAG_DISCARD, p);
+        if (p) { memcpy(p, &params, sizeof(params)); ctx->UnmapBuffer(g_pCullParamsCB, MAP_WRITE); }
+    }
+
+    // Reset instanceCount in IndirectArgs to 0; preserve indexCount/firstIndex/baseVertex/firstInstance
+    // so that the mesh draw command is valid even when 0 instances pass culling.
+    {
+        const uint32_t numGroups  = ScryGraphics_GetLODGroupCount();
+        const uint32_t totalSlots = numGroups * LOD_LEVELS;
+        const uint32_t visMatCap  = LOD_LEVELS * MAX_ENTITIES;
+        const uint32_t perSlot    = (totalSlots > 0) ? (visMatCap / totalSlots) : 0u;
+        for (uint32_t g = 0; g < numGroups; ++g) {
+            const ScryLODGroup* lg = ScryGraphics_GetLODGroup(g);
+            for (uint32_t l = 0; l < LOD_LEVELS; ++l) {
+                uint32_t slot = g * LOD_LEVELS + l;
+                s_clear_cmds[slot].indexCount    = lg->lods[l].indexCount;
+                s_clear_cmds[slot].instanceCount = 0;
+                s_clear_cmds[slot].firstIndex    = lg->lods[l].firstIndex;
+                s_clear_cmds[slot].baseVertex    = lg->lods[l].baseVertex;
+                s_clear_cmds[slot].firstInstance = slot * perSlot;
+            }
+        }
+        if (totalSlots > 0) {
+            ctx->UpdateBuffer(g_IndirectArgsBuffer, 0,
+                totalSlots * static_cast<uint32_t>(sizeof(IndirectCmd)),
+                s_clear_cmds, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        }
+    }
+
+    // Dispatch GPU frustum culling + LOD selection compute shader.
+    ctx->SetPipelineState(g_pCullPSO);
+    ctx->CommitShaderResources(g_pCullSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    DispatchComputeAttribs disp;
+    disp.ThreadGroupCountX = (s_entity_count + 63u) / 64u;
+    disp.ThreadGroupCountY = 1u;
+    disp.ThreadGroupCountZ = 1u;
+    ctx->DispatchCompute(disp);
 }
 
-static bool CreateGraphicsPSO() {
-    IRenderDevice* dev = Graphics::GetDevice();
-    ISwapChain*    sc  = Graphics::GetSwapChain();
-    
-    uint32_t hlsl_len = 0;
-    char* hlsl = DiscoverShader("mesh.hlsl", &hlsl_len);
-    if (!hlsl) return false;
-
-    ShaderCreateInfo sci;
-    sci.SourceLanguage = SHADER_SOURCE_LANGUAGE_HLSL;
-    sci.Source         = hlsl;
-    sci.SourceLength   = hlsl_len;
-
-    RefCntAutoPtr<IShader> pVS, pPS;
-    { sci.Desc.ShaderType = SHADER_TYPE_VERTEX; sci.Desc.Name = "MeshVS"; sci.EntryPoint = "VSMain"; dev->CreateShader(sci, &pVS); }
-    { sci.Desc.ShaderType = SHADER_TYPE_PIXEL;  sci.Desc.Name = "MeshPS"; sci.EntryPoint = "PSMain"; dev->CreateShader(sci, &pPS); }
-    std::free(hlsl);
-
-    if (!pVS || !pPS) return false;
-
-    ShaderResourceVariableDesc vars[] = {
-        {SHADER_TYPE_VERTEX, "b_vertices",  SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
-        {SHADER_TYPE_VERTEX, "b_instances", SHADER_RESOURCE_VARIABLE_TYPE_STATIC},
-        {SHADER_TYPE_VERTEX, "DrawParams",  SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
-    };
-
-    const SwapChainDesc& scd = sc->GetDesc();
-
-    GraphicsPipelineStateCreateInfo psoCI;
-    psoCI.PSODesc.Name                        = "MeshPSO";
-    psoCI.PSODesc.PipelineType                = PIPELINE_TYPE_GRAPHICS;
-    psoCI.PSODesc.ResourceLayout.Variables    = vars;
-    psoCI.PSODesc.ResourceLayout.NumVariables = 3u;
-    psoCI.GraphicsPipeline.InputLayout.NumElements       = 0;
-    psoCI.GraphicsPipeline.NumRenderTargets              = 1;
-    psoCI.GraphicsPipeline.RTVFormats[0]                 = scd.ColorBufferFormat;
-    psoCI.GraphicsPipeline.DSVFormat                     = scd.DepthBufferFormat;
-    psoCI.GraphicsPipeline.PrimitiveTopology             = PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    psoCI.GraphicsPipeline.DepthStencilDesc.DepthEnable      = True;
-    psoCI.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = True;
-    psoCI.GraphicsPipeline.DepthStencilDesc.DepthFunc        = COMPARISON_FUNC_LESS;
-    psoCI.GraphicsPipeline.RasterizerDesc.CullMode              = CULL_MODE_BACK;
-    psoCI.GraphicsPipeline.RasterizerDesc.FrontCounterClockwise = False;
-    psoCI.pVS = pVS;
-    psoCI.pPS = pPS;
-
-    dev->CreateGraphicsPipelineState(psoCI, &g_pPSO);
-    return g_pPSO != nullptr;
+static void PassOpaqueCallback(ecs_iter_t* it) {
+    (void)it;
+    Renderer_DrawMDI(s_entity_count);
 }
 
-static bool CreateComputePSO() {
-    IRenderDevice* dev = Graphics::GetDevice();
-    
-    uint32_t hlsl_len = 0;
-    char* hlsl = DiscoverShader("cull.hlsl", &hlsl_len);
-    if (!hlsl) return false;
-
-    ShaderCreateInfo sci;
-    sci.SourceLanguage = SHADER_SOURCE_LANGUAGE_HLSL;
-    sci.Source         = hlsl;
-    sci.SourceLength   = hlsl_len;
-    sci.Desc.ShaderType = SHADER_TYPE_COMPUTE;
-    sci.Desc.Name       = "CullCS";
-    sci.EntryPoint      = "CSMain";
-
-    RefCntAutoPtr<IShader> pCS;
-    dev->CreateShader(sci, &pCS);
-    std::free(hlsl);
-
-    if (!pCS) return false;
-
-    ShaderResourceVariableDesc cullVars[] = {
-        {SHADER_TYPE_COMPUTE, "b_matrices",          SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
-        {SHADER_TYPE_COMPUTE, "b_bounds",            SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
-        {SHADER_TYPE_COMPUTE, "b_lodGroups",         SHADER_RESOURCE_VARIABLE_TYPE_STATIC},
-        {SHADER_TYPE_COMPUTE, "b_entityLodIds",      SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
-        {SHADER_TYPE_COMPUTE, "b_indirectArgs",      SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
-        {SHADER_TYPE_COMPUTE, "b_outVisibleMatrices",SHADER_RESOURCE_VARIABLE_TYPE_STATIC},
-        {SHADER_TYPE_COMPUTE, "CullParams",          SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
-    };
-
-    ComputePipelineStateCreateInfo cpsoCI;
-    cpsoCI.PSODesc.Name                        = "CullPSO";
-    cpsoCI.PSODesc.PipelineType                = PIPELINE_TYPE_COMPUTE;
-    cpsoCI.PSODesc.ResourceLayout.Variables    = cullVars;
-    cpsoCI.PSODesc.ResourceLayout.NumVariables = 7u;
-    cpsoCI.pCS = pCS;
-
-    dev->CreateComputePipelineState(cpsoCI, &g_pCullPSO);
-    return g_pCullPSO != nullptr;
+static int compare_chunk_hashes(ecs_entity_t e1, const void* p1, ecs_entity_t e2, const void* p2) {
+    (void)e1; (void)e2;
+    const uint64_t h1 = ((const ScryChunkHash*)p1)->hash;
+    const uint64_t h2 = ((const ScryChunkHash*)p2)->hash;
+    return (h1 > h2) - (h1 < h2);
 }
 
-static int compare_chunk_hashes(ecs_entity_t, const void* a, ecs_entity_t, const void* b) {
-    const uint64_t ha = ((const Engine::Spatial::ChunkHash*)a)->hash;
-    const uint64_t hb = ((const Engine::Spatial::ChunkHash*)b)->hash;
-    return (ha > hb) - (ha < hb);
+static uint64_t InternalRegComp(ecs_world_t* world, const char* name, size_t sz, size_t align) {
+    ecs_entity_desc_t ed = {};
+    ed.name = name;
+    ecs_entity_t ent = ecs_entity_init(world, &ed);
+    ecs_component_desc_t cd = {};
+    cd.entity = ent;
+    cd.type.size = (ecs_size_t)sz;
+    cd.type.alignment = (ecs_size_t)align;
+    return (uint64_t)ecs_component_init(world, &cd);
 }
 
-void Init(ecs_world_t* world) {
-    IRenderDevice* dev = Graphics::GetDevice();
+void ScryRenderer_Init(struct ecs_world_t* world) {
+    IRenderDevice* dev = (IRenderDevice*)ScryGraphics_GetDevice();
 
     {
         BufferDesc bd;
@@ -319,26 +337,84 @@ void Init(ecs_world_t* world) {
         dev->CreateBuffer(bd, nullptr, &g_VisibleMatrixSSBO);
     }
 
-    CreateGraphicsPSO();
-    CreateComputePSO();
-
+    // PSOs
     {
+        ISwapChain* sc = (ISwapChain*)ScryGraphics_GetSwapChain();
+        uint32_t hlsl_len = 0;
+        char* hlsl = DiscoverShader("mesh.hlsl", &hlsl_len);
+        if (hlsl) {
+            ShaderCreateInfo sci;
+            sci.SourceLanguage = SHADER_SOURCE_LANGUAGE_HLSL;
+            sci.Source = hlsl; sci.SourceLength = hlsl_len;
+            RefCntAutoPtr<IShader> pVS, pPS;
+            { sci.Desc.ShaderType = SHADER_TYPE_VERTEX; sci.Desc.Name = "MeshVS"; sci.EntryPoint = "VSMain"; dev->CreateShader(sci, &pVS); }
+            { sci.Desc.ShaderType = SHADER_TYPE_PIXEL;  sci.Desc.Name = "MeshPS"; sci.EntryPoint = "PSMain"; dev->CreateShader(sci, &pPS); }
+            free(hlsl);
+            if (pVS && pPS) {
+                ShaderResourceVariableDesc vars[] = {
+                    {SHADER_TYPE_VERTEX, "b_vertices",  SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
+                    {SHADER_TYPE_VERTEX, "b_instances", SHADER_RESOURCE_VARIABLE_TYPE_STATIC},
+                    {SHADER_TYPE_VERTEX, "DrawParams",  SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
+                };
+                GraphicsPipelineStateCreateInfo psoCI;
+                psoCI.PSODesc.Name = "MeshPSO"; psoCI.PSODesc.PipelineType = PIPELINE_TYPE_GRAPHICS;
+                psoCI.PSODesc.ResourceLayout.Variables = vars; psoCI.PSODesc.ResourceLayout.NumVariables = 3u;
+                psoCI.GraphicsPipeline.NumRenderTargets = 1;
+                psoCI.GraphicsPipeline.RTVFormats[0] = sc->GetDesc().ColorBufferFormat;
+                psoCI.GraphicsPipeline.DSVFormat = sc->GetDesc().DepthBufferFormat;
+                psoCI.GraphicsPipeline.PrimitiveTopology = PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+                psoCI.GraphicsPipeline.DepthStencilDesc.DepthEnable = True;
+                psoCI.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = True;
+                psoCI.GraphicsPipeline.DepthStencilDesc.DepthFunc = COMPARISON_FUNC_LESS;
+                psoCI.GraphicsPipeline.RasterizerDesc.CullMode = CULL_MODE_BACK;
+                psoCI.GraphicsPipeline.RasterizerDesc.FrontCounterClockwise = False;
+                psoCI.pVS = pVS; psoCI.pPS = pPS;
+                dev->CreateGraphicsPipelineState(psoCI, &g_pPSO);
+            }
+        }
+    }
+    {
+        uint32_t hlsl_len = 0;
+        char* hlsl = DiscoverShader("cull.hlsl", &hlsl_len);
+        if (hlsl) {
+            ShaderCreateInfo sci;
+            sci.SourceLanguage = SHADER_SOURCE_LANGUAGE_HLSL;
+            sci.Source = hlsl; sci.SourceLength = hlsl_len;
+            sci.Desc.ShaderType = SHADER_TYPE_COMPUTE; sci.Desc.Name = "CullCS"; sci.EntryPoint = "CSMain";
+            RefCntAutoPtr<IShader> pCS; dev->CreateShader(sci, &pCS);
+            free(hlsl);
+            if (pCS) {
+                ShaderResourceVariableDesc cullVars[] = {
+                    {SHADER_TYPE_COMPUTE, "b_matrices",          SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
+                    {SHADER_TYPE_COMPUTE, "b_bounds",            SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
+                    {SHADER_TYPE_COMPUTE, "b_lodGroups",         SHADER_RESOURCE_VARIABLE_TYPE_STATIC},
+                    {SHADER_TYPE_COMPUTE, "b_entityLodIds",      SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
+                    {SHADER_TYPE_COMPUTE, "b_indirectArgs",      SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
+                    {SHADER_TYPE_COMPUTE, "b_outVisibleMatrices",SHADER_RESOURCE_VARIABLE_TYPE_STATIC},
+                    {SHADER_TYPE_COMPUTE, "CullParams",          SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
+                };
+                ComputePipelineStateCreateInfo cpsoCI;
+                cpsoCI.PSODesc.Name = "CullPSO"; cpsoCI.PSODesc.PipelineType = PIPELINE_TYPE_COMPUTE;
+                cpsoCI.PSODesc.ResourceLayout.Variables = cullVars; cpsoCI.PSODesc.ResourceLayout.NumVariables = 7u;
+                cpsoCI.pCS = pCS;
+                dev->CreateComputePipelineState(cpsoCI, &g_pCullPSO);
+            }
+        }
+    }
+
+    if (g_pCullPSO && g_pPSO) {
         IBufferView* visUAV = g_VisibleMatrixSSBO->GetDefaultView(BUFFER_VIEW_UNORDERED_ACCESS);
         IBufferView* visSRV = g_VisibleMatrixSSBO->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
-        IBufferView* lodSRV = Graphics::GetLODGroupBuffer()->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
+        IBufferView* lodSRV = ((IBuffer*)ScryGraphics_GetLODGroupBuffer())->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
         g_pCullPSO->GetStaticVariableByName(SHADER_TYPE_COMPUTE, "b_outVisibleMatrices")->Set(visUAV);
         g_pCullPSO->GetStaticVariableByName(SHADER_TYPE_COMPUTE, "b_lodGroups")         ->Set(lodSRV);
         g_pPSO->GetStaticVariableByName(SHADER_TYPE_VERTEX, "b_instances")              ->Set(visSRV);
-    }
 
-    {
         g_pPSO->CreateShaderResourceBinding(&g_pSRB, true);
-        IBufferView* vbSRV = Graphics::GetGlobalVertexBuffer()->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
+        IBufferView* vbSRV = ((IBuffer*)ScryGraphics_GetGlobalVertexBuffer())->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
         g_pSRB->GetVariableByName(SHADER_TYPE_VERTEX, "b_vertices") ->Set(vbSRV);
         g_pSRB->GetVariableByName(SHADER_TYPE_VERTEX, "DrawParams") ->Set(g_pDrawParamsCB);
-    }
 
-    {
         g_pCullPSO->CreateShaderResourceBinding(&g_pCullSRB, true);
         IBufferView* matSRV   = g_RawMatrixSSBO->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
         IBufferView* aabbSRV  = g_pAABBBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
@@ -351,215 +427,63 @@ void Init(ecs_world_t* world) {
         g_pCullSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "CullParams")    ->Set(g_pCullParamsCB);
     }
 
-    auto reg = [&](const char* name, size_t sz, size_t align) -> ecs_entity_t {
-        ecs_entity_desc_t ed = {}; ed.name = name;
-        ecs_component_desc_t cd = {};
-        cd.entity = ecs_entity_init(world, &ed);
-        cd.type.size      = static_cast<ecs_size_t>(sz);
-        cd.type.alignment = static_cast<ecs_size_t>(align);
-        return ecs_component_init(world, &cd);
-    };
-    id_MeshData     = reg("MeshData",     sizeof(MeshData),  alignof(MeshData));
-    id_AABB         = reg("AABB",         sizeof(AABB),      alignof(AABB));
-    id_EntityIntent = reg("EntityIntent", sizeof(Intent),    alignof(Intent));
-    id_Material     = reg("Material",     sizeof(Material),  alignof(Material));
+    id_ScryMeshData = InternalRegComp(world, "ScryMeshData", sizeof(ScryMeshData), alignof(ScryMeshData));
+    id_ScryAABB = InternalRegComp(world, "ScryAABB", sizeof(ScryAABB), alignof(ScryAABB));
+    id_ScryEntityIntent = InternalRegComp(world, "ScryEntityIntent", sizeof(ScryRendererIntent), alignof(ScryRendererIntent));
+    id_ScryMaterial = InternalRegComp(world, "ScryMaterial", sizeof(ScryMaterial), alignof(ScryMaterial));
 
     {
-        ecs_query_desc_t cq = {};
-        cq.terms[0].id = Engine::Camera::id_Camera;
-        g_camera_query = ecs_query_init(world, &cq);
+        ecs_query_desc_t qd = {};
+        qd.terms[0].id = (ecs_entity_t)id_ScryCamera;
+        g_camera_query = ecs_query_init(world, &qd);
 
-        ecs_query_desc_t rq = {};
-        rq.terms[0].id    = Engine::Transform::id_WorldMatrix;
-        rq.terms[1].id    = id_MeshData;
-        rq.terms[2].id    = id_EntityIntent;
-        rq.terms[3].id    = id_AABB;
-        rq.terms[4].id    = Engine::Spatial::id_ChunkCoord;
-        rq.terms[4].inout = EcsIn;
-        rq.terms[5].id    = Engine::Spatial::id_ChunkHash;
-        rq.terms[5].inout = EcsIn;
-        rq.order_by          = Engine::Spatial::id_ChunkHash;
-        rq.order_by_callback = compare_chunk_hashes;
-        g_render_query = ecs_query_init(world, &rq);
+        ecs_query_desc_t rd = {};
+        rd.terms[0].id = (ecs_entity_t)id_ScryWorldMatrix;
+        rd.terms[1].id = (ecs_entity_t)id_ScryMeshData;
+        rd.terms[2].id = (ecs_entity_t)id_ScryEntityIntent;
+        rd.terms[3].id = (ecs_entity_t)id_ScryAABB;
+        rd.terms[4].id = (ecs_entity_t)id_ScryChunkCoord; rd.terms[4].inout = EcsIn;
+        rd.terms[5].id = (ecs_entity_t)id_ScryChunkHash;  rd.terms[5].inout = EcsIn;
+        
+        rd.order_by = (ecs_entity_t)id_ScryChunkHash;
+        rd.order_by_callback = compare_chunk_hashes;
+        g_render_query = ecs_query_init(world, &rd);
     }
 
     {
-        ecs_entity_desc_t ed = {}; ed.name = "Pass_Cull";
-        ecs_entity_t sys_ent = ecs_entity_init(world, &ed);
-        ecs_add_pair(world, sys_ent, EcsDependsOn, Engine::Pipeline::Phase_React);
+        ecs_entity_desc_t ed = {};
+        ed.name = "Pass_Cull";
 
-        ecs_system_desc_t s = {};
-        s.entity          = sys_ent;
-        s.multi_threaded  = false;
-        s.callback = [](ecs_iter_t* it) {
-            IDeviceContext* ctx = Graphics::GetContext();
-            const uint32_t numGroups = Graphics::GetLODGroupCount();
-            if (numGroups == 0) return;
-
-            int32_t cam_cx = 0, cam_cy = 0;
-            float   cam_pos[3] = {};
-            mat4    vp = GLM_MAT4_IDENTITY_INIT;
-            if (g_camera_query) {
-                ecs_iter_t ci = ecs_query_iter(it->world, g_camera_query);
-                while (ecs_query_next(&ci)) {
-                    const Engine::Camera::Camera* cam = (const Engine::Camera::Camera*)ecs_field(&ci, Engine::Camera::Camera, 0);
-                    if (ci.count == 0) continue;
-                    cam_cx    = (int32_t)floorf(cam[0].position[0] / Engine::Spatial::CHUNK_SIZE);
-                    cam_cy    = (int32_t)floorf(cam[0].position[2] / Engine::Spatial::CHUNK_SIZE);
-                    glm_vec3_copy((float*)cam[0].position, cam_pos);
-                    
-                    glm_mat4_mul((float (*)[4])cam[0].proj, (float (*)[4])cam[0].view, vp);
-
-                    void* p = nullptr;
-                    ctx->MapBuffer(g_pDrawParamsCB, MAP_WRITE, MAP_FLAG_DISCARD, p);
-                    if (p) { std::memcpy(p, vp, 64u); ctx->UnmapBuffer(g_pDrawParamsCB, MAP_WRITE); }
-                    ecs_iter_fini(&ci);
-                    break;
-                }
-            }
-
-            constexpr int RENDER_DISTANCE = 4;
-            s_entity_count = 0;
-
-            if (g_render_query) {
-                ecs_iter_t ri = ecs_query_iter(it->world, g_render_query);
-                while (ecs_query_next(&ri)) {
-                    const Engine::Transform::WorldMatrix*      wm     = (const Engine::Transform::WorldMatrix*)ecs_field(&ri, Engine::Transform::WorldMatrix, 0);
-                    const MeshData*                            md     = (const MeshData*)ecs_field(&ri, MeshData, 1);
-                    const Intent*                              intent = (const Intent*)ecs_field(&ri, Intent,   2);
-                    const AABB*                                ab     = (const AABB*)ecs_field(&ri, AABB,     3);
-                    const Engine::Spatial::ChunkCoord*         chunk  = (const Engine::Spatial::ChunkCoord*)ecs_field(&ri, Engine::Spatial::ChunkCoord, 4);
-
-                    for (int i = 0; i < ri.count && s_entity_count < MAX_ENTITIES; ++i) {
-                        if ((intent[i].mask & INTENT_VISIBLE)   == 0) continue;
-                        if ((intent[i].mask & INTENT_DESTROYED) != 0) continue;
-                        if (std::abs(chunk[i].x - cam_cx) > RENDER_DISTANCE) continue;
-                        if (std::abs(chunk[i].y - cam_cy) > RENDER_DISTANCE) continue;
-
-                        std::memcpy(&s_mat_flat[s_entity_count * 16], wm[i].value, 64u);
-
-                        glm_vec3_copy((float*)ab[i].min, s_aabb_flat[s_entity_count].aabb_min);
-                        s_aabb_flat[s_entity_count].pad0 = 0.f;
-                        glm_vec3_copy((float*)ab[i].max, s_aabb_flat[s_entity_count].aabb_max);
-                        s_aabb_flat[s_entity_count].pad1 = 0.f;
-
-                        s_mesh_ids[s_entity_count] = md[i].lod_group_id;
-                        ++s_entity_count;
-                    }
-                }
-            }
-            if (s_entity_count == 0) return;
-
-            {
-                void* p = nullptr;
-                ctx->MapBuffer(g_RawMatrixSSBO, MAP_WRITE, MAP_FLAG_DISCARD, p);
-                if (p) { std::memcpy(p, s_mat_flat, s_entity_count * 64u); ctx->UnmapBuffer(g_RawMatrixSSBO, MAP_WRITE); }
-            }
-            {
-                void* p = nullptr;
-                ctx->MapBuffer(g_pAABBBuffer, MAP_WRITE, MAP_FLAG_DISCARD, p);
-                if (p) { std::memcpy(p, s_aabb_flat, s_entity_count * 32u); ctx->UnmapBuffer(g_pAABBBuffer, MAP_WRITE); }
-            }
-            {
-                void* p = nullptr;
-                ctx->MapBuffer(g_EntityMeshIdBuffer, MAP_WRITE, MAP_FLAG_DISCARD, p);
-                if (p) { std::memcpy(p, s_mesh_ids, s_entity_count * 4u); ctx->UnmapBuffer(g_EntityMeshIdBuffer, MAP_WRITE); }
-            }
-
-            CullParamsCPU cp = {};
-            ExtractFrustumPlanes((float*)vp, cp.frustumPlanes);
-            glm_vec3_copy(cam_pos, cp.cameraWorldPos);
-            cp.cameraWorldPos[3] = 0.f;
-            cp.entityCount = s_entity_count;
-            {
-                void* p = nullptr;
-                ctx->MapBuffer(g_pCullParamsCB, MAP_WRITE, MAP_FLAG_DISCARD, p);
-                if (p) { std::memcpy(p, &cp, sizeof(cp)); ctx->UnmapBuffer(g_pCullParamsCB, MAP_WRITE); }
-            }
-
-            {
-                const uint32_t totalSlots = numGroups * LOD_LEVELS;
-                IndirectCmd resetCmds[MAX_LOD_GROUPS * LOD_LEVELS];
-                for (uint32_t g = 0; g < numGroups; ++g) {
-                    const Graphics::LODGroup* lg = Graphics::GetLODGroup(g);
-                    if (!lg) continue;
-                    for (uint32_t lod = 0; lod < LOD_LEVELS; ++lod) {
-                        const uint32_t slot = g * LOD_LEVELS + lod;
-                        resetCmds[slot].indexCount = lg->lods[lod].indexCount;
-                        resetCmds[slot].instanceCount = 0u;
-                        resetCmds[slot].firstIndex = lg->lods[lod].firstIndex;
-                        resetCmds[slot].baseVertex = lg->lods[lod].baseVertex;
-                        resetCmds[slot].firstInstance = slot * MAX_ENTITIES;
-                    }
-                }
-                ctx->UpdateBuffer(g_IndirectArgsBuffer, 0,
-                    totalSlots * (uint32_t)sizeof(IndirectCmd),
-                    resetCmds,
-                    RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-            }
-
-            ctx->SetPipelineState(g_pCullPSO);
-            ctx->CommitShaderResources(g_pCullSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-
-            DispatchComputeAttribs dc;
-            dc.ThreadGroupCountX = (s_entity_count + 63u) / 64u;
-            dc.ThreadGroupCountY = 1u;
-            dc.ThreadGroupCountZ = 1u;
-            ctx->DispatchCompute(dc);
-        };
-        ecs_system_init(world, &s);
+        ecs_system_desc_t sd = {};
+        sd.entity = ecs_entity_init(world, &ed);
+        sd.query.terms[0].id = (ecs_entity_t)id_ScryCamera; sd.query.terms[0].inout = EcsIn;
+        sd.callback = PassCullCallback;
+        ecs_entity_t sys = ecs_system_init(world, &sd);
+        ecs_add_pair(world, sys, EcsDependsOn, (ecs_entity_t)ScryPhase_React);
     }
 
     {
-        ecs_entity_desc_t ed = {}; ed.name = "Pass_Opaque";
-        ecs_entity_t sys_ent = ecs_entity_init(world, &ed);
-        ecs_add_pair(world, sys_ent, EcsDependsOn, Engine::Pipeline::Phase_React);
+        ecs_entity_desc_t ed = {};
+        ed.name = "Pass_Opaque";
 
-        ecs_system_desc_t s = {};
-        s.entity          = sys_ent;
-        s.multi_threaded  = false;
-        s.callback = [](ecs_iter_t* it) {
-            (void)it;
-            if (s_entity_count == 0) return;
-            const uint32_t numGroups = Graphics::GetLODGroupCount();
-            if (numGroups == 0) return;
-
-            IDeviceContext* ctx = Graphics::GetContext();
-            StateTransitionDesc barrier(g_IndirectArgsBuffer,
-                RESOURCE_STATE_UNORDERED_ACCESS, RESOURCE_STATE_INDIRECT_ARGUMENT,
-                STATE_TRANSITION_FLAG_UPDATE_STATE);
-            ctx->TransitionResourceStates(1, &barrier);
-            ctx->SetIndexBuffer(Graphics::GetGlobalIndexBuffer(), 0,
-                                RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-            ctx->SetPipelineState(g_pPSO);
-            ctx->CommitShaderResources(g_pSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-
-            DrawIndexedIndirectAttribs draw;
-            draw.IndexType      = VT_UINT32;
-            draw.pAttribsBuffer = g_IndirectArgsBuffer;
-            draw.DrawCount      = numGroups * LOD_LEVELS;
-            draw.Flags          = DRAW_FLAG_VERIFY_ALL;
-            ctx->DrawIndexedIndirect(draw);
-        };
-        ecs_system_init(world, &s);
+        ecs_system_desc_t sd = {};
+        sd.entity = ecs_entity_init(world, &ed);
+        sd.query.terms[0].id = (ecs_entity_t)id_ScryCamera; sd.query.terms[0].inout = EcsIn;
+        sd.callback = PassOpaqueCallback;
+        ecs_entity_t sys = ecs_system_init(world, &sd);
+        ecs_add_pair(world, sys, EcsDependsOn, (ecs_entity_t)ScryPhase_React);
     }
 }
 
-void Shutdown() {
+void ScryRenderer_Shutdown(void) {
     if (g_render_query) ecs_query_fini(g_render_query);
     if (g_camera_query) ecs_query_fini(g_camera_query);
-    g_pCullSRB.Release();
-    g_pCullPSO.Release();
-    g_pSRB.Release();
-    g_pPSO.Release();
-    g_IndirectArgsBuffer.Release();
-    g_VisibleMatrixSSBO.Release();
-    g_EntityMeshIdBuffer.Release();
-    g_pAABBBuffer.Release();
-    g_pCullParamsCB.Release();
-    g_RawMatrixSSBO.Release();
+    g_pCullSRB.Release(); g_pCullPSO.Release();
+    g_pSRB.Release(); g_pPSO.Release();
+    g_IndirectArgsBuffer.Release(); g_VisibleMatrixSSBO.Release();
+    g_EntityMeshIdBuffer.Release(); g_pAABBBuffer.Release();
+    g_pCullParamsCB.Release(); g_RawMatrixSSBO.Release();
     g_pDrawParamsCB.Release();
 }
 
-} // namespace Renderer
-} // namespace Engine
+} // extern "C"

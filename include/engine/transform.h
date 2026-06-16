@@ -1,31 +1,24 @@
 #pragma once
 #include <engine/engine.h>
 #include <components/transform.h>
-#include <flecs.h>
 
-namespace Engine {
-namespace Transform {
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-ENGINE_API extern ecs_entity_t id_Position;
-ENGINE_API extern ecs_entity_t id_Rotation;
-ENGINE_API extern ecs_entity_t id_Scale;
-ENGINE_API extern ecs_entity_t id_WorldMatrix;
-ENGINE_API extern ecs_entity_t id_DirtyMatrix;
+struct ecs_world_t;
+
+ENGINE_API extern uint64_t id_ScryPosition;
+ENGINE_API extern uint64_t id_ScryRotation;
+ENGINE_API extern uint64_t id_ScryScale;
+ENGINE_API extern uint64_t id_ScryWorldMatrix;
+ENGINE_API extern uint64_t id_ScryDirtyMatrix;
 
 /**
- * @brief Initializes the transform system components and observers.
- *
- * Hello there! This function sets up all the essential transform bits like
- * Position, Rotation, and Scale, and ensures that world matrices are
- * automatically recalculated when things move. Just call it once at startup!
- *
- * @param world The Flecs world where the transform magic should happen.
- *
- * @example
- * ecs_world_t* world = ecs_init();
- * Engine::Transform::Init(world);
+ * @brief Initializes the transform system.
  */
-ENGINE_API void Init(ecs_world_t* world);
+ENGINE_API void ScryTransform_Init(struct ecs_world_t* world);
 
-} // namespace Transform
-} // namespace Engine
+#ifdef __cplusplus
+}
+#endif

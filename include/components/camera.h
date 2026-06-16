@@ -1,16 +1,19 @@
 #pragma once
 #include <engine/math.h>
 
-namespace Engine {
-namespace Camera {
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-struct Camera {
-    Math::ScryVec3 position;
-    float          pitch;
-    float          yaw;
-    float          view[16];
-    float          proj[16];
-};
+typedef struct ScryCamera {
+    ScryVec3 position;
+    float    pitch;
+    float    yaw;
+    float    view[16];
+    float    proj[16];
+    float    frustum_planes[6][4]; // pre-normalized, Vulkan [0,1] depth
+} ScryCamera;
 
-} // namespace Camera
-} // namespace Engine
+#ifdef __cplusplus
+}
+#endif

@@ -1,4 +1,6 @@
 #pragma once
+
+#ifdef __cplusplus
 #include "Graphics/GraphicsEngine/interface/RenderDevice.h"
 #include "Graphics/GraphicsEngine/interface/DeviceContext.h"
 #include "Graphics/GraphicsEngine/interface/SwapChain.h"
@@ -6,38 +8,41 @@
 #include "Graphics/GraphicsEngine/interface/BufferView.h"
 #include "Common/interface/RefCntAutoPtr.hpp"
 
-namespace Engine {
-namespace Graphics {
+extern "C" {
+#endif
+
+#include <stdint.h>
 
 /**
  * @brief Retrieves the Diligent render device.
  */
-Diligent::IRenderDevice*  GetDevice();
+void* ScryGraphics_GetDevice(void);
 
 /**
  * @brief Retrieves the Diligent device context.
  */
-Diligent::IDeviceContext* GetContext();
+void* ScryGraphics_GetContext(void);
 
 /**
  * @brief Retrieves the Diligent swap chain.
  */
-Diligent::ISwapChain*     GetSwapChain();
+void* ScryGraphics_GetSwapChain(void);
 
 /**
  * @brief Retrieves the global vertex buffer.
  */
-Diligent::IBuffer* GetGlobalVertexBuffer();
+void* ScryGraphics_GetGlobalVertexBuffer(void);
 
 /**
  * @brief Retrieves the global index buffer.
  */
-Diligent::IBuffer* GetGlobalIndexBuffer();
+void* ScryGraphics_GetGlobalIndexBuffer(void);
 
 /**
  * @brief Retrieves the LOD group buffer.
  */
-Diligent::IBuffer* GetLODGroupBuffer();
+void* ScryGraphics_GetLODGroupBuffer(void);
 
-} // namespace Graphics
-} // namespace Engine
+#ifdef __cplusplus
+}
+#endif

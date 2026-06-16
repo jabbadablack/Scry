@@ -16,39 +16,34 @@
 
 using namespace Diligent;
 
-namespace Engine {
-namespace Graphics {
-
 // ── Diligent globals ──────────────────────────────────────────────────────────
 RefCntAutoPtr<IRenderDevice>  g_pDevice;
 RefCntAutoPtr<IDeviceContext> g_pContext;
 RefCntAutoPtr<ISwapChain>     g_pSwapChain;
 
-IRenderDevice*  GetDevice() {
+extern "C" {
+
+void* ScryGraphics_GetDevice(void) {
     assert(g_pDevice != nullptr);
     return g_pDevice;
 }
 
-IDeviceContext* GetContext() {
+void* ScryGraphics_GetContext(void) {
     assert(g_pContext != nullptr);
     return g_pContext;
 }
 
-ISwapChain*     GetSwapChain() {
+void* ScryGraphics_GetSwapChain(void) {
     assert(g_pSwapChain != nullptr);
     return g_pSwapChain;
 }
 
-bool Init(void* glfw_window_handle) {
+bool ScryGraphics_Init(void* glfw_window_handle) {
     assert(glfw_window_handle != nullptr);
-    std::printf("[Graphics] Initializing graphics system...\n");
-
-    EngineLog("[Graphics] Initializing DiligentCore (Vulkan)...");
 
     GLFWwindow* window = static_cast<GLFWwindow*>(glfw_window_handle);
     int w = 0, h = 0;
     glfwGetFramebufferSize(window, &w, &h);
-    assert(w > 0 && h > 0);
 
     IEngineFactoryVk* pFactory = GetEngineFactoryVk();
 
@@ -64,7 +59,6 @@ bool Init(void* glfw_window_handle) {
     IDeviceContext* pContext = nullptr;
     pFactory->CreateDeviceAndContextsVk(engineCI, &pDevice, &pContext);
     if (!pDevice || !pContext) {
-        EngineLog("[Graphics] FATAL: CreateDeviceAndContextsVk failed");
         return false;
     }
     g_pDevice.Attach(pDevice);
@@ -88,40 +82,23 @@ bool Init(void* glfw_window_handle) {
     ISwapChain* pSwapChain = nullptr;
     pFactory->CreateSwapChainVk(g_pDevice, g_pContext, scDesc, nativeWindow, &pSwapChain);
     if (!pSwapChain) {
-        EngineLog("[Graphics] FATAL: CreateSwapChain failed");
         return false;
     }
     g_pSwapChain.Attach(pSwapChain);
 
-    // Initialize megabuffers and LOD buffer (calls from resources)
     if (!InitResources()) return false;
 
-    {
-        char buf[128];
-        std::snprintf(buf, sizeof(buf), "[Graphics] DiligentCore Vulkan initialized (%dx%d)", w, h);
-        EngineLog(buf);
-    }
     return true;
 }
 
-void Shutdown() {
-    assert(g_pDevice != nullptr);
-    std::printf("[Graphics] Shutting down graphics system...\n");
-
-    EngineLog("[Graphics] Shutting down DiligentCore...");
-    
+void ScryGraphics_Shutdown(void) {
     ShutdownResources();
-
     g_pSwapChain.Release();
     g_pContext.Release();
     g_pDevice.Release();
-    EngineLog("[Graphics] DiligentCore shutdown complete");
 }
 
-void BeginFrame() {
-    assert(g_pSwapChain != nullptr);
-    assert(g_pContext != nullptr);
-
+void ScryGraphics_BeginFrame(void) {
     ITextureView* pRTV = g_pSwapChain->GetCurrentBackBufferRTV();
     ITextureView* pDSV = g_pSwapChain->GetDepthBufferDSV();
     g_pContext->SetRenderTargets(1, &pRTV, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -130,10 +107,8 @@ void BeginFrame() {
     g_pContext->ClearDepthStencil(pDSV, CLEAR_DEPTH_FLAG, 1.0f, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 }
 
-void Present() {
-    assert(g_pSwapChain != nullptr);
+void ScryGraphics_Present(void) {
     g_pSwapChain->Present(1);
 }
 
-} // namespace Graphics
-} // namespace Engine
+} // extern "C"

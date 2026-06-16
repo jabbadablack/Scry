@@ -1,25 +1,28 @@
 #pragma once
 #include <engine/engine.h>
 #include <engine/renderer/mesh.h>
-#include <flecs.h>
 
-namespace Engine {
-namespace Renderer {
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-ENGINE_API extern ecs_entity_t id_MeshData;
-ENGINE_API extern ecs_entity_t id_AABB;
-ENGINE_API extern ecs_entity_t id_EntityIntent;
-ENGINE_API extern ecs_entity_t id_Material;
+struct ecs_world_t;
+
+ENGINE_API extern uint64_t id_ScryMeshData;
+ENGINE_API extern uint64_t id_ScryAABB;
+ENGINE_API extern uint64_t id_ScryEntityIntent;
+ENGINE_API extern uint64_t id_ScryMaterial;
 
 /**
  * @brief Wakes up the renderer system.
  */
-ENGINE_API void Init(ecs_world_t* world);
+ENGINE_API void ScryRenderer_Init(struct ecs_world_t* world);
 
 /**
  * @brief Puts the renderer system to sleep.
  */
-ENGINE_API void Shutdown();
+ENGINE_API void ScryRenderer_Shutdown(void);
 
-} // namespace Renderer
-} // namespace Engine
+#ifdef __cplusplus
+}
+#endif

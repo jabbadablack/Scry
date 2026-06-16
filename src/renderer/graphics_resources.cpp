@@ -4,9 +4,6 @@
 
 using namespace Diligent;
 
-namespace Engine {
-namespace Graphics {
-
 // ── Global megabuffers ────────────────────────────────────────────────────────
 RefCntAutoPtr<IBuffer> g_GlobalVertexBuffer;
 RefCntAutoPtr<IBuffer> g_GlobalIndexBuffer;
@@ -14,37 +11,38 @@ RefCntAutoPtr<IBuffer> g_GlobalIndexBuffer;
 uint32_t g_VertexOffset = 0;
 uint32_t g_IndexOffset  = 0;
 
-IBuffer* GetGlobalVertexBuffer() {
+// ── LOD group storage ─────────────────────────────────────────────────────────
+ScryLODGroup    g_LODGroups[MAX_LOD_GROUPS];
+uint32_t        g_LODGroupCount = 0;
+RefCntAutoPtr<IBuffer> g_LODGroupBuffer;
+
+extern "C" {
+
+void* ScryGraphics_GetGlobalVertexBuffer(void) {
     assert(g_GlobalVertexBuffer != nullptr);
     return g_GlobalVertexBuffer;
 }
 
-IBuffer* GetGlobalIndexBuffer() {
+void* ScryGraphics_GetGlobalIndexBuffer(void) {
     assert(g_GlobalIndexBuffer != nullptr);
     return g_GlobalIndexBuffer;
 }
 
-// ── LOD group storage ─────────────────────────────────────────────────────────
-LODGroup        g_LODGroups[MAX_LOD_GROUPS];
-uint32_t        g_LODGroupCount = 0;
-RefCntAutoPtr<IBuffer> g_LODGroupBuffer;
-
-IBuffer* GetLODGroupBuffer() {
+void* ScryGraphics_GetLODGroupBuffer(void) {
     assert(g_LODGroupBuffer != nullptr);
     return g_LODGroupBuffer;
 }
 
-const LODGroup* GetLODGroup(uint32_t id) {
-    assert(id < MAX_LOD_GROUPS);
-    if (id >= g_LODGroupCount) return nullptr;
+const ScryLODGroup* ScryGraphics_GetLODGroup(uint32_t id) {
+    if (id >= g_LODGroupCount) return NULL;
     return &g_LODGroups[id];
 }
 
-uint32_t GetLODGroupCount() {
+uint32_t ScryGraphics_GetLODGroupCount(void) {
     return g_LODGroupCount;
 }
 
-bool InitResources() {
+bool InitResources(void) {
     // Global vertex megabuffer
     {
         BufferDesc bd;
@@ -52,7 +50,7 @@ bool InitResources() {
         bd.Usage             = USAGE_DEFAULT;
         bd.BindFlags         = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
         bd.Mode              = BUFFER_MODE_STRUCTURED;
-        bd.ElementByteStride = 32u; // sizeof(ScryVertex)
+        bd.ElementByteStride = 32u; 
         bd.Size              = GLOBAL_VB_SIZE;
         g_pDevice->CreateBuffer(bd, nullptr, &g_GlobalVertexBuffer);
         if (!g_GlobalVertexBuffer) return false;
@@ -76,7 +74,7 @@ bool InitResources() {
         bd.Usage             = USAGE_DEFAULT;
         bd.BindFlags         = BIND_SHADER_RESOURCE;
         bd.Mode              = BUFFER_MODE_STRUCTURED;
-        bd.ElementByteStride = 48u; // sizeof(LODGroupGPU)
+        bd.ElementByteStride = 48u; 
         bd.Size              = MAX_LOD_GROUPS * 48u;
         g_pDevice->CreateBuffer(bd, nullptr, &g_LODGroupBuffer);
         if (!g_LODGroupBuffer) return false;
@@ -85,11 +83,10 @@ bool InitResources() {
     return true;
 }
 
-void ShutdownResources() {
+void ShutdownResources(void) {
     g_LODGroupBuffer.Release();
     g_GlobalVertexBuffer.Release();
     g_GlobalIndexBuffer.Release();
 }
 
-} // namespace Graphics
-} // namespace Engine
+} // extern "C"

@@ -11,8 +11,11 @@ macro(engine_add_plugin target_name)
     add_library(${target_name} SHARED ${_SOURCES})
     target_link_libraries(${target_name} PRIVATE scry flecs)
 
-    if(DEFINED SCRY_WARNING_FLAGS)
-        target_compile_options(${target_name} PRIVATE ${SCRY_WARNING_FLAGS})
+    if(DEFINED SCRY_C_FLAGS AND DEFINED SCRY_CXX_FLAGS)
+        target_compile_options(${target_name} PRIVATE 
+            $<$<COMPILE_LANGUAGE:C>:${SCRY_C_FLAGS}>
+            $<$<COMPILE_LANGUAGE:CXX>:${SCRY_CXX_FLAGS}>
+        )
     endif()
 
     # Isolated output path: bin/<config>/plugins/<name>
@@ -54,7 +57,10 @@ macro(engine_add_project target_name)
     add_executable(${target_name} ${_SOURCES})
     target_link_libraries(${target_name} PRIVATE scry)
 
-    if(DEFINED SCRY_WARNING_FLAGS)
-        target_compile_options(${target_name} PRIVATE ${SCRY_WARNING_FLAGS})
+    if(DEFINED SCRY_C_FLAGS AND DEFINED SCRY_CXX_FLAGS)
+        target_compile_options(${target_name} PRIVATE 
+            $<$<COMPILE_LANGUAGE:C>:${SCRY_C_FLAGS}>
+            $<$<COMPILE_LANGUAGE:CXX>:${SCRY_CXX_FLAGS}>
+        )
     endif()
 endmacro()

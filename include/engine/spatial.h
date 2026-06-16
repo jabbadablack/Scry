@@ -1,28 +1,21 @@
 #pragma once
 #include <engine/engine.h>
 #include <components/spatial.h>
-#include <flecs.h>
 
-namespace Engine {
-namespace Spatial {
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-ENGINE_API extern ecs_entity_t id_ChunkCoord;
-ENGINE_API extern ecs_entity_t id_ChunkHash;
+struct ecs_world_t;
+
+ENGINE_API extern uint64_t id_ScryChunkCoord;
+ENGINE_API extern uint64_t id_ScryChunkHash;
 
 /**
  * @brief Sets up the spatial partitioning system.
- *
- * Hi! This function gets the spatial system ready to go, initializing
- * components for chunked coordinate management. It's a key part of
- * keeping our world organized and efficient!
- *
- * @param world The Flecs world to initialize the spatial system in.
- *
- * @example
- * ecs_world_t* world = ecs_init();
- * Engine::Spatial::Init(world);
  */
-ENGINE_API void Init(ecs_world_t* world);
+ENGINE_API void ScrySpatial_Init(struct ecs_world_t* world);
 
-} // namespace Spatial
-} // namespace Engine
+#ifdef __cplusplus
+}
+#endif

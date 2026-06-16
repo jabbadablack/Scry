@@ -1,8 +1,8 @@
-#include <engine/ecs.hpp>
-#include <engine/pipeline.hpp>
-#include <engine/transform.hpp>
-#include <engine/camera.hpp>
-#include <engine/memory.hpp>
+#include <engine/ecs.h>
+#include <engine/pipeline.h>
+#include <engine/transform.h>
+#include <engine/camera.h>
+#include <engine/memory.h>
 #include <cassert>
 #include <cstring>
 #include <cstdlib>

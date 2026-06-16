@@ -1,7 +1,7 @@
-#include <engine/plugin.hpp>
-#include <engine/engine_context.hpp>
-#include <engine/platform.hpp>
-#include <engine/memory.hpp>
+#include <engine/plugin.h>
+#include <engine/engine_context.h>
+#include <engine/platform.h>
+#include <engine/memory.h>
 #include <yyjson.h>
 #include <cassert>
 #include <cstdlib>

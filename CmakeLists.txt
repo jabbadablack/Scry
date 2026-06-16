@@ -143,8 +143,8 @@ include(cmake/EngineHelpers.cmake)
 
 # ─── Engine Library ──────────────────────────────────────────────────────────
 
-file(GLOB_RECURSE SCRY_SRC CONFIGURE_DEPENDS "src/*.cpp")
-file(GLOB_RECURSE SCRY_INC CONFIGURE_DEPENDS "include/*.hpp" "include/*.h")
+file(GLOB_RECURSE SCRY_SRC CONFIGURE_DEPENDS "src/*.cpp" "src/systems/*.cpp")
+file(GLOB_RECURSE SCRY_INC CONFIGURE_DEPENDS "include/*.h")
 
 add_library(scry SHARED ${SCRY_SRC} ${SCRY_INC})
 target_compile_options(scry PRIVATE ${SCRY_WARNING_FLAGS})

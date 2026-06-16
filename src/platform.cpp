@@ -1,10 +1,10 @@
-#include <engine/engine_context.hpp>
-#include <engine/platform.hpp>
-#include <engine/input.hpp>
-#include <engine/ecs.hpp>
-#include <engine/graphics.hpp>
-#include <engine/renderer.hpp>
-#include <engine/plugin.hpp>
+#include <engine/engine_context.h>
+#include <engine/platform.h>
+#include <engine/input.h>
+#include <engine/ecs.h>
+#include <engine/graphics.h>
+#include <engine/renderer.h>
+#include <engine/plugin.h>
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -179,7 +179,9 @@ ENGINE_API EngineError EngineRun(const AppConfig* config) {
             if (!ecs_progress(world, dt)) { ctx.running = 0; break; }
             Engine::Graphics::Present();
 
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            // Only sleep when we're running faster than 1ms/frame to avoid busy-spinning
+            // on integrated GPUs without VSync (Present(1) handles throttling otherwise)
+            if (dt < 0.001f) std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     }
 

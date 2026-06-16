@@ -1,12 +1,12 @@
 #include <engine/engine.h>
-#include <engine/pipeline.hpp>
-#include <engine/ecs.hpp>
-#include <engine/json.hpp>
-#include <engine/plugin.hpp>
-#include <engine/graphics.hpp>
-#include <engine/renderer.hpp>
-#include <engine/transform.hpp>
-#include <engine/camera.hpp>
+#include <engine/pipeline.h>
+#include <engine/ecs.h>
+#include <engine/json.h>
+#include <engine/plugin.h>
+#include <engine/graphics.h>
+#include <engine/renderer.h>
+#include <engine/transform.h>
+#include <engine/camera.h>
 #include <cassert>
 #include <flecs.h>
 #include <cstdio>
@@ -15,14 +15,10 @@
 
 namespace fs = std::filesystem;
 
-// ── Logging callback ──────────────────────────────────────────────────────────
-
 static void AppLog(const char* msg) {
     std::printf("[AppLog] %s\n", msg);
     std::fflush(stdout);
 }
-
-// ── Asset Discovery ───────────────────────────────────────────────────────────
 
 static uint32_t DiscoverAndLoadMesh(const char* filename) {
     std::string paths[] = {
@@ -54,24 +50,19 @@ static uint32_t DiscoverAndLoadMesh(const char* filename) {
     return Engine::Graphics::INVALID_MESH;
 }
 
-// ── Lifecycle callbacks ───────────────────────────────────────────────────────
-
 static void OnInit(Context* ctx) {
     assert(ctx != nullptr);
     Engine::JSON::LoadProjectConfig(ctx, nullptr);
 
     ecs_world_t* world = GetWorld(ctx);
 
-    // 1. Load mesh
     uint32_t suzanne_handle = DiscoverAndLoadMesh("suzanne.scrymesh");
-    if (suzanne_handle == Engine::Graphics::INVALID_MESH) {
-        return;
-    }
+    if (suzanne_handle == Engine::Graphics::INVALID_MESH) return;
 
-    // 2. Create 100 entities in a 10×10 grid
-    for (int i = 0; i < 1000; ++i) {
-        int row = i / 10;
-        int col = i % 10;
+    // Spawn 1000 entities using SoA transform components
+    for (int i = 0; i < 10000; ++i) {
+        int row = i / 100;
+        int col = i % 100;
 
         char name[32];
         std::snprintf(name, sizeof(name), "Entity_%d", i);
@@ -79,14 +70,21 @@ static void OnInit(Context* ctx) {
         e.name = name;
         ecs_entity_t ent = ecs_entity_init(world, &e);
 
-        Engine::Transform::TransformComp tf = {};
-        tf.position = { (float)(col - 5) * 3.0f, 0.0f, (float)(row - 5) * 3.0f };
-        tf.rotation = { 0, 0, 0 };
-        tf.scale    = { 1, 1, 1 };
-        ecs_set_id(world, ent, Engine::Transform::id_Transform, sizeof(tf), &tf);
+        Engine::Transform::Position pos = { {(float)(col - 5) * 3.0f, 0.0f, (float)(row - 5) * 3.0f} };
+        ecs_set_id(world, ent, Engine::Transform::id_Position, sizeof(pos), &pos);
+
+        Engine::Transform::Rotation rot = { {0.0f, 0.0f, 0.0f} };
+        ecs_set_id(world, ent, Engine::Transform::id_Rotation, sizeof(rot), &rot);
+
+        Engine::Transform::Scale scl = { {1.0f, 1.0f, 1.0f} };
+        ecs_set_id(world, ent, Engine::Transform::id_Scale, sizeof(scl), &scl);
 
         Engine::Transform::WorldMatrix wm = { Engine::Math::ScryMat4::Identity() };
         ecs_set_id(world, ent, Engine::Transform::id_WorldMatrix, sizeof(wm), &wm);
+
+        // Mark dirty so TransformSystem computes initial matrix on first frame
+        Engine::Transform::DirtyMatrixIntent dirty = { 1 };
+        ecs_set_id(world, ent, Engine::Transform::id_DirtyMatrix, sizeof(dirty), &dirty);
 
         Engine::Renderer::MeshInstance mi = { suzanne_handle };
         ecs_set_id(world, ent, Engine::Renderer::id_MeshInstance, sizeof(mi), &mi);
@@ -98,24 +96,24 @@ static void OnInit(Context* ctx) {
         ecs_set_id(world, ent, Engine::Renderer::id_Material, sizeof(mat), &mat);
     }
 
-    // 3. Create Camera
+    // Create camera
     {
         ecs_entity_desc_t ed = {};
         ed.name = "MainCamera";
         ecs_entity_t cam_ent = ecs_entity_init(world, &ed);
-        
+
         Engine::Camera::Camera cam = {};
         cam.position  = {0, 5, -15};
         cam.pitch     = 0.2f;
         cam.yaw       = 0.0f;
-        for(int i=0; i<16; ++i) { cam.view[i] = cam.proj[i] = 0.0f; }
+        for (int i = 0; i < 16; ++i) cam.view[i] = cam.proj[i] = 0.0f;
         cam.view[0] = cam.view[5] = cam.view[10] = cam.view[15] = 1.0f;
         cam.proj[0] = cam.proj[5] = cam.proj[10] = cam.proj[15] = 1.0f;
 
         ecs_set_id(world, cam_ent, Engine::Camera::id_Camera, sizeof(cam), &cam);
     }
 
-    // 5. Rotation system
+    // RotateSystem: update yaw and set dirty flag so TransformSystem recomputes
     {
         ecs_entity_desc_t ed = {};
         ed.name = "RotateSystem";
@@ -124,13 +122,17 @@ static void OnInit(Context* ctx) {
 
         ecs_system_desc_t s = {};
         s.entity = sys_ent;
-        s.query.terms[0].id = Engine::Transform::id_Transform;
+        s.query.terms[0].id    = Engine::Transform::id_Rotation;
         s.query.terms[0].inout = EcsInOut;
+        s.query.terms[1].id    = Engine::Transform::id_DirtyMatrix;
+        s.query.terms[1].inout = EcsInOut;
 
         s.callback = [](ecs_iter_t* it) {
-            Engine::Transform::TransformComp* tf = ecs_field(it, Engine::Transform::TransformComp, 0);
+            Engine::Transform::Rotation*          rot   = ecs_field(it, Engine::Transform::Rotation,          0);
+            Engine::Transform::DirtyMatrixIntent* dirty = ecs_field(it, Engine::Transform::DirtyMatrixIntent, 1);
             for (int i = 0; i < it->count; ++i) {
-                tf[i].rotation.y() += it->delta_time;
+                rot[i].value.y() += it->delta_time;
+                dirty[i].active   = 1;
             }
         };
         ecs_system_init(world, &s);
@@ -144,8 +146,6 @@ static void OnShutdown(Context* ctx) {
     EngineLog("[Shutdown] Sandbox complete");
     Engine::Plugin::UnloadPlugins();
 }
-
-// ── Entry point ───────────────────────────────────────────────────────────────
 
 int main(int argc, char* argv[]) {
     (void)argc; (void)argv;
@@ -168,8 +168,8 @@ int main(int argc, char* argv[]) {
             std::getchar();
             return 1;
         }
-    } catch (const std::exception& e) {
-        std::fprintf(stderr, "[Main] Fatal exception: %s\n", e.what());
+    } catch (const std::exception& ex) {
+        std::fprintf(stderr, "[Main] Fatal exception: %s\n", ex.what());
         std::printf("Press ENTER to exit...");
         std::getchar();
         return 1;

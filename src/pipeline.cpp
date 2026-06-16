@@ -1,4 +1,4 @@
-#include <engine/pipeline.hpp>
+#include <engine/pipeline.h>
 #include <cassert>
 #include <cstring>
 #include <cstdio>

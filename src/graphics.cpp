@@ -1,7 +1,7 @@
-#include <engine/graphics.hpp>
-#include <engine/graphics_backend.hpp>
+#include <engine/graphics.h>
+#include <engine/graphics_backend.h>
 #include <engine/CookedAsset.h>
-#include <engine/renderer.hpp>
+#include <engine/renderer.h>
 
 #include "Graphics/GraphicsEngineVulkan/interface/EngineFactoryVk.h"
 #include "Platforms/Win32/interface/Win32NativeWindow.h"
@@ -188,7 +188,7 @@ void BeginFrame() {
 }
 
 void Present() {
-    g_pSwapChain->Present();
+    g_pSwapChain->Present(1);  // SyncInterval=1: VSync on
 }
 
 // ── Mesh loading ──────────────────────────────────────────────────────────────

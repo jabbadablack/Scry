@@ -1,10 +1,10 @@
-#include <engine/json.hpp>
-#include <engine/engine_context.hpp>
-#include <engine/platform.hpp>
-#include <engine/math.hpp>
-#include <engine/memory.hpp>
-#include <engine/plugin.hpp>
-#include <engine/ecs.hpp>
+#include <engine/json.h>
+#include <engine/engine_context.h>
+#include <engine/platform.h>
+#include <engine/math.h>
+#include <engine/memory.h>
+#include <engine/plugin.h>
+#include <engine/ecs.h>
 #include <yyjson.h>
 #include <cassert>
 #include <cstdio>

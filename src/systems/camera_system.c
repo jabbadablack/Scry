@@ -54,11 +54,11 @@ static void CameraInputSystemCallback(ecs_iter_t* it) {
         }
         if (ScryInput_IsKeyDown(SCRY_KEY_A)) {
             vec3 move; glm_vec3_scale(right, speed, move);
-            glm_vec3_add(cam[i].position, move, cam[i].position);
+            glm_vec3_sub(cam[i].position, move, cam[i].position);
         }
         if (ScryInput_IsKeyDown(SCRY_KEY_D)) {
             vec3 move; glm_vec3_scale(right, speed, move);
-            glm_vec3_sub(cam[i].position, move, cam[i].position);
+            glm_vec3_add(cam[i].position, move, cam[i].position);
         }
     }
 }

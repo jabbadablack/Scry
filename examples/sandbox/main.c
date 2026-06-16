@@ -51,7 +51,6 @@ static ScryLODGroup DiscoverAndLoadMesh(const char* filename) {
     return failed;
 }
 
-/* Uncomment together with the system registration below.
 static void RotateSystemCallback(ecs_iter_t* it) {
     if (it->field_count < 2) {
         printf("[RotateSystem] Error: field_count = %d\n", it->field_count);
@@ -64,7 +63,6 @@ static void RotateSystemCallback(ecs_iter_t* it) {
         dirty[i].active = 1;
     }
 }
-*/
 
 static void OnInit(ScryContext* ctx) {
     assert(ctx != NULL);
@@ -79,9 +77,9 @@ static void OnInit(ScryContext* ctx) {
     printf("[Init] id_ScryMeshData: %llu\n", (unsigned long long)id_ScryMeshData);
     fflush(stdout);
 
-    for (int i = 0; i < 5000; ++i) {
-        int row = i / 50;
-        int col = i % 50;
+    for (int i = 0; i < 10000; ++i) {
+        int row = i / 100;
+        int col = i % 100;
 
         ecs_entity_t ent = ecs_new(world);
 
@@ -130,7 +128,6 @@ static void OnInit(ScryContext* ctx) {
         ecs_set_id(world, cam_ent, id_ScryCamera, sizeof(cam), &cam);
     }
 
-    /*
     {
         ecs_entity_desc_t ed = { .name = "RotateSystem" };
         ecs_entity_t sys_ent = ecs_entity_init(world, &ed);
@@ -144,7 +141,6 @@ static void OnInit(ScryContext* ctx) {
         };
         ecs_system_init(world, &sd);
     }
-    */
 
     Scry_Log("[Init] Scene ready.");
 }

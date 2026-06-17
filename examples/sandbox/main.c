@@ -77,9 +77,9 @@ static void OnInit(ScryContext* ctx) {
     printf("[Init] id_ScryMeshData: %llu\n", (unsigned long long)id_ScryMeshData);
     fflush(stdout);
 
-    for (int i = 0; i < 10000; ++i) {
-        int row = i / 100;
-        int col = i % 100;
+    for (int i = 0; i < 100000; ++i) {
+        int row = i / 1000;
+        int col = i % 1000;
 
         ecs_entity_t ent = ecs_new(world);
 

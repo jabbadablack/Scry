@@ -33,7 +33,8 @@ ENGINE_API uint64_t id_ScryMeshData     = 0;
 ENGINE_API uint64_t id_ScryEntityIntent = 0;
 ENGINE_API uint64_t id_ScryMaterial     = 0;
 
-static const uint32_t MAX_ENTITIES    = 16384u;
+static const uint32_t MAX_VISIBLE_ENTITIES = 16384u;
+static const int      RENDER_RADIUS        = 3;
 static const uint32_t MAX_LOD_GROUPS  = 256u;
 static const uint32_t LOD_LEVELS      = 3u;
 
@@ -149,14 +150,22 @@ static void PassCullCallback(ecs_iter_t* it) {
         float*    dest_mat  = static_cast<float*>(pMat);
         uint32_t* dest_mesh = static_cast<uint32_t*>(pMesh);
 
+        int cam_chunk_x = (int)(cam[0].position[0] / SCRY_CHUNK_SIZE);
+        int cam_chunk_z = (int)(cam[0].position[2] / SCRY_CHUNK_SIZE);
+
         ecs_iter_t ri = ecs_query_iter(it->world, g_render_query);
         while (ecs_query_next(&ri)) {
             ScryWorldMatrix*    wm     = ecs_field(&ri, ScryWorldMatrix,    0);
             ScryMeshData*       md     = ecs_field(&ri, ScryMeshData,       1);
             ScryRendererIntent* intent = ecs_field(&ri, ScryRendererIntent, 2);
+            ScryChunkCoord*     cc     = ecs_field(&ri, ScryChunkCoord,     3);
+            if (s_entity_count >= MAX_VISIBLE_ENTITIES) { ecs_iter_fini(&ri); break; }
             for (int i = 0; i < ri.count; ++i) {
-                if (s_entity_count >= MAX_ENTITIES) break;
+                if (s_entity_count >= MAX_VISIBLE_ENTITIES) break;
                 if (!(intent[i].mask & SCRY_INTENT_VISIBLE)) continue;
+                int dx = cc[i].x - cam_chunk_x;
+                int dz = cc[i].y - cam_chunk_z;
+                if (dx < -RENDER_RADIUS || dx > RENDER_RADIUS || dz < -RENDER_RADIUS || dz > RENDER_RADIUS) continue;
                 memcpy(dest_mat, wm[i].value, 64u);
                 dest_mat += 16;
                 *dest_mesh++ = md[i].lod_group_id;
@@ -201,7 +210,7 @@ static void PassCullCallback(ecs_iter_t* it) {
     {
         const uint32_t numGroups  = ScryGraphics_GetLODGroupCount();
         const uint32_t totalSlots = numGroups * LOD_LEVELS;
-        const uint32_t visMatCap  = LOD_LEVELS * MAX_ENTITIES;
+        const uint32_t visMatCap  = LOD_LEVELS * MAX_VISIBLE_ENTITIES;
         const uint32_t perSlot    = (totalSlots > 0) ? (visMatCap / totalSlots) : 0u;
         for (uint32_t g = 0; g < numGroups; ++g) {
             const ScryLODGroup* lg = ScryGraphics_GetLODGroup(g);
@@ -265,7 +274,7 @@ void ScryRenderer_Init(struct ecs_world_t* world) {
         bd.Mode              = BUFFER_MODE_STRUCTURED;
         bd.ElementByteStride = 64u;
         bd.CPUAccessFlags    = CPU_ACCESS_WRITE;
-        bd.Size              = MAX_ENTITIES * 64u;
+        bd.Size              = MAX_VISIBLE_ENTITIES * 64u;
         dev->CreateBuffer(bd, nullptr, &g_RawMatrixSSBO);
     }
     {
@@ -285,7 +294,7 @@ void ScryRenderer_Init(struct ecs_world_t* world) {
         bd.Mode              = BUFFER_MODE_STRUCTURED;
         bd.ElementByteStride = 4u;
         bd.CPUAccessFlags    = CPU_ACCESS_WRITE;
-        bd.Size              = MAX_ENTITIES * 4u;
+        bd.Size              = MAX_VISIBLE_ENTITIES * 4u;
         dev->CreateBuffer(bd, nullptr, &g_EntityMeshIdBuffer);
     }
     {
@@ -314,7 +323,7 @@ void ScryRenderer_Init(struct ecs_world_t* world) {
         bd.BindFlags         = BIND_UNORDERED_ACCESS | BIND_SHADER_RESOURCE;
         bd.Mode              = BUFFER_MODE_STRUCTURED;
         bd.ElementByteStride = 64u;
-        bd.Size              = LOD_LEVELS * MAX_ENTITIES * 64u;
+        bd.Size              = LOD_LEVELS * MAX_VISIBLE_ENTITIES * 64u;
         dev->CreateBuffer(bd, nullptr, &g_VisibleMatrixSSBO);
     }
 
@@ -335,11 +344,12 @@ void ScryRenderer_Init(struct ecs_world_t* world) {
                 ShaderResourceVariableDesc vars[] = {
                     {SHADER_TYPE_VERTEX, "b_vertices",  SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
                     {SHADER_TYPE_VERTEX, "b_instances", SHADER_RESOURCE_VARIABLE_TYPE_STATIC},
+                    {SHADER_TYPE_VERTEX, "b_lodGroups", SHADER_RESOURCE_VARIABLE_TYPE_STATIC},
                     {SHADER_TYPE_VERTEX, "DrawParams",  SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
                 };
                 GraphicsPipelineStateCreateInfo psoCI;
                 psoCI.PSODesc.Name = "MeshPSO"; psoCI.PSODesc.PipelineType = PIPELINE_TYPE_GRAPHICS;
-                psoCI.PSODesc.ResourceLayout.Variables = vars; psoCI.PSODesc.ResourceLayout.NumVariables = 3u;
+                psoCI.PSODesc.ResourceLayout.Variables = vars; psoCI.PSODesc.ResourceLayout.NumVariables = 4u;
                 psoCI.GraphicsPipeline.NumRenderTargets = 1;
                 psoCI.GraphicsPipeline.RTVFormats[0] = sc->GetDesc().ColorBufferFormat;
                 psoCI.GraphicsPipeline.DSVFormat = sc->GetDesc().DepthBufferFormat;
@@ -389,6 +399,7 @@ void ScryRenderer_Init(struct ecs_world_t* world) {
         g_pCullPSO->GetStaticVariableByName(SHADER_TYPE_COMPUTE, "b_outVisibleMatrices")->Set(visUAV);
         g_pCullPSO->GetStaticVariableByName(SHADER_TYPE_COMPUTE, "b_lodGroups")         ->Set(lodSRV);
         g_pPSO->GetStaticVariableByName(SHADER_TYPE_VERTEX, "b_instances")              ->Set(visSRV);
+        g_pPSO->GetStaticVariableByName(SHADER_TYPE_VERTEX, "b_lodGroups")              ->Set(lodSRV);
 
         g_pPSO->CreateShaderResourceBinding(&g_pSRB, true);
         IBufferView* vbSRV = ((IBuffer*)ScryGraphics_GetGlobalVertexBuffer())->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);

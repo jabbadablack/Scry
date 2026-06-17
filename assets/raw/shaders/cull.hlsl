@@ -60,6 +60,8 @@ void CSMain(uint3 DTid : SV_DispatchThreadID) {
     float sink = smoothstep(575.0, 600.0, dist) * 10.0;
     ScryMat4 sunkMat = mat;
     sunkMat.c3.y -= sink;
+    // Pack lodGroupId into c3.w (normally 1.0); vertex shader extracts it before transform.
+    sunkMat.c3.w = float(lodGroupId);
 
     // ── LOD selection ─────────────────────────────────────────────────────────
     uint selectedLOD = 0;

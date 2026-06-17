@@ -32,6 +32,8 @@
 
 namespace fs = std::filesystem;
 
+struct RawVertex { float px, py, pz, nx, ny, nz, u, v; };
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
@@ -106,8 +108,8 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
     }
 
     // ── Step 1: Raw extraction — combine all sub-meshes with index offsets ───
-    std::vector<ScryVertex> unoptimized_verts;
-    std::vector<uint32_t>   combined_idxs;
+    std::vector<RawVertex> unoptimized_verts;
+    std::vector<uint32_t>  combined_idxs;
 
     for (unsigned m = 0; m < scene->mNumMeshes; ++m) {
         const aiMesh* mesh = scene->mMeshes[m];
@@ -116,7 +118,7 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
         const uint32_t index_offset = static_cast<uint32_t>(unoptimized_verts.size());
 
         for (unsigned v = 0; v < mesh->mNumVertices; ++v) {
-            ScryVertex sv{};
+            RawVertex sv{};
             sv.px = mesh->mVertices[v].x;
             sv.py = mesh->mVertices[v].y;
             sv.pz = mesh->mVertices[v].z;
@@ -152,11 +154,11 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
     const size_t unique_vertices = meshopt_generateVertexRemap(
         remap.data(),
         combined_idxs.data(), combined_idxs.size(),
-        unoptimized_verts.data(), unoptimized_verts.size(), sizeof(ScryVertex));
+        unoptimized_verts.data(), unoptimized_verts.size(), sizeof(RawVertex));
 
     // ── Step 3: Allocate dense output arrays ─────────────────────────────────
-    std::vector<ScryVertex> optimized_verts(unique_vertices);
-    std::vector<uint32_t>   optimized_idxs(combined_idxs.size());
+    std::vector<RawVertex> optimized_verts(unique_vertices);
+    std::vector<uint32_t>  optimized_idxs(combined_idxs.size());
 
     // ── Step 4: Apply remap ──────────────────────────────────────────────────
     meshopt_remapIndexBuffer(
@@ -165,7 +167,7 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
         remap.data());
     meshopt_remapVertexBuffer(
         optimized_verts.data(),
-        unoptimized_verts.data(), unoptimized_verts.size(), sizeof(ScryVertex),
+        unoptimized_verts.data(), unoptimized_verts.size(), sizeof(RawVertex),
         remap.data());
 
     // ── Step 5: Cache-optimize — LOD0 is the full deduplicated + cache-tuned mesh ─
@@ -182,7 +184,7 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
     const size_t lod1_index_count = meshopt_simplify(
         lod1_idxs.data(),
         lod0_idxs.data(), lod0_idxs.size(),
-        &optimized_verts[0].px, optimized_verts.size(), sizeof(ScryVertex),
+        &optimized_verts[0].px, optimized_verts.size(), sizeof(RawVertex),
         lod1_target, 0.01f, 0, &lod1_error);
     lod1_idxs.resize(lod1_index_count);
     meshopt_optimizeVertexCache(
@@ -195,7 +197,7 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
     const size_t lod2_index_count = meshopt_simplify(
         lod2_idxs.data(),
         lod0_idxs.data(), lod0_idxs.size(),
-        &optimized_verts[0].px, optimized_verts.size(), sizeof(ScryVertex),
+        &optimized_verts[0].px, optimized_verts.size(), sizeof(RawVertex),
         lod2_target, 0.05f, 0, &lod2_error);
     lod2_idxs.resize(lod2_index_count);
     meshopt_optimizeVertexCache(
@@ -206,22 +208,22 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
     // and lod2_idxs still reference optimized_verts index space here.
     // meshopt_optimizeVertexFetch modifies each index buffer IN PLACE to reference
     // the new compact per-LOD vertex buffer; optimized_verts is never written to.
-    std::vector<ScryVertex> lod0_verts(optimized_verts.size());
+    std::vector<RawVertex> lod0_verts(optimized_verts.size());
     size_t lod0_v_count = meshopt_optimizeVertexFetch(
         lod0_verts.data(), lod0_idxs.data(), lod0_idxs.size(),
-        optimized_verts.data(), optimized_verts.size(), sizeof(ScryVertex));
+        optimized_verts.data(), optimized_verts.size(), sizeof(RawVertex));
     lod0_verts.resize(lod0_v_count);
 
-    std::vector<ScryVertex> lod1_verts(optimized_verts.size());
+    std::vector<RawVertex> lod1_verts(optimized_verts.size());
     size_t lod1_v_count = meshopt_optimizeVertexFetch(
         lod1_verts.data(), lod1_idxs.data(), lod1_idxs.size(),
-        optimized_verts.data(), optimized_verts.size(), sizeof(ScryVertex));
+        optimized_verts.data(), optimized_verts.size(), sizeof(RawVertex));
     lod1_verts.resize(lod1_v_count);
 
-    std::vector<ScryVertex> lod2_verts(optimized_verts.size());
+    std::vector<RawVertex> lod2_verts(optimized_verts.size());
     size_t lod2_v_count = meshopt_optimizeVertexFetch(
         lod2_verts.data(), lod2_idxs.data(), lod2_idxs.size(),
-        optimized_verts.data(), optimized_verts.size(), sizeof(ScryVertex));
+        optimized_verts.data(), optimized_verts.size(), sizeof(RawVertex));
     lod2_verts.resize(lod2_v_count);
 
     // ── Step 9: Write .scrymesh ───────────────────────────────────────────────
@@ -235,14 +237,36 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
     // Compute tight AABB from LOD0 vertex positions.
     float aabb_min[3] = { FLT_MAX, FLT_MAX, FLT_MAX };
     float aabb_max[3] = { -FLT_MAX, -FLT_MAX, -FLT_MAX };
-    for (const ScryVertex& sv : lod0_verts) {
-        if (sv.px < aabb_min[0]) aabb_min[0] = sv.px;
-        if (sv.py < aabb_min[1]) aabb_min[1] = sv.py;
-        if (sv.pz < aabb_min[2]) aabb_min[2] = sv.pz;
-        if (sv.px > aabb_max[0]) aabb_max[0] = sv.px;
-        if (sv.py > aabb_max[1]) aabb_max[1] = sv.py;
-        if (sv.pz > aabb_max[2]) aabb_max[2] = sv.pz;
+    for (const RawVertex& rv : lod0_verts) {
+        if (rv.px < aabb_min[0]) aabb_min[0] = rv.px;
+        if (rv.py < aabb_min[1]) aabb_min[1] = rv.py;
+        if (rv.pz < aabb_min[2]) aabb_min[2] = rv.pz;
+        if (rv.px > aabb_max[0]) aabb_max[0] = rv.px;
+        if (rv.py > aabb_max[1]) aabb_max[1] = rv.py;
+        if (rv.pz > aabb_max[2]) aabb_max[2] = rv.pz;
     }
+
+    // Pack raw float vertices into 8-byte quantized ScryVertex (10-10-10 pos + 16/16 UV).
+    const float ex = (aabb_max[0] - aabb_min[0]) > 0.0f ? (aabb_max[0] - aabb_min[0]) : 1.0f;
+    const float ey = (aabb_max[1] - aabb_min[1]) > 0.0f ? (aabb_max[1] - aabb_min[1]) : 1.0f;
+    const float ez = (aabb_max[2] - aabb_min[2]) > 0.0f ? (aabb_max[2] - aabb_min[2]) : 1.0f;
+    auto pack_lod = [&](const std::vector<RawVertex>& raw) {
+        std::vector<ScryVertex> packed(raw.size());
+        for (size_t i = 0; i < raw.size(); ++i) {
+            const RawVertex& rv = raw[i];
+            uint32_t x10 = (uint32_t)((rv.px - aabb_min[0]) / ex * 1023.0f + 0.5f) & 0x3FFu;
+            uint32_t y10 = (uint32_t)((rv.py - aabb_min[1]) / ey * 1023.0f + 0.5f) & 0x3FFu;
+            uint32_t z10 = (uint32_t)((rv.pz - aabb_min[2]) / ez * 1023.0f + 0.5f) & 0x3FFu;
+            packed[i].pos_packed = x10 | (y10 << 10u) | (z10 << 20u);
+            uint32_t u_half = (uint32_t)(uint16_t)meshopt_quantizeHalf(rv.u);
+            uint32_t v_half = (uint32_t)(uint16_t)meshopt_quantizeHalf(rv.v);
+            packed[i].norm_uv_packed = u_half | (v_half << 16u);
+        }
+        return packed;
+    };
+    std::vector<ScryVertex> lod0_packed = pack_lod(lod0_verts);
+    std::vector<ScryVertex> lod1_packed = pack_lod(lod1_verts);
+    std::vector<ScryVertex> lod2_packed = pack_lod(lod2_verts);
 
     ScryMeshHeader hdr{};
     hdr.magic             = SCRY_MESH_MAGIC;
@@ -257,13 +281,13 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
     std::memcpy(hdr.aabb_max, aabb_max, sizeof(aabb_max));
 
     // [Header][LOD0_Verts][LOD0_Idxs][LOD1_Verts][LOD1_Idxs][LOD2_Verts][LOD2_Idxs]
-    std::fwrite(&hdr,              sizeof(hdr),        1,                f);
-    std::fwrite(lod0_verts.data(), sizeof(ScryVertex), lod0_v_count,     f);
-    std::fwrite(lod0_idxs.data(),  sizeof(uint32_t),   lod0_idxs.size(), f);
-    std::fwrite(lod1_verts.data(), sizeof(ScryVertex), lod1_v_count,     f);
-    std::fwrite(lod1_idxs.data(),  sizeof(uint32_t),   lod1_index_count, f);
-    std::fwrite(lod2_verts.data(), sizeof(ScryVertex), lod2_v_count,     f);
-    std::fwrite(lod2_idxs.data(),  sizeof(uint32_t),   lod2_index_count, f);
+    std::fwrite(&hdr,               sizeof(hdr),        1,                f);
+    std::fwrite(lod0_packed.data(), sizeof(ScryVertex), lod0_v_count,     f);
+    std::fwrite(lod0_idxs.data(),   sizeof(uint32_t),   lod0_idxs.size(), f);
+    std::fwrite(lod1_packed.data(), sizeof(ScryVertex), lod1_v_count,     f);
+    std::fwrite(lod1_idxs.data(),   sizeof(uint32_t),   lod1_index_count, f);
+    std::fwrite(lod2_packed.data(), sizeof(ScryVertex), lod2_v_count,     f);
+    std::fwrite(lod2_idxs.data(),   sizeof(uint32_t),   lod2_index_count, f);
     std::fclose(f);
 
     std::printf(

@@ -97,16 +97,16 @@ ScryLODGroup ScryGraphics_LoadMesh(const char* filepath) {
     cursor += hdr->lod2_vertex_count * sizeof(ScryVertex);
     const uint32_t* lod2_idx = reinterpret_cast<const uint32_t*>(cursor);
 
-    const uint32_t vb0_bytes = hdr->lod0_vertex_count * 32u;
+    const uint32_t vb0_bytes = hdr->lod0_vertex_count * 8u;
     const uint32_t ib0_bytes = hdr->lod0_index_count * 4u;
-    const uint32_t vb1_bytes = hdr->lod1_vertex_count * 32u;
+    const uint32_t vb1_bytes = hdr->lod1_vertex_count * 8u;
     const uint32_t ib1_bytes = hdr->lod1_index_count * 4u;
-    const uint32_t vb2_bytes = hdr->lod2_vertex_count * 32u;
+    const uint32_t vb2_bytes = hdr->lod2_vertex_count * 8u;
     const uint32_t ib2_bytes = hdr->lod2_index_count * 4u;
     const uint32_t vb_total  = vb0_bytes + vb1_bytes + vb2_bytes;
     const uint32_t ib_total  = ib0_bytes + ib1_bytes + ib2_bytes;
 
-    if (g_VertexOffset * 32u + vb_total > GLOBAL_VB_SIZE ||
+    if (g_VertexOffset * 8u + vb_total > GLOBAL_VB_SIZE ||
         g_IndexOffset * 4u + ib_total > GLOBAL_IB_SIZE) {
         UnmapFile(&mf);
         return kFailed;
@@ -121,7 +121,7 @@ ScryLODGroup ScryGraphics_LoadMesh(const char* filepath) {
         void* p = nullptr; g_pContext->MapBuffer(pStagingV, MAP_WRITE, MAP_FLAG_DO_NOT_WAIT, p);
         std::memcpy(p, lod0_verts, vb0_bytes); g_pContext->UnmapBuffer(pStagingV, MAP_WRITE);
         g_pContext->CopyBuffer(pStagingV, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
-            g_GlobalVertexBuffer, bv0 * 32u, vb0_bytes, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+            g_GlobalVertexBuffer, bv0 * 8u, vb0_bytes, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
     }
     {
         RefCntAutoPtr<IBuffer> pStagingI;
@@ -144,7 +144,7 @@ ScryLODGroup ScryGraphics_LoadMesh(const char* filepath) {
         void* p = nullptr; g_pContext->MapBuffer(pStagingV, MAP_WRITE, MAP_FLAG_DO_NOT_WAIT, p);
         std::memcpy(p, lod1_verts, vb1_bytes); g_pContext->UnmapBuffer(pStagingV, MAP_WRITE);
         g_pContext->CopyBuffer(pStagingV, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
-            g_GlobalVertexBuffer, bv1 * 32u, vb1_bytes, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+            g_GlobalVertexBuffer, bv1 * 8u, vb1_bytes, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
     }
     {
         RefCntAutoPtr<IBuffer> pStagingI;
@@ -167,7 +167,7 @@ ScryLODGroup ScryGraphics_LoadMesh(const char* filepath) {
         void* p = nullptr; g_pContext->MapBuffer(pStagingV, MAP_WRITE, MAP_FLAG_DO_NOT_WAIT, p);
         std::memcpy(p, lod2_verts, vb2_bytes); g_pContext->UnmapBuffer(pStagingV, MAP_WRITE);
         g_pContext->CopyBuffer(pStagingV, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
-            g_GlobalVertexBuffer, bv2 * 32u, vb2_bytes, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+            g_GlobalVertexBuffer, bv2 * 8u, vb2_bytes, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
     }
     {
         RefCntAutoPtr<IBuffer> pStagingI;

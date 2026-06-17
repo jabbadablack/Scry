@@ -50,7 +50,7 @@ bool InitResources(void) {
         bd.Usage             = USAGE_DEFAULT;
         bd.BindFlags         = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
         bd.Mode              = BUFFER_MODE_STRUCTURED;
-        bd.ElementByteStride = 32u; 
+        bd.ElementByteStride = 8u;
         bd.Size              = GLOBAL_VB_SIZE;
         g_pDevice->CreateBuffer(bd, nullptr, &g_GlobalVertexBuffer);
         if (!g_GlobalVertexBuffer) return false;

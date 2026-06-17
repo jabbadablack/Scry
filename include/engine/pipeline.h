@@ -8,12 +8,10 @@ extern "C" {
 
 struct ecs_world_t;
 
-ENGINE_API extern uint64_t ScryPhase_Input;
-ENGINE_API extern uint64_t ScryPhase_Intent;
-ENGINE_API extern uint64_t ScryPhase_StateUpdate;
-ENGINE_API extern uint64_t ScryPhase_StateSync;
-ENGINE_API extern uint64_t ScryPhase_React;
-ENGINE_API extern uint64_t ScryPhase_Cleanup;
+ENGINE_API extern uint64_t ScryPhase_Sense;    /* Gathers data: input, raycasts, blackboard      */
+ENGINE_API extern uint64_t ScryPhase_Evaluate; /* Scores intents: AI brains, camera input         */
+ENGINE_API extern uint64_t ScryPhase_React;    /* Translates intent to state: matrices, pathfind  */
+ENGINE_API extern uint64_t ScryPhase_Resolve;  /* Commits state: GPU upload, physics integration  */
 ENGINE_API extern uint64_t ScryIsIntent;
 
 /**

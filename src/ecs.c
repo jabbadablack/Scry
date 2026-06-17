@@ -6,10 +6,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#endif
 
 void ScryECS_InitOSAPI(void) {
     ecs_os_set_api_defaults();
@@ -19,22 +15,8 @@ void ScryECS_ShutdownOSAPI(void) {
 }
 
 struct ecs_world_t* ScryECS_CreateWorld(void) {
-    ecs_log_set_level(0); // Trace
-    struct ecs_world_t* world = ecs_init();
-    if (!world) return NULL;
-
-    int32_t hw = 4;
-#ifdef _WIN32
-    SYSTEM_INFO sysinfo;
-    GetSystemInfo(&sysinfo);
-    hw = (int32_t)sysinfo.dwNumberOfProcessors;
-#endif
-
-    if (hw > 1) {
-        ecs_set_threads(world, hw);
-    }
-
-    return world;
+    ecs_log_set_level(0);
+    return ecs_init();
 }
 
 typedef struct {
@@ -60,7 +42,7 @@ void ScryECS_RegisterDoubleBufferSync(struct ecs_world_t* world, uint64_t compon
     ed.name = name;
     const ecs_entity_t sys_ent = ecs_entity_init(world, &ed);
     
-    ecs_add_pair(world, sys_ent, EcsDependsOn, (ecs_entity_t)ScryPhase_StateSync);
+    ecs_add_pair(world, sys_ent, EcsDependsOn, (ecs_entity_t)ScryPhase_Resolve);
 
     SyncData* sd = (SyncData*)malloc(sizeof(SyncData));
     sd->component_size = component_size;

@@ -52,12 +52,13 @@ void ScrySpatial_Init(struct ecs_world_t* world) {
     {
         ecs_system_desc_t s = {0};
         s.entity = ecs_entity_init(world, &(ecs_entity_desc_t){ .name = "SpatialSystem" });
-        s.query.terms[0].id = (ecs_entity_t)id_ScryPosition;
-        s.query.terms[1].id = (ecs_entity_t)id_ScryChunkCoord;
-        s.query.terms[2].id = (ecs_entity_t)id_ScryChunkHash;
+        s.query.terms[0].id = (ecs_entity_t)id_ScryPosition;    s.query.terms[0].inout = EcsIn;
+        s.query.terms[1].id = (ecs_entity_t)id_ScryChunkCoord;  s.query.terms[1].inout = EcsInOut;
+        s.query.terms[2].id = (ecs_entity_t)id_ScryChunkHash;   s.query.terms[2].inout = EcsInOut;
         s.callback = SpatialSystemCallback;
+        s.multi_threaded = true;
 
-        ecs_add_pair(world, s.entity, EcsDependsOn, (ecs_entity_t)ScryPhase_StateUpdate);
+        ecs_add_pair(world, s.entity, EcsDependsOn, (ecs_entity_t)ScryPhase_React);
         ecs_system_init(world, &s);
     }
 }

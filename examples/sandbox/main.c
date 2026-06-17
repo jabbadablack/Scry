@@ -126,7 +126,7 @@ static void OnInit(ScryContext* ctx) {
     {
         ecs_entity_desc_t ed = { .name = "RotateSystem" };
         ecs_entity_t sys_ent = ecs_entity_init(world, &ed);
-        ecs_add_pair(world, sys_ent, EcsDependsOn, (ecs_entity_t)ScryPhase_Intent);
+        ecs_add_pair(world, sys_ent, EcsDependsOn, (ecs_entity_t)ScryPhase_Evaluate);
 
         ecs_system_desc_t sd = {
             .entity = sys_ent,
@@ -157,7 +157,7 @@ int main(int argc, char* argv[]) {
     config.OnShutdown = OnShutdown;
     config.OnLog = AppLog;
     config.global_memory_pool_size = 256 * 1024;
-    config.thread_count = 1;
+    config.thread_count = 4;
 
     ScryError err = Scry_Run(&config);
     return (err == SCRY_SUCCESS) ? 0 : 1;

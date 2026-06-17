@@ -441,8 +441,9 @@ void ScryRenderer_Init(struct ecs_world_t* world) {
         sd.entity = ecs_entity_init(world, &ed);
         sd.query.terms[0].id = (ecs_entity_t)id_ScryCamera; sd.query.terms[0].inout = EcsIn;
         sd.callback = PassCullCallback;
+        sd.multi_threaded = false;
         ecs_entity_t sys = ecs_system_init(world, &sd);
-        ecs_add_pair(world, sys, EcsDependsOn, (ecs_entity_t)ScryPhase_React);
+        ecs_add_pair(world, sys, EcsDependsOn, (ecs_entity_t)ScryPhase_Resolve);
     }
 
     {
@@ -453,8 +454,9 @@ void ScryRenderer_Init(struct ecs_world_t* world) {
         sd.entity = ecs_entity_init(world, &ed);
         sd.query.terms[0].id = (ecs_entity_t)id_ScryCamera; sd.query.terms[0].inout = EcsIn;
         sd.callback = PassOpaqueCallback;
+        sd.multi_threaded = false;
         ecs_entity_t sys = ecs_system_init(world, &sd);
-        ecs_add_pair(world, sys, EcsDependsOn, (ecs_entity_t)ScryPhase_React);
+        ecs_add_pair(world, sys, EcsDependsOn, (ecs_entity_t)ScryPhase_Resolve);
     }
 }
 

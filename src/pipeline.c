@@ -4,13 +4,11 @@
 #include <assert.h>
 #include <string.h>
 
-uint64_t ScryPhase_Input = 0;
-uint64_t ScryPhase_Intent = 0;
-uint64_t ScryPhase_StateUpdate = 0;
-uint64_t ScryPhase_StateSync = 0;
-uint64_t ScryPhase_React = 0;
-uint64_t ScryPhase_Cleanup = 0;
-uint64_t ScryIsIntent = 0;
+uint64_t ScryPhase_Sense    = 0;
+uint64_t ScryPhase_Evaluate = 0;
+uint64_t ScryPhase_React    = 0;
+uint64_t ScryPhase_Resolve  = 0;
+uint64_t ScryIsIntent       = 0;
 
 static ecs_entity_t RegPhase(ecs_world_t* world, const char* name, ecs_entity_t parent) {
     ecs_entity_desc_t ed = { .name = name };
@@ -22,12 +20,10 @@ static ecs_entity_t RegPhase(ecs_world_t* world, const char* name, ecs_entity_t 
 void ScryPipeline_Init(struct ecs_world_t* world) {
     assert(world != NULL);
 
-    ScryPhase_Input = RegPhase(world, "Phase_Input", EcsOnLoad);
-    ScryPhase_Intent = RegPhase(world, "Phase_Intent", (ecs_entity_t)ScryPhase_Input);
-    ScryPhase_StateUpdate = RegPhase(world, "Phase_StateUpdate", (ecs_entity_t)ScryPhase_Intent);
-    ScryPhase_StateSync = RegPhase(world, "Phase_StateSync", (ecs_entity_t)ScryPhase_StateUpdate);
-    ScryPhase_React = RegPhase(world, "Phase_React", (ecs_entity_t)ScryPhase_StateSync);
-    ScryPhase_Cleanup = RegPhase(world, "Phase_Cleanup", (ecs_entity_t)ScryPhase_React);
+    ScryPhase_Sense    = RegPhase(world, "Phase_Sense",    EcsOnLoad);
+    ScryPhase_Evaluate = RegPhase(world, "Phase_Evaluate", (ecs_entity_t)ScryPhase_Sense);
+    ScryPhase_React    = RegPhase(world, "Phase_React",    (ecs_entity_t)ScryPhase_Evaluate);
+    ScryPhase_Resolve  = RegPhase(world, "Phase_Resolve",  (ecs_entity_t)ScryPhase_React);
 
     ecs_entity_desc_t ed = { .name = "IsIntent" };
     ScryIsIntent = ecs_entity_init(world, &ed);
@@ -45,7 +41,7 @@ void ScryPipeline_RegisterIntentComponent(struct ecs_world_t* world, uint64_t co
 
     ecs_entity_desc_t ed = { .name = "CleanupIntent" };
     ecs_entity_t sys = ecs_entity_init(world, &ed);
-    ecs_add_pair(world, sys, EcsDependsOn, (ecs_entity_t)ScryPhase_Cleanup);
+    ecs_add_pair(world, sys, EcsDependsOn, (ecs_entity_t)ScryPhase_Resolve);
 
     ecs_system_desc_t sd = {
         .entity = sys,

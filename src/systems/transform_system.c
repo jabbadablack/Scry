@@ -54,14 +54,15 @@ void ScryTransform_Init(struct ecs_world_t* world) {
     {
         ecs_system_desc_t s = {0};
         s.entity = ecs_entity_init(world, &(ecs_entity_desc_t){ .name = "TransformSystem" });
-        s.query.terms[0].id = (ecs_entity_t)id_ScryPosition;
-        s.query.terms[1].id = (ecs_entity_t)id_ScryRotation;
-        s.query.terms[2].id = (ecs_entity_t)id_ScryScale;
-        s.query.terms[3].id = (ecs_entity_t)id_ScryWorldMatrix;
-        s.query.terms[4].id = (ecs_entity_t)id_ScryDirtyMatrix;
+        s.query.terms[0].id = (ecs_entity_t)id_ScryPosition;    s.query.terms[0].inout = EcsIn;
+        s.query.terms[1].id = (ecs_entity_t)id_ScryRotation;    s.query.terms[1].inout = EcsIn;
+        s.query.terms[2].id = (ecs_entity_t)id_ScryScale;       s.query.terms[2].inout = EcsIn;
+        s.query.terms[3].id = (ecs_entity_t)id_ScryWorldMatrix; s.query.terms[3].inout = EcsOut;
+        s.query.terms[4].id = (ecs_entity_t)id_ScryDirtyMatrix; s.query.terms[4].inout = EcsInOut;
         s.callback = TransformSystemCallback;
-        
-        ecs_add_pair(world, s.entity, EcsDependsOn, (ecs_entity_t)ScryPhase_StateUpdate);
+        s.multi_threaded = true;
+
+        ecs_add_pair(world, s.entity, EcsDependsOn, (ecs_entity_t)ScryPhase_React);
         ecs_system_init(world, &s);
     }
 }

@@ -122,7 +122,7 @@ void ScryCamera_Init(struct ecs_world_t* world) {
         s.entity = ecs_entity_init(world, &(ecs_entity_desc_t){ .name = "CameraInputSystem" });
         s.query.terms[0].id = (ecs_entity_t)id_ScryCamera;
         s.callback = CameraInputSystemCallback;
-        ecs_add_pair(world, s.entity, EcsDependsOn, (ecs_entity_t)ScryPhase_Intent);
+        ecs_add_pair(world, s.entity, EcsDependsOn, (ecs_entity_t)ScryPhase_Evaluate);
         ecs_system_init(world, &s);
     }
 
@@ -131,7 +131,7 @@ void ScryCamera_Init(struct ecs_world_t* world) {
         s.entity = ecs_entity_init(world, &(ecs_entity_desc_t){ .name = "CameraMatrixSystem" });
         s.query.terms[0].id = (ecs_entity_t)id_ScryCamera;
         s.callback = CameraMatrixSystemCallback;
-        ecs_add_pair(world, s.entity, EcsDependsOn, (ecs_entity_t)ScryPhase_StateUpdate);
+        ecs_add_pair(world, s.entity, EcsDependsOn, (ecs_entity_t)ScryPhase_React);
         ecs_system_init(world, &s);
     }
 }

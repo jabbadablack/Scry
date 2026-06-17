@@ -164,6 +164,9 @@ ENGINE_API ScryError Scry_Run(const ScryAppConfig* config) {
     struct ecs_world_t* world = ScryECS_CreateWorld();
     if (!world) return SCRY_ERR_ECS_INIT;
 
+    if (config->thread_count > 1)
+        ecs_set_threads(world, (int32_t)config->thread_count);
+
     ScryPipeline_Init(world);
     ScryTransform_Init(world);
     ScrySpatial_Init(world);

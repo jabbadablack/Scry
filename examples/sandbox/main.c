@@ -77,7 +77,8 @@ static void OnInit(ScryContext* ctx) {
     printf("[Init] id_ScryMeshData: %llu\n", (unsigned long long)id_ScryMeshData);
     fflush(stdout);
 
-    // stress test. RESULT: WORKING PREFECTLY SO FAR PERFORMANCE WISE. MESHES LOOK MESESD UP AND POSSIBLE MEM LEAK SOMEWHERE
+    uint64_t tag_Spinner = ecs_entity_init(world, &(ecs_entity_desc_t){ .name = "Spinner" });
+
     for (int i = 0; i < 100000; ++i) {
         int row = i / 1000;
         int col = i % 1000;
@@ -102,6 +103,8 @@ static void OnInit(ScryContext* ctx) {
             &(ScryChunkCoord){ .x = 0, .y = 0 });
         ecs_set_id(world, ent, id_ScryChunkHash, sizeof(ScryChunkHash),
             &(ScryChunkHash){ .hash = 0 });
+
+        if (i < 10) ecs_add_id(world, ent, tag_Spinner);
 
         ecs_set_id(world, ent, id_ScryMeshData, sizeof(ScryMeshData),
             &(ScryMeshData){ .lod_group_id = lodGroup.group_id });
@@ -130,8 +133,9 @@ static void OnInit(ScryContext* ctx) {
 
         ecs_system_desc_t sd = {
             .entity = sys_ent,
-            .query.terms[0] = { .id = (ecs_entity_t)id_ScryRotation, .inout = EcsInOut },
+            .query.terms[0] = { .id = (ecs_entity_t)id_ScryRotation,   .inout = EcsInOut },
             .query.terms[1] = { .id = (ecs_entity_t)id_ScryDirtyMatrix, .inout = EcsInOut },
+            .query.terms[2] = { .id = (ecs_entity_t)tag_Spinner },
             .callback = RotateSystemCallback
         };
         ecs_system_init(world, &sd);

@@ -246,7 +246,7 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
         if (rv.pz > aabb_max[2]) aabb_max[2] = rv.pz;
     }
 
-    // Pack raw float vertices into 8-byte quantized ScryVertex (10-10-10 pos + 16/16 UV).
+    // Pack raw float vertices into 16-byte aligned ScryVertex (16-16-16 pos, 10-10-10 normal, 16-16 UV).
     const float ex = (aabb_max[0] - aabb_min[0]) > 0.0f ? (aabb_max[0] - aabb_min[0]) : 1.0f;
     const float ey = (aabb_max[1] - aabb_min[1]) > 0.0f ? (aabb_max[1] - aabb_min[1]) : 1.0f;
     const float ez = (aabb_max[2] - aabb_min[2]) > 0.0f ? (aabb_max[2] - aabb_min[2]) : 1.0f;
@@ -254,13 +254,18 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
         std::vector<ScryVertex> packed(raw.size());
         for (size_t i = 0; i < raw.size(); ++i) {
             const RawVertex& rv = raw[i];
-            uint32_t x10 = (uint32_t)((rv.px - aabb_min[0]) / ex * 1023.0f + 0.5f) & 0x3FFu;
-            uint32_t y10 = (uint32_t)((rv.py - aabb_min[1]) / ey * 1023.0f + 0.5f) & 0x3FFu;
-            uint32_t z10 = (uint32_t)((rv.pz - aabb_min[2]) / ez * 1023.0f + 0.5f) & 0x3FFu;
-            packed[i].pos_packed = x10 | (y10 << 10u) | (z10 << 20u);
+            uint32_t px16 = (uint32_t)((rv.px - aabb_min[0]) / ex * 65535.0f + 0.5f) & 0xFFFFu;
+            uint32_t py16 = (uint32_t)((rv.py - aabb_min[1]) / ey * 65535.0f + 0.5f) & 0xFFFFu;
+            uint32_t pz16 = (uint32_t)((rv.pz - aabb_min[2]) / ez * 65535.0f + 0.5f) & 0xFFFFu;
+            packed[i].pos_xy    = px16 | (py16 << 16u);
+            packed[i].pos_z_pad = pz16;
+            uint32_t nx10 = (uint32_t)((rv.nx * 0.5f + 0.5f) * 1023.0f + 0.5f) & 0x3FFu;
+            uint32_t ny10 = (uint32_t)((rv.ny * 0.5f + 0.5f) * 1023.0f + 0.5f) & 0x3FFu;
+            uint32_t nz10 = (uint32_t)((rv.nz * 0.5f + 0.5f) * 1023.0f + 0.5f) & 0x3FFu;
+            packed[i].normal_pack = nx10 | (ny10 << 10u) | (nz10 << 20u);
             uint32_t u_half = (uint32_t)(uint16_t)meshopt_quantizeHalf(rv.u);
             uint32_t v_half = (uint32_t)(uint16_t)meshopt_quantizeHalf(rv.v);
-            packed[i].norm_uv_packed = u_half | (v_half << 16u);
+            packed[i].uv_pack = u_half | (v_half << 16u);
         }
         return packed;
     };

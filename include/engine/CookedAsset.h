@@ -6,7 +6,7 @@ extern "C" {
 #endif
 
 /* ── Binary mesh format ──────────────────────────────────────────────────────
- * A .scrymesh file (version 5) layout:
+ * A .scrymesh file (version 6) layout:
  *   [ScryMeshHeader]
  *   [ScryVertex × lod0_vertex_count]   ← LOD0 vertex buffer (full mesh)
  *   [uint32_t   × lod0_index_count]    ← LOD0 index buffer
@@ -17,13 +17,15 @@ extern "C" {
  */
 
 #define SCRY_MESH_MAGIC   0x59524353u  /* little-endian 'SCRY' */
-#define SCRY_MESH_VERSION 5u
+#define SCRY_MESH_VERSION 6u
 
 #pragma pack(push, 1)
 
 typedef struct ScryVertex {
-    uint32_t pos_packed;      /* 10-10-10 position bits (UNORM relative to local AABB) */
-    uint32_t norm_uv_packed;  /* low 16: U half-float, high 16: V half-float           */
+    uint32_t pos_xy;      /* [x:16][y:16] UNORM relative to local AABB  */
+    uint32_t pos_z_pad;   /* [z:16][pad:16] UNORM                        */
+    uint32_t normal_pack; /* [nx:10][ny:10][nz:10] UNORM mapped -1..1    */
+    uint32_t uv_pack;     /* [u:16][v:16] float16                        */
 } ScryVertex;
 
 typedef struct ScryMeshHeader {

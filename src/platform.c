@@ -187,8 +187,6 @@ ENGINE_API ScryError Scry_Run(const ScryAppConfig* config) {
 
     uint64_t last_tick = ScryPlatform_GetTime();
     while (ctx.running) {
-        uint64_t frame_start = ScryPlatform_GetTime();
-
         ScryPlatform_PumpEvents(&ctx);
         if (!ctx.running) break;
         if (ScryInput_IsKeyDown(SCRY_KEY_ESCAPE)) { ctx.running = 0; break; }
@@ -201,12 +199,6 @@ ENGINE_API ScryError Scry_Run(const ScryAppConfig* config) {
         // Scry_Log("Advancing world...");
         if (!ecs_progress(world, dt)) { Scry_Log("ecs_progress returned false"); ctx.running = 0; break; }
         ScryGraphics_Present();
-
-        uint64_t frame_end = ScryPlatform_GetTime();
-        uint64_t elapsed = frame_end - frame_start;
-        if (elapsed < 16) {
-            Scry_Sleep(16 - (uint32_t)elapsed);
-        }
     }
 
     config->OnShutdown(&ctx);

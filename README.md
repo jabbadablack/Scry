@@ -19,47 +19,47 @@ graph TD
 
     subgraph "Core Orchestration"
         Context[Engine Context]
-        ECS[Flecs ECS World]
-        Pipeline[Phase Management]
+        ECS[Flecs ECS World\nWorker Threads x4]
+        Pipeline[ISR Pipeline]
     end
 
-    subgraph "Execution Phases (Pipeline)"
-        Intent[Phase: Intent]
-        StateUpdate[Phase: StateUpdate]
-        React[Phase: React]
-        PostUpdate[Phase: PostUpdate]
-        PreRender[Phase: PreRender]
-        Render[Phase: Render]
+    subgraph "ISR Execution Phases"
+        Sense[Phase: Sense\nInput capture]
+        Evaluate[Phase: Evaluate\nIntent scoring / Camera input]
+        React[Phase: React\nMatrix compute / Spatial update]
+        Resolve[Phase: Resolve\nGPU upload / Present\nmain thread only]
     end
 
     subgraph "Engine Subsystems"
         subgraph "Graphics"
-            Renderer[Renderer]
+            CullPass[Compute Cull Pass\nLOD selection / frustum]
+            OpaquePass[Opaque Draw Pass\nMDI indirect]
             Diligent[DiligentCore Backend]
-            Vulkan[Vulkan API]
+            Vulkan[Vulkan API\nVSync Present 1]
         end
 
         subgraph "Platform & Input"
             GLFW[GLFW / Win32]
-            Input[Input Buffer]
+            Input[Double-buffered Input]
         end
 
-        subgraph "Spatial & Physics"
-            Spatial[Spatial System]
-            Transform[Transform System]
+        subgraph "Spatial"
+            SpatialSys[Spatial System\nmulti-threaded]
+            TransformSys[Transform System\nmulti-threaded]
+            CameraSys[Camera System]
         end
     end
 
     subgraph "Asset Pipeline"
-        Cooker[Asset Cooker]
-        Raw[FBX / Shaders]
-        Cooked[.scrymesh / Binary]
+        Cooker[Asset Cooker\nmeshopt + quantize]
+        Raw[FBX / HLSL]
+        Cooked[.scrymesh v6\n16-byte vertex]
     end
 
     subgraph "Data & Utils"
         JSON[yyjson Parser]
-        Math[Eigen / SIMD]
-        Memory[Arena/Pool Allocators]
+        Math[cglm LH / Depth 0-1]
+        Memory[Stack / Arena Allocators]
     end
 
     %% Relationships
@@ -68,26 +68,30 @@ graph TD
     Context --> Pipeline
     Plugins -.-> ECS
 
-    Pipeline --> Intent
-    Pipeline --> StateUpdate
-    Pipeline --> React
-    Pipeline --> PostUpdate
-    Pipeline --> PreRender
-    Pipeline --> Render
+    Pipeline --> Sense
+    Sense --> Evaluate
+    Evaluate --> React
+    React --> Resolve
 
     %% System Mapping
-    Intent --> Input
-    StateUpdate --> Transform
-    React --> Spatial
-    Render --> Renderer
-    Renderer --> Diligent
+    Sense --> Input
+    Input --> GLFW
+    Evaluate --> CameraSys
+    React --> TransformSys
+    React --> SpatialSys
+    CameraSys --> CameraSys
+    Resolve --> CullPass
+    Resolve --> OpaquePass
+    CullPass --> OpaquePass
+    OpaquePass --> Diligent
     Diligent --> Vulkan
 
     %% Data Flow
     Cooker --> Raw
     Raw --> Cooked
-    Renderer --> Cooked
+    OpaquePass --> Cooked
     ECS --> Memory
-    Transform --> Math
+    TransformSys --> Math
+    CameraSys --> Math
     Context --> JSON
 ```

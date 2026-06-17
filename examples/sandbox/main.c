@@ -81,9 +81,9 @@ static void OnInit(ScryContext* ctx) {
 
     uint64_t tag_Spinner = ecs_entity_init(world, &(ecs_entity_desc_t){ .name = "Spinner" });
 
-    for (int i = 0; i < 100000; ++i) {
-        int row = i / 1000;
-        int col = i % 1000;
+    for (int i = 0; i < 10000; ++i) {
+        int row = i / 100;
+        int col = i % 100;
 
         ecs_entity_t ent = ecs_new(world);
 
@@ -163,7 +163,7 @@ int main(int argc, char* argv[]) {
     config.OnShutdown = OnShutdown;
     config.OnLog = AppLog;
     config.global_memory_pool_size = 256 * 1024;
-    config.thread_count = 4;
+    config.thread_count = 8;  // 0 = hardware_concurrency - 1
 
     ScryError err = Scry_Run(&config);
     return (err == SCRY_SUCCESS) ? 0 : 1;

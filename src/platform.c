@@ -169,14 +169,28 @@ ENGINE_API ScryError Scry_Run(const ScryAppConfig* config) {
     struct ecs_world_t* world = ScryECS_CreateWorld();
     if (!world) return SCRY_ERR_ECS_INIT;
 
-    if (config->thread_count > 1)
-        ecs_set_threads(world, (int32_t)config->thread_count);
+    {
+        // 0 → auto: leave one hardware thread for the main/render thread.
+        int32_t tc = (int32_t)config->thread_count;
+        if (tc == 0) {
+#ifdef _WIN32
+            SYSTEM_INFO si; GetSystemInfo(&si);
+            tc = (int32_t)si.dwNumberOfProcessors - 1;
+#else
+            long n = sysconf(_SC_NPROCESSORS_ONLN);
+            tc = (n > 0) ? (int32_t)(n - 1) : 1;
+#endif
+            if (tc < 1) tc = 1;
+        }
+        if (tc > 1) ecs_set_threads(world, tc);
+    }
 
     ScryPipeline_Init(world);
     ScryTransform_Init(world);
     ScrySpatial_Init(world);
     ScryCamera_Init(world);
     ScryRenderer_Init(world);
+    DebugUI_SetWorld(world);
 
     ctx.ecs_world = world;
     ctx.window_handle = window;

@@ -1,6 +1,7 @@
 #include <engine/renderer/renderer.h>
 #include <engine/renderer/core.h>
 #include <engine/renderer/backend.h>
+#include <engine/debug/debug_draw.h>
 #include <engine/transform.h>
 #include <engine/camera.h>
 #include <engine/spatial.h>
@@ -184,6 +185,7 @@ static void PassCullCallback(ecs_iter_t* it) {
     {
         mat4 vp;
         glm_mat4_mul((float (*)[4])cam[0].proj, (float (*)[4])cam[0].view, vp);
+        DebugDraw_SetViewProj((float*)vp);
         PVoid p = nullptr; ctx->MapBuffer(g_pDrawParamsCB, MAP_WRITE, MAP_FLAG_DISCARD, p);
         if (p) { memcpy(p, vp, 64u); ctx->UnmapBuffer(g_pDrawParamsCB, MAP_WRITE); }
     }

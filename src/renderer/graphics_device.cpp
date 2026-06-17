@@ -2,6 +2,7 @@
 #include "Graphics/GraphicsEngineVulkan/interface/EngineFactoryVk.h"
 #include "Platforms/Win32/interface/Win32NativeWindow.h"
 #include <engine/debug/debug_ui.h>
+#include <engine/debug/debug_draw.h>
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -90,11 +91,13 @@ bool ScryGraphics_Init(void* glfw_window_handle) {
     if (!InitResources()) return false;
 
     DebugUI_Init(glfw_window_handle, pDevice, pContext);
+    DebugDraw_Init(pDevice, pSwapChain);
 
     return true;
 }
 
 void ScryGraphics_Shutdown(void) {
+    DebugDraw_Shutdown();
     DebugUI_Shutdown();
     ShutdownResources();
     g_pSwapChain.Release();
@@ -113,6 +116,7 @@ void ScryGraphics_BeginFrame(void) {
 }
 
 void ScryGraphics_Present(void) {
+    DebugDraw_Render();
     DebugUI_Render();
     g_pSwapChain->Present(1);
 }

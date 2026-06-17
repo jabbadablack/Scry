@@ -77,6 +77,7 @@ static void OnInit(ScryContext* ctx) {
     printf("[Init] id_ScryMeshData: %llu\n", (unsigned long long)id_ScryMeshData);
     fflush(stdout);
 
+    // stress test. RESULT: WORKING PREFECTLY SO FAR PERFORMANCE WISE. MESHES LOOK MESESD UP AND POSSIBLE MEM LEAK SOMEWHERE
     for (int i = 0; i < 100000; ++i) {
         int row = i / 1000;
         int col = i % 1000;
@@ -90,7 +91,6 @@ static void OnInit(ScryContext* ctx) {
         ecs_set_id(world, ent, id_ScryScale, sizeof(ScryScale),
             &(ScryScale){ .value = {0.1f, 0.1f, 0.1f} });
 
-        // DirtyMatrix=1 forces the transform system to compute the world matrix on the first frame.
         ecs_set_id(world, ent, id_ScryDirtyMatrix, sizeof(ScryDirtyMatrixIntent),
             &(ScryDirtyMatrixIntent){ .active = 1 });
 

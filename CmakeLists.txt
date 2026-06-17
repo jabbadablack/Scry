@@ -308,3 +308,99 @@ add_custom_target(cook_assets
 )
 
 add_dependencies(scry cook_assets)
+
+# ─── Debug-only instrumentation (Tracy + ImGui + DiligentTools ImGui backend) ─
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+
+    set(TRACY_ENABLE    ON  CACHE BOOL "" FORCE)
+    set(TRACY_ON_DEMAND OFF CACHE BOOL "" FORCE)
+
+    FetchContent_Declare(tracy
+        GIT_REPOSITORY https://github.com/wolfpld/tracy.git
+        GIT_TAG        v0.11.1
+    )
+    FetchContent_Declare(imgui
+        GIT_REPOSITORY https://github.com/ocornut/imgui.git
+        GIT_TAG        docking
+    )
+    # DiligentTools: populated without processing its CMakeLists (which would
+    # re-add DiligentCore as a subdirectory).  We compile only ImGuiImplDiligent
+    # directly.
+    FetchContent_Declare(diligenttools
+        GIT_REPOSITORY https://github.com/DiligentGraphics/DiligentTools.git
+        GIT_TAG        master
+    )
+    FetchContent_MakeAvailable(tracy imgui)
+
+    FetchContent_GetProperties(diligenttools)
+    if(NOT diligenttools_POPULATED)
+        FetchContent_Populate(diligenttools)
+    endif()
+
+    # DiligentTools headers use ../../../DiligentCore/... relative to their
+    # location.  From _deps/diligenttools-src/Imgui/interface/, three levels up
+    # is _deps/ — create a junction/symlink DiligentCore -> diligentcore-src there.
+    set(_dc_junction "${diligenttools_SOURCE_DIR}/../DiligentCore")
+    if(NOT EXISTS "${_dc_junction}")
+        if(WIN32)
+            string(REPLACE "/" "\\" _jlink "${_dc_junction}")
+            string(REPLACE "/" "\\" _jdest "${diligentcore_SOURCE_DIR}")
+            execute_process(
+                COMMAND cmd /c mklink /J "${_jlink}" "${_jdest}"
+                RESULT_VARIABLE _junction_result
+                OUTPUT_QUIET ERROR_QUIET
+            )
+            if(NOT _junction_result EQUAL 0)
+                message(WARNING "Scry: mklink /J failed (${_junction_result}). ImGui build may fail.")
+            endif()
+        else()
+            file(CREATE_LINK "${diligentcore_SOURCE_DIR}" "${_dc_junction}" SYMBOLIC
+                 RESULT _junction_result)
+            if(NOT _junction_result EQUAL 0)
+                message(WARNING "Scry: symlink failed (${_junction_result}). ImGui build may fail.")
+            endif()
+        endif()
+    endif()
+
+    # ImGui static lib — GLFW input backend + core
+    add_library(imgui_lib STATIC
+        "${imgui_SOURCE_DIR}/imgui.cpp"
+        "${imgui_SOURCE_DIR}/imgui_draw.cpp"
+        "${imgui_SOURCE_DIR}/imgui_widgets.cpp"
+        "${imgui_SOURCE_DIR}/imgui_tables.cpp"
+        "${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp"
+    )
+    target_include_directories(imgui_lib PUBLIC
+        "${imgui_SOURCE_DIR}"
+        "${imgui_SOURCE_DIR}/backends"
+    )
+    target_link_libraries(imgui_lib PRIVATE glfw)
+
+    # DiligentTools ImGui rendering backend (only the file we need).
+    # Linking Diligent-GraphicsEngineVk-static propagates PLATFORM_WIN32=1 and
+    # Graphics/GraphicsEngine/interface so short includes like "RenderDevice.h" resolve.
+    add_library(diligent_imgui STATIC
+        "${diligenttools_SOURCE_DIR}/Imgui/src/ImGuiDiligentRenderer.cpp"
+        "${diligenttools_SOURCE_DIR}/Imgui/src/ImGuiImplDiligent.cpp"
+    )
+    target_include_directories(diligent_imgui
+        PUBLIC  "${diligenttools_SOURCE_DIR}/Imgui/interface"
+        PRIVATE "${imgui_SOURCE_DIR}"
+    )
+    # DiligentTools uses short-form includes (e.g. "RefCntAutoPtr.hpp", "BasicMath.hpp")
+    # that need Common/interface and Platforms/interface on the search path directly.
+    # Graphics/GraphicsEngine/interface + PLATFORM_WIN32 come from the Vk-static link.
+    target_include_directories(diligent_imgui SYSTEM PRIVATE
+        "${diligentcore_SOURCE_DIR}/Common/interface"
+        "${diligentcore_SOURCE_DIR}/Platforms/interface"
+        "${diligentcore_SOURCE_DIR}/Graphics/GraphicsAccessories/interface"
+        "${diligentcore_SOURCE_DIR}/Graphics/GraphicsTools/interface"
+    )
+    target_link_libraries(diligent_imgui PRIVATE imgui_lib Diligent-GraphicsEngineVk-static)
+
+    target_compile_definitions(scry PUBLIC SCRY_DEBUG TRACY_ENABLE)
+    # Tracy include PUBLIC so profiler.h consumers (sandbox, etc.) find TracyC.h
+    target_include_directories(scry PUBLIC "${tracy_SOURCE_DIR}/public")
+    target_link_libraries(scry PRIVATE Tracy::TracyClient imgui_lib diligent_imgui)
+
+endif()  # Debug

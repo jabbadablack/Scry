@@ -1,6 +1,7 @@
 #include <engine/transform.h>
 #include <engine/pipeline.h>
 #include <engine/engine.h>
+#include <engine/debug/profiler.h>
 #include <flecs.h>
 #include <assert.h>
 #include <math.h>
@@ -22,6 +23,7 @@ static uint64_t RegComp(ecs_world_t* world, const char* name, size_t sz, size_t 
 }
 
 static void TransformSystemCallback(ecs_iter_t* it) {
+    SCRY_PROFILE_ZONE(Phase_React_Transform);
     ScryPosition* pos = ecs_field(it, ScryPosition, 0);
     ScryRotation* rot = ecs_field(it, ScryRotation, 1);
     ScryScale* scl = ecs_field(it, ScryScale, 2);
@@ -40,6 +42,7 @@ static void TransformSystemCallback(ecs_iter_t* it) {
         glm_scale(m, (float*)scl[i].value);
         glm_mat4_copy(m, wm[i].value);
     }
+    SCRY_PROFILE_ZONE_END(Phase_React_Transform);
 }
 
 void ScryTransform_Init(struct ecs_world_t* world) {

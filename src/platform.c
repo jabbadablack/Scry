@@ -8,6 +8,8 @@
 #include <engine/transform.h>
 #include <engine/spatial.h>
 #include <engine/camera.h>
+#include <engine/debug/profiler.h>
+#include <engine/debug/debug_ui.h>
 #include <flecs.h>
 
 #define GLFW_INCLUDE_NONE
@@ -38,6 +40,9 @@ void Scry_Sleep(uint32_t ms) {
 
 static void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     (void)window; (void)scancode; (void)mods;
+#ifdef SCRY_DEBUG
+    if (key == GLFW_KEY_F1 && action == GLFW_PRESS) { DebugUI_Toggle(); return; }
+#endif
     if (key < 0 || key >= 512) return;
     const uint8_t w = g_ScryInput.write_index;
     ScryInputState* state = &g_ScryInput.states[w];
@@ -199,6 +204,7 @@ ENGINE_API ScryError Scry_Run(const ScryAppConfig* config) {
         // Scry_Log("Advancing world...");
         if (!ecs_progress(world, dt)) { Scry_Log("ecs_progress returned false"); ctx.running = 0; break; }
         ScryGraphics_Present();
+        SCRY_PROFILE_FRAME();
     }
 
     config->OnShutdown(&ctx);

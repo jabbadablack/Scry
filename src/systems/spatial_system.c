@@ -2,6 +2,7 @@
 #include <engine/transform.h>
 #include <engine/pipeline.h>
 #include <engine/engine.h>
+#include <engine/debug/profiler.h>
 #include <flecs.h>
 #include <assert.h>
 #include <math.h>
@@ -10,6 +11,7 @@ ENGINE_API uint64_t id_ScryChunkCoord = 0;
 ENGINE_API uint64_t id_ScryChunkHash  = 0;
 
 static void SpatialSystemCallback(ecs_iter_t* it) {
+    SCRY_PROFILE_ZONE(Phase_React_Spatial);
     ScryPosition* pos = ecs_field(it, ScryPosition, 0);
     ScryChunkCoord* coord = ecs_field(it, ScryChunkCoord, 1);
     ScryChunkHash* hash = ecs_field(it, ScryChunkHash, 2);
@@ -24,6 +26,7 @@ static void SpatialSystemCallback(ecs_iter_t* it) {
             hash[i].hash = ScrySpatial_CalculateChunkHash(new_cx, new_cy);
         }
     }
+    SCRY_PROFILE_ZONE_END(Phase_React_Spatial);
 }
 
 void ScrySpatial_Init(struct ecs_world_t* world) {

@@ -1,6 +1,7 @@
 #include "graphics_internal.h"
 #include "Graphics/GraphicsEngineVulkan/interface/EngineFactoryVk.h"
 #include "Platforms/Win32/interface/Win32NativeWindow.h"
+#include <engine/debug/debug_ui.h>
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -88,10 +89,13 @@ bool ScryGraphics_Init(void* glfw_window_handle) {
 
     if (!InitResources()) return false;
 
+    DebugUI_Init(glfw_window_handle, pDevice, pContext);
+
     return true;
 }
 
 void ScryGraphics_Shutdown(void) {
+    DebugUI_Shutdown();
     ShutdownResources();
     g_pSwapChain.Release();
     g_pContext.Release();
@@ -105,9 +109,11 @@ void ScryGraphics_BeginFrame(void) {
     const float clear[4] = { 0.1875f, 0.1875f, 0.1875f, 1.0f };
     g_pContext->ClearRenderTarget(pRTV, clear, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
     g_pContext->ClearDepthStencil(pDSV, CLEAR_DEPTH_FLAG, 1.0f, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    DebugUI_NewFrame();
 }
 
 void ScryGraphics_Present(void) {
+    DebugUI_Render();
     g_pSwapChain->Present(1);
 }
 

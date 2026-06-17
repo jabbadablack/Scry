@@ -10,6 +10,8 @@
 #include <engine/camera.h>
 #include <engine/spatial.h>
 #include <engine/input.h>
+#include <engine/debug/profiler.h>
+#include <engine/debug/debug_ui.h>
 #include <flecs.h>
 #include <assert.h>
 #include <stdio.h>

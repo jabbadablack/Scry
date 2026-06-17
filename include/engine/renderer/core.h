@@ -10,22 +10,13 @@ extern "C" {
 /**
  * @brief Initializes the graphics system.
  */
-ENGINE_API bool ScryGraphics_Init(void* glfw_window_handle);
-
-/**
- * @brief Shuts down the graphics system.
- */
-ENGINE_API void ScryGraphics_Shutdown(void);
-
-/**
- * @brief Begins a new frame.
- */
-ENGINE_API void ScryGraphics_BeginFrame(void);
-
-/**
- * @brief Presents the current frame to the screen.
- */
-ENGINE_API void ScryGraphics_Present(void);
+ENGINE_API bool  ScryGraphics_Init(void* glfw_window_handle);
+ENGINE_API void  ScryGraphics_Shutdown(void);
+ENGINE_API void  ScryGraphics_BeginFrame(void);
+ENGINE_API void  ScryGraphics_Present(void);
+ENGINE_API void* ScryGraphics_GetDevice(void);
+ENGINE_API void* ScryGraphics_GetContext(void);
+ENGINE_API void* ScryGraphics_GetSwapChain(void);
 
 #ifdef __cplusplus
 }

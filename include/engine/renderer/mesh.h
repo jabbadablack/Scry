@@ -38,13 +38,6 @@ typedef struct ScryMeshData {
     uint32_t lod_group_id;
 } ScryMeshData;
 
-typedef struct ScryAABB {
-    ScryVec3 min;
-    float    pad0;
-    ScryVec3 max;
-    float    pad1;
-} ScryAABB;
-
 typedef struct ScryRendererIntent {
     uint32_t mask;
 } ScryRendererIntent;

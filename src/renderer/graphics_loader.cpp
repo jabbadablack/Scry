@@ -197,7 +197,15 @@ ScryLODGroup ScryGraphics_LoadMesh(const char* filepath) {
             gpu.lods[i].baseVertex = lg.lods[i].baseVertex;
             gpu.lods[i].threshold  = lg.lods[i].threshold;
         }
-        g_pContext->UpdateBuffer(g_LODGroupBuffer, group_id * 48u, 48u, &gpu, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        gpu.local_aabb_min[0] = hdr->aabb_min[0];
+        gpu.local_aabb_min[1] = hdr->aabb_min[1];
+        gpu.local_aabb_min[2] = hdr->aabb_min[2];
+        gpu.pad0 = 0.0f;
+        gpu.local_aabb_max[0] = hdr->aabb_max[0];
+        gpu.local_aabb_max[1] = hdr->aabb_max[1];
+        gpu.local_aabb_max[2] = hdr->aabb_max[2];
+        gpu.pad1 = 0.0f;
+        g_pContext->UpdateBuffer(g_LODGroupBuffer, group_id * 80u, 80u, &gpu, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
     }
 
     g_LODGroupCount++;

@@ -33,8 +33,10 @@ typedef struct LODGroupGPU {
         uint32_t firstIndex;
         uint32_t baseVertex;
         float    threshold;
-    } lods[3]; // 48 bytes total
-} LODGroupGPU;
+    } lods[3];            // 48 bytes
+    float local_aabb_min[3]; float pad0; // 16 bytes
+    float local_aabb_max[3]; float pad1; // 16 bytes
+} LODGroupGPU; // 80 bytes total
 
 extern ScryLODGroup    g_LODGroups[MAX_LOD_GROUPS];
 extern uint32_t        g_LODGroupCount;

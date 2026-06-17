@@ -30,7 +30,6 @@ using namespace Diligent;
 extern "C" {
 
 ENGINE_API uint64_t id_ScryMeshData     = 0;
-ENGINE_API uint64_t id_ScryAABB         = 0;
 ENGINE_API uint64_t id_ScryEntityIntent = 0;
 ENGINE_API uint64_t id_ScryMaterial     = 0;
 
@@ -46,7 +45,6 @@ static RefCntAutoPtr<IPipelineState>         g_pCullPSO;
 static RefCntAutoPtr<IShaderResourceBinding> g_pCullSRB;
 
 static RefCntAutoPtr<IBuffer> g_RawMatrixSSBO;
-static RefCntAutoPtr<IBuffer> g_pAABBBuffer;
 static RefCntAutoPtr<IBuffer> g_EntityMeshIdBuffer;
 static RefCntAutoPtr<IBuffer> g_pCullParamsCB;
 
@@ -71,9 +69,6 @@ typedef struct CullParamsCPU {
     uint32_t _pad[3];
 } CullParamsCPU;
 
-static float    s_mat_flat[MAX_ENTITIES * 16];
-static ScryAABB s_aabb_flat[MAX_ENTITIES];
-static uint32_t s_mesh_ids[MAX_ENTITIES];
 static uint32_t s_entity_count = 0;
 
 // Scratch buffer for resetting IndirectArgs each frame (instanceCount cleared, mesh data preserved).
@@ -143,44 +138,41 @@ static void PassCullCallback(ecs_iter_t* it) {
     if (!g_pCullPSO || !g_pCullSRB) return;
 
     const ScryCamera* cam = ecs_field(it, ScryCamera, 0);
+    IDeviceContext* ctx = (IDeviceContext*)ScryGraphics_GetContext();
 
-    // Gather all visible entities into flat CPU arrays.
+    // Zero-copy: map GPU buffers directly and stream ECS data into them.
+    PVoid pMat  = nullptr; ctx->MapBuffer(g_RawMatrixSSBO,      MAP_WRITE, MAP_FLAG_DISCARD, pMat);
+    PVoid pMesh = nullptr; ctx->MapBuffer(g_EntityMeshIdBuffer, MAP_WRITE, MAP_FLAG_DISCARD, pMesh);
+
     s_entity_count = 0;
-    ecs_iter_t ri = ecs_query_iter(it->world, g_render_query);
-    while (ecs_query_next(&ri)) {
-        ScryWorldMatrix*    wm     = ecs_field(&ri, ScryWorldMatrix,    0);
-        ScryMeshData*       md     = ecs_field(&ri, ScryMeshData,       1);
-        ScryRendererIntent* intent = ecs_field(&ri, ScryRendererIntent, 2);
-        ScryAABB*           aabb   = ecs_field(&ri, ScryAABB,           3);
-        for (int i = 0; i < ri.count; ++i) {
-            if (s_entity_count >= MAX_ENTITIES) break;
-            if (!(intent[i].mask & SCRY_INTENT_VISIBLE)) continue;
-            memcpy(&s_mat_flat[s_entity_count * 16], wm[i].value, 64u);
-            s_aabb_flat[s_entity_count] = aabb[i];
-            s_mesh_ids[s_entity_count]  = md[i].lod_group_id;
-            ++s_entity_count;
+    if (pMat && pMesh) {
+        float*    dest_mat  = static_cast<float*>(pMat);
+        uint32_t* dest_mesh = static_cast<uint32_t*>(pMesh);
+
+        ecs_iter_t ri = ecs_query_iter(it->world, g_render_query);
+        while (ecs_query_next(&ri)) {
+            ScryWorldMatrix*    wm     = ecs_field(&ri, ScryWorldMatrix,    0);
+            ScryMeshData*       md     = ecs_field(&ri, ScryMeshData,       1);
+            ScryRendererIntent* intent = ecs_field(&ri, ScryRendererIntent, 2);
+            for (int i = 0; i < ri.count; ++i) {
+                if (s_entity_count >= MAX_ENTITIES) break;
+                if (!(intent[i].mask & SCRY_INTENT_VISIBLE)) continue;
+                memcpy(dest_mat, wm[i].value, 64u);
+                dest_mat += 16;
+                *dest_mesh++ = md[i].lod_group_id;
+                ++s_entity_count;
+            }
         }
     }
+
+    if (pMat)  ctx->UnmapBuffer(g_RawMatrixSSBO,      MAP_WRITE);
+    if (pMesh) ctx->UnmapBuffer(g_EntityMeshIdBuffer, MAP_WRITE);
 
     if (s_entity_count == 0) {
         printf("[Renderer] WARNING: 0 entities matched the cull query!\n");
         fflush(stdout);
         return;
     }
-
-    IDeviceContext* ctx = (IDeviceContext*)ScryGraphics_GetContext();
-
-    // Upload world matrices.
-    { PVoid p = nullptr; ctx->MapBuffer(g_RawMatrixSSBO, MAP_WRITE, MAP_FLAG_DISCARD, p);
-      if (p) { memcpy(p, s_mat_flat, s_entity_count * 64u); ctx->UnmapBuffer(g_RawMatrixSSBO, MAP_WRITE); } }
-
-    // Upload AABBs.
-    { PVoid p = nullptr; ctx->MapBuffer(g_pAABBBuffer, MAP_WRITE, MAP_FLAG_DISCARD, p);
-      if (p) { memcpy(p, s_aabb_flat, s_entity_count * sizeof(ScryAABB)); ctx->UnmapBuffer(g_pAABBBuffer, MAP_WRITE); } }
-
-    // Upload mesh/LOD group IDs.
-    { PVoid p = nullptr; ctx->MapBuffer(g_EntityMeshIdBuffer, MAP_WRITE, MAP_FLAG_DISCARD, p);
-      if (p) { memcpy(p, s_mesh_ids, s_entity_count * sizeof(uint32_t)); ctx->UnmapBuffer(g_EntityMeshIdBuffer, MAP_WRITE); } }
 
     // Upload view-projection matrix into DrawParamsCB for the vertex shader.
     // USAGE_DYNAMIC buffers must be mapped at least once per frame before CommitShaderResources.
@@ -287,17 +279,6 @@ void ScryRenderer_Init(struct ecs_world_t* world) {
     }
     {
         BufferDesc bd;
-        bd.Name              = "AABBBuffer";
-        bd.Usage             = USAGE_DYNAMIC;
-        bd.BindFlags         = BIND_SHADER_RESOURCE;
-        bd.Mode              = BUFFER_MODE_STRUCTURED;
-        bd.ElementByteStride = 32u;
-        bd.CPUAccessFlags    = CPU_ACCESS_WRITE;
-        bd.Size              = MAX_ENTITIES * 32u;
-        dev->CreateBuffer(bd, nullptr, &g_pAABBBuffer);
-    }
-    {
-        BufferDesc bd;
         bd.Name              = "EntityMeshIdBuffer";
         bd.Usage             = USAGE_DYNAMIC;
         bd.BindFlags         = BIND_SHADER_RESOURCE;
@@ -386,7 +367,6 @@ void ScryRenderer_Init(struct ecs_world_t* world) {
             if (pCS) {
                 ShaderResourceVariableDesc cullVars[] = {
                     {SHADER_TYPE_COMPUTE, "b_matrices",          SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
-                    {SHADER_TYPE_COMPUTE, "b_bounds",            SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
                     {SHADER_TYPE_COMPUTE, "b_lodGroups",         SHADER_RESOURCE_VARIABLE_TYPE_STATIC},
                     {SHADER_TYPE_COMPUTE, "b_entityLodIds",      SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
                     {SHADER_TYPE_COMPUTE, "b_indirectArgs",      SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
@@ -395,7 +375,7 @@ void ScryRenderer_Init(struct ecs_world_t* world) {
                 };
                 ComputePipelineStateCreateInfo cpsoCI;
                 cpsoCI.PSODesc.Name = "CullPSO"; cpsoCI.PSODesc.PipelineType = PIPELINE_TYPE_COMPUTE;
-                cpsoCI.PSODesc.ResourceLayout.Variables = cullVars; cpsoCI.PSODesc.ResourceLayout.NumVariables = 7u;
+                cpsoCI.PSODesc.ResourceLayout.Variables = cullVars; cpsoCI.PSODesc.ResourceLayout.NumVariables = 6u;
                 cpsoCI.pCS = pCS;
                 dev->CreateComputePipelineState(cpsoCI, &g_pCullPSO);
             }
@@ -416,19 +396,16 @@ void ScryRenderer_Init(struct ecs_world_t* world) {
         g_pSRB->GetVariableByName(SHADER_TYPE_VERTEX, "DrawParams") ->Set(g_pDrawParamsCB);
 
         g_pCullPSO->CreateShaderResourceBinding(&g_pCullSRB, true);
-        IBufferView* matSRV   = g_RawMatrixSSBO->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
-        IBufferView* aabbSRV  = g_pAABBBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
-        IBufferView* meshSRV  = g_EntityMeshIdBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
-        IBufferView* iArgUAV  = g_IndirectArgsBuffer->GetDefaultView(BUFFER_VIEW_UNORDERED_ACCESS);
+        IBufferView* matSRV  = g_RawMatrixSSBO->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
+        IBufferView* meshSRV = g_EntityMeshIdBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE);
+        IBufferView* iArgUAV = g_IndirectArgsBuffer->GetDefaultView(BUFFER_VIEW_UNORDERED_ACCESS);
         g_pCullSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "b_matrices")    ->Set(matSRV);
-        g_pCullSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "b_bounds")      ->Set(aabbSRV);
         g_pCullSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "b_entityLodIds")->Set(meshSRV);
         g_pCullSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "b_indirectArgs")->Set(iArgUAV);
         g_pCullSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "CullParams")    ->Set(g_pCullParamsCB);
     }
 
     id_ScryMeshData = InternalRegComp(world, "ScryMeshData", sizeof(ScryMeshData), alignof(ScryMeshData));
-    id_ScryAABB = InternalRegComp(world, "ScryAABB", sizeof(ScryAABB), alignof(ScryAABB));
     id_ScryEntityIntent = InternalRegComp(world, "ScryEntityIntent", sizeof(ScryRendererIntent), alignof(ScryRendererIntent));
     id_ScryMaterial = InternalRegComp(world, "ScryMaterial", sizeof(ScryMaterial), alignof(ScryMaterial));
 
@@ -441,9 +418,8 @@ void ScryRenderer_Init(struct ecs_world_t* world) {
         rd.terms[0].id = (ecs_entity_t)id_ScryWorldMatrix;
         rd.terms[1].id = (ecs_entity_t)id_ScryMeshData;
         rd.terms[2].id = (ecs_entity_t)id_ScryEntityIntent;
-        rd.terms[3].id = (ecs_entity_t)id_ScryAABB;
-        rd.terms[4].id = (ecs_entity_t)id_ScryChunkCoord; rd.terms[4].inout = EcsIn;
-        rd.terms[5].id = (ecs_entity_t)id_ScryChunkHash;  rd.terms[5].inout = EcsIn;
+        rd.terms[3].id = (ecs_entity_t)id_ScryChunkCoord; rd.terms[3].inout = EcsIn;
+        rd.terms[4].id = (ecs_entity_t)id_ScryChunkHash;  rd.terms[4].inout = EcsIn;
         
         rd.order_by = (ecs_entity_t)id_ScryChunkHash;
         rd.order_by_callback = compare_chunk_hashes;
@@ -481,7 +457,7 @@ void ScryRenderer_Shutdown(void) {
     g_pCullSRB.Release(); g_pCullPSO.Release();
     g_pSRB.Release(); g_pPSO.Release();
     g_IndirectArgsBuffer.Release(); g_VisibleMatrixSSBO.Release();
-    g_EntityMeshIdBuffer.Release(); g_pAABBBuffer.Release();
+    g_EntityMeshIdBuffer.Release();
     g_pCullParamsCB.Release(); g_RawMatrixSSBO.Release();
     g_pDrawParamsCB.Release();
 }

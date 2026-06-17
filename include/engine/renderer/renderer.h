@@ -9,7 +9,6 @@ extern "C" {
 struct ecs_world_t;
 
 ENGINE_API extern uint64_t id_ScryMeshData;
-ENGINE_API extern uint64_t id_ScryAABB;
 ENGINE_API extern uint64_t id_ScryEntityIntent;
 ENGINE_API extern uint64_t id_ScryMaterial;
 

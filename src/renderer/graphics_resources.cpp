@@ -74,8 +74,8 @@ bool InitResources(void) {
         bd.Usage             = USAGE_DEFAULT;
         bd.BindFlags         = BIND_SHADER_RESOURCE;
         bd.Mode              = BUFFER_MODE_STRUCTURED;
-        bd.ElementByteStride = 48u; 
-        bd.Size              = MAX_LOD_GROUPS * 48u;
+        bd.ElementByteStride = 80u;
+        bd.Size              = MAX_LOD_GROUPS * 80u;
         g_pDevice->CreateBuffer(bd, nullptr, &g_LODGroupBuffer);
         if (!g_LODGroupBuffer) return false;
     }

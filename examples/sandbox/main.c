@@ -77,9 +77,9 @@ static void OnInit(ScryContext* ctx) {
     printf("[Init] id_ScryMeshData: %llu\n", (unsigned long long)id_ScryMeshData);
     fflush(stdout);
 
-    for (int i = 0; i < 10000; ++i) {
-        int row = i / 100;
-        int col = i % 100;
+    for (int i = 0; i < 100000; ++i) {
+        int row = i / 1000;
+        int col = i % 1000;
 
         ecs_entity_t ent = ecs_new(world);
 
@@ -102,11 +102,6 @@ static void OnInit(ScryContext* ctx) {
             &(ScryChunkCoord){ .x = 0, .y = 0 });
         ecs_set_id(world, ent, id_ScryChunkHash, sizeof(ScryChunkHash),
             &(ScryChunkHash){ .hash = 0 });
-
-        // 32-byte GPU-aligned AABB matching ShaderAABB in cull.hlsl (vec3 + float pad).
-        ecs_set_id(world, ent, id_ScryAABB, sizeof(ScryAABB),
-            &(ScryAABB){ .min = {-2.0f, -2.0f, -2.0f}, .pad0 = 0.0f,
-                         .max = { 2.0f,  2.0f,  2.0f}, .pad1 = 0.0f });
 
         ecs_set_id(world, ent, id_ScryMeshData, sizeof(ScryMeshData),
             &(ScryMeshData){ .lod_group_id = lodGroup.group_id });
@@ -155,7 +150,7 @@ int main(int argc, char* argv[]) {
     (void)argc; (void)argv;
 
     ScryAppConfig config = {0};
-    config.title = "Scry Sandbox (C)";
+    config.title = "Scry Sandbox";
     config.window_width = 1280;
     config.window_height = 720;
     config.OnInit = OnInit;

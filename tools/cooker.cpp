@@ -25,6 +25,7 @@
 #include <cassert>
 #include <cstring>
 #include <cstdlib>
+#include <cfloat>
 #include <filesystem>
 #include <vector>
 #include <string>
@@ -231,6 +232,18 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
         return false;
     }
 
+    // Compute tight AABB from LOD0 vertex positions.
+    float aabb_min[3] = { FLT_MAX, FLT_MAX, FLT_MAX };
+    float aabb_max[3] = { -FLT_MAX, -FLT_MAX, -FLT_MAX };
+    for (const ScryVertex& sv : lod0_verts) {
+        if (sv.px < aabb_min[0]) aabb_min[0] = sv.px;
+        if (sv.py < aabb_min[1]) aabb_min[1] = sv.py;
+        if (sv.pz < aabb_min[2]) aabb_min[2] = sv.pz;
+        if (sv.px > aabb_max[0]) aabb_max[0] = sv.px;
+        if (sv.py > aabb_max[1]) aabb_max[1] = sv.py;
+        if (sv.pz > aabb_max[2]) aabb_max[2] = sv.pz;
+    }
+
     ScryMeshHeader hdr{};
     hdr.magic             = SCRY_MESH_MAGIC;
     hdr.version           = SCRY_MESH_VERSION;
@@ -240,6 +253,8 @@ static bool cook_mesh(const fs::path& input, const fs::path& out_dir) {
     hdr.lod1_index_count  = static_cast<uint32_t>(lod1_index_count);
     hdr.lod2_vertex_count = static_cast<uint32_t>(lod2_v_count);
     hdr.lod2_index_count  = static_cast<uint32_t>(lod2_index_count);
+    std::memcpy(hdr.aabb_min, aabb_min, sizeof(aabb_min));
+    std::memcpy(hdr.aabb_max, aabb_max, sizeof(aabb_max));
 
     // [Header][LOD0_Verts][LOD0_Idxs][LOD1_Verts][LOD1_Idxs][LOD2_Verts][LOD2_Idxs]
     std::fwrite(&hdr,              sizeof(hdr),        1,                f);

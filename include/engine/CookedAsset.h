@@ -6,7 +6,7 @@ extern "C" {
 #endif
 
 /* ── Binary mesh format ──────────────────────────────────────────────────────
- * A .scrymesh file (version 3) layout:
+ * A .scrymesh file (version 4) layout:
  *   [ScryMeshHeader]
  *   [ScryVertex × lod0_vertex_count]   ← LOD0 vertex buffer (full mesh)
  *   [uint32_t   × lod0_index_count]    ← LOD0 index buffer
@@ -17,7 +17,7 @@ extern "C" {
  */
 
 #define SCRY_MESH_MAGIC   0x59524353u  /* little-endian 'SCRY' */
-#define SCRY_MESH_VERSION 3u
+#define SCRY_MESH_VERSION 4u
 
 #pragma pack(push, 1)
 
@@ -36,6 +36,8 @@ typedef struct ScryMeshHeader {
     uint32_t lod1_index_count;
     uint32_t lod2_vertex_count;
     uint32_t lod2_index_count;
+    float    aabb_min[3];
+    float    aabb_max[3];
 } ScryMeshHeader;
 
 /* ── Binary texture format ───────────────────────────────────────────────────

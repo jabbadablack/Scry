@@ -5,15 +5,13 @@
 #define THREADS 64
 
 struct ScryMat4        { float4 c0; float4 c1; float4 c2; float4 c3; };
-struct ShaderAABB      { float3 aabb_min; float pad0; float3 aabb_max; float pad1; };
 struct IndirectCommand { uint indexCount; uint instanceCount; uint firstIndex; uint baseVertex; uint firstInstance; };
 struct MeshLOD         { uint indexCount; uint firstIndex; uint baseVertex; float threshold; };
-struct LODGroupGPU     { MeshLOD lods[3]; }; // 48 bytes, stride matches CPU
+struct LODGroupGPU     { MeshLOD lods[3]; float3 local_aabb_min; float pad0; float3 local_aabb_max; float pad1; };
 
 StructuredBuffer<ScryMat4>           b_matrices          : register(t0);
-StructuredBuffer<ShaderAABB>         b_bounds            : register(t1);
-StructuredBuffer<LODGroupGPU>        b_lodGroups         : register(t2);
-StructuredBuffer<uint>               b_entityLodIds      : register(t3);
+StructuredBuffer<LODGroupGPU>        b_lodGroups         : register(t1);
+StructuredBuffer<uint>               b_entityLodIds      : register(t2);
 RWStructuredBuffer<IndirectCommand>  b_indirectArgs      : register(u0);
 RWStructuredBuffer<ScryMat4>         b_outVisibleMatrices: register(u1);
 
@@ -28,17 +26,20 @@ void CSMain(uint3 DTid : SV_DispatchThreadID) {
     uint gid = DTid.x;
     if (gid >= entityData.x) return;
 
-    ScryMat4   mat  = b_matrices[gid];
-    ShaderAABB aabb = b_bounds[gid];
+    ScryMat4 mat = b_matrices[gid];
 
     // ── Distance cull (sphere test) ───────────────────────────────────────────
     float3 entityPos = float3(mat.c3.x, mat.c3.y, mat.c3.z);
     float  dist      = distance(cameraWorldPos.xyz, entityPos);
     if (dist > 600.0) return;
 
+    // ── LOD group lookup — also supplies the baked mesh AABB ─────────────────
+    uint        lodGroupId = b_entityLodIds[gid];
+    LODGroupGPU group      = b_lodGroups[lodGroupId];
+
     // ── Frustum cull (OBB vs 6 planes) ───────────────────────────────────────
-    float3 lc = (aabb.aabb_min + aabb.aabb_max) * 0.5;
-    float3 le = (aabb.aabb_max - aabb.aabb_min) * 0.5;
+    float3 lc = (group.local_aabb_min + group.local_aabb_max) * 0.5;
+    float3 le = (group.local_aabb_max - group.local_aabb_min) * 0.5;
 
     float3 wc = mat.c0.xyz * lc.x + mat.c1.xyz * lc.y + mat.c2.xyz * lc.z + mat.c3.xyz;
 
@@ -61,12 +62,9 @@ void CSMain(uint3 DTid : SV_DispatchThreadID) {
     sunkMat.c3.y -= sink;
 
     // ── LOD selection ─────────────────────────────────────────────────────────
-    uint lodGroupId  = b_entityLodIds[gid];
-    LODGroupGPU lodGrp = b_lodGroups[lodGroupId];
-
     uint selectedLOD = 0;
-    if      (dist > lodGrp.lods[1].threshold) selectedLOD = 2;
-    else if (dist > lodGrp.lods[0].threshold) selectedLOD = 1;
+    if      (dist > group.lods[1].threshold) selectedLOD = 2;
+    else if (dist > group.lods[0].threshold) selectedLOD = 1;
 
     // ── Dense pack into per-slot region of b_outVisibleMatrices ──────────────
     uint mdiSlot = lodGroupId * 3 + selectedLOD;

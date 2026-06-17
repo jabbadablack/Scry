@@ -1,6 +1,3 @@
-#ifndef FLECS_NO_STATS
-#define FLECS_NO_STATS
-#endif
 #include <engine/ecs.h>
 #include <engine/pipeline.h>
 #include <flecs.h>

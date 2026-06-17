@@ -1,7 +1,3 @@
-#ifndef FLECS_NO_CPP
-#define FLECS_NO_CPP
-#endif
-
 #include <engine/renderer/renderer.h>
 #include <engine/renderer/core.h>
 #include <engine/renderer/backend.h>

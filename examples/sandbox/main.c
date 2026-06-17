@@ -70,25 +70,25 @@ static void OnInit(ScryContext* ctx) {
 
     struct ecs_world_t* world = Scry_GetWorld(ctx);
 
-    ScryLODGroup lodGroup = DiscoverAndLoadMesh("suzanne.scrymesh");
+    ScryLODGroup lodGroup = DiscoverAndLoadMesh("Hermanubis_low.scrymesh");
     if (lodGroup.group_id == UINT32_MAX) return;
 
     printf("[Init] id_ScryPosition: %llu\n", (unsigned long long)id_ScryPosition);
     printf("[Init] id_ScryMeshData: %llu\n", (unsigned long long)id_ScryMeshData);
     fflush(stdout);
 
-    for (int i = 0; i < 100000; ++i) {
-        int row = i / 1000;
-        int col = i % 1000;
+    for (int i = 0; i < 10000; ++i) {
+        int row = i / 100;
+        int col = i % 100;
 
         ecs_entity_t ent = ecs_new(world);
 
         ecs_set_id(world, ent, id_ScryPosition, sizeof(ScryPosition),
-            &(ScryPosition){ .value = {(float)(col - 25) * 3.0f, 0.0f, (float)(row - 25) * 3.0f} });
+            &(ScryPosition){ .value = {(float)(col) * 12.0f, 0.0f, (float)(row) * 12.0f} });
         ecs_set_id(world, ent, id_ScryRotation, sizeof(ScryRotation),
             &(ScryRotation){ .value = {0.0f, 0.0f, 0.0f} });
         ecs_set_id(world, ent, id_ScryScale, sizeof(ScryScale),
-            &(ScryScale){ .value = {1.0f, 1.0f, 1.0f} });
+            &(ScryScale){ .value = {0.1f, 0.1f, 0.1f} });
 
         // DirtyMatrix=1 forces the transform system to compute the world matrix on the first frame.
         ecs_set_id(world, ent, id_ScryDirtyMatrix, sizeof(ScryDirtyMatrixIntent),
@@ -150,7 +150,7 @@ int main(int argc, char* argv[]) {
     (void)argc; (void)argv;
 
     ScryAppConfig config = {0};
-    config.title = "Scry Sandbox";
+    config.title = "Scry";
     config.window_width = 1280;
     config.window_height = 720;
     config.OnInit = OnInit;

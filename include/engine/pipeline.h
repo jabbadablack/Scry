@@ -12,6 +12,7 @@ ENGINE_API extern uint64_t ScryPhase_Sense;    /* Gathers data: input, raycasts,
 ENGINE_API extern uint64_t ScryPhase_Evaluate; /* Scores intents: AI brains, camera input         */
 ENGINE_API extern uint64_t ScryPhase_React;    /* Translates intent to state: matrices, pathfind  */
 ENGINE_API extern uint64_t ScryPhase_Resolve;  /* Commits state: GPU upload, physics integration  */
+ENGINE_API extern uint64_t ScryPhase_Cleanup;  /* GC step: wipe intents, release cmd lists, reset arena */
 ENGINE_API extern uint64_t ScryIsIntent;
 
 /**

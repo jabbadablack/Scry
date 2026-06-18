@@ -72,6 +72,15 @@ static inline void* ScryMemory_PoolGet(ScryPoolAllocator* pool, uint32_t index) 
     return (uint8_t*)pool->data + (index * pool->block_size);
 }
 
+/* ── Frame arena ─────────────────────────────────────────────────────────────
+ * 64 MB linear allocator reset in Phase_Cleanup each frame. Use Arena_Alloc
+ * for any per-frame scratch memory that must not outlive the frame.
+ */
+ENGINE_API extern ScryArena g_FrameArena;
+
+ENGINE_API void* Arena_Alloc(size_t size);  /* 16-byte aligned; returns NULL on overflow */
+ENGINE_API void  Arena_Reset(void);         /* Resets offset to 0; called by Phase_Cleanup */
+
 #ifdef __cplusplus
 }
 #endif

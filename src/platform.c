@@ -1,6 +1,7 @@
 #include <engine/platform.h>
 #include <engine/input.h>
 #include <engine/ecs.h>
+#include <engine/memory.h>
 #include <engine/renderer/core.h>
 #include <engine/renderer/renderer.h>
 #include <engine/plugin.h>
@@ -155,6 +156,11 @@ void ScryInput_GetMousePos(int16_t* out_x, int16_t* out_y) {
 
 static void (*g_app_log)(const char*) = NULL;
 
+static void ArenaResetCallback(ecs_iter_t* it) {
+    (void)it;
+    Arena_Reset();
+}
+
 ENGINE_API ScryError Scry_Run(const ScryAppConfig* config) {
     if (!config || !config->OnInit || !config->OnShutdown) return SCRY_ERR_PLATFORM_INIT;
     g_app_log = config->OnLog;
@@ -164,6 +170,11 @@ ENGINE_API ScryError Scry_Run(const ScryAppConfig* config) {
     if (!window) return SCRY_ERR_PLATFORM_INIT;
 
     if (!ScryGraphics_Init(window)) return SCRY_ERR_GRAPHICS_INIT;
+
+    {
+        void* arena_mem = malloc(64u * 1024u * 1024u);
+        if (arena_mem) ScryMemory_ArenaInit(&g_FrameArena, arena_mem, 64u * 1024u * 1024u);
+    }
 
     ScryECS_InitOSAPI();
     struct ecs_world_t* world = ScryECS_CreateWorld();
@@ -186,6 +197,14 @@ ENGINE_API ScryError Scry_Run(const ScryAppConfig* config) {
     }
 
     ScryPipeline_Init(world);
+
+    {
+        ecs_entity_desc_t ed = { .name = "ArenaReset" };
+        ecs_entity_t sys = ecs_entity_init(world, &ed);
+        ecs_system_desc_t sd = { .entity = sys, .phase = (ecs_entity_t)ScryPhase_Cleanup, .callback = ArenaResetCallback };
+        ecs_system_init(world, &sd);
+    }
+
     ScryTransform_Init(world);
     ScrySpatial_Init(world);
     ScryCamera_Init(world);
@@ -228,6 +247,11 @@ ENGINE_API ScryError Scry_Run(const ScryAppConfig* config) {
     ScryECS_ShutdownOSAPI();
     ScryGraphics_Shutdown();
     ScryPlatform_DestroyWindow(window);
+
+    if (g_FrameArena.backing_memory) {
+        free(g_FrameArena.backing_memory);
+        g_FrameArena.backing_memory = NULL;
+    }
 
     return SCRY_SUCCESS;
 }

@@ -23,17 +23,15 @@ static uint64_t RegComp(ecs_world_t* world, const char* name, size_t sz, size_t 
 }
 
 static void TransformSystemCallback(ecs_iter_t* it) {
+    static _Thread_local bool s_tracy_named = false;
+    if (!s_tracy_named) { SCRY_PROFILE_THREAD_NAME("Flecs Worker"); s_tracy_named = true; }
     SCRY_PROFILE_ZONE(Phase_React_Transform);
     ScryPosition* pos = ecs_field(it, ScryPosition, 0);
     ScryRotation* rot = ecs_field(it, ScryRotation, 1);
     ScryScale* scl = ecs_field(it, ScryScale, 2);
     ScryWorldMatrix* wm = ecs_field(it, ScryWorldMatrix, 3);
-    ScryDirtyMatrixIntent* dirty = ecs_field(it, ScryDirtyMatrixIntent, 4);
 
     for (int i = 0; i < it->count; ++i) {
-        if (!dirty[i].active) continue;
-        dirty[i].active = 0;
-
         mat4 m, rot_mat;
         glm_mat4_identity(m);
         glm_translate(m, (float*)pos[i].value);
@@ -61,11 +59,15 @@ void ScryTransform_Init(struct ecs_world_t* world) {
         s.query.terms[1].id = (ecs_entity_t)id_ScryRotation;    s.query.terms[1].inout = EcsIn;
         s.query.terms[2].id = (ecs_entity_t)id_ScryScale;       s.query.terms[2].inout = EcsIn;
         s.query.terms[3].id = (ecs_entity_t)id_ScryWorldMatrix; s.query.terms[3].inout = EcsOut;
-        s.query.terms[4].id = (ecs_entity_t)id_ScryDirtyMatrix; s.query.terms[4].inout = EcsInOut;
+        s.query.terms[4].id = (ecs_entity_t)id_ScryDirtyMatrix; s.query.terms[4].inout = EcsIn;
         s.callback = TransformSystemCallback;
+        s.phase = (ecs_entity_t)ScryPhase_React;
         s.multi_threaded = true;
 
-        ecs_add_pair(world, s.entity, EcsDependsOn, (ecs_entity_t)ScryPhase_React);
         ecs_system_init(world, &s);
     }
+
+    // Register the Phase_Cleanup system that bulk-removes DirtyMatrix from all entities.
+    // This makes component presence the dirty flag: RotateSystem adds it, Cleanup strips it.
+    ScryPipeline_RegisterIntentComponent(world, id_ScryDirtyMatrix);
 }

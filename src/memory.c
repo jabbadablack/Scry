@@ -5,6 +5,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+ScryArena g_FrameArena = {0};
+
+void* Arena_Alloc(size_t size) {
+    return ScryMemory_ArenaAllocate(&g_FrameArena, size, 16u);
+}
+
+void Arena_Reset(void) {
+    ScryMemory_ArenaReset(&g_FrameArena);
+}
+
 void ScryMemory_ArenaInit(ScryArena* arena, void* backing_memory, size_t size) {
     assert(arena != NULL);
     assert(backing_memory != NULL);

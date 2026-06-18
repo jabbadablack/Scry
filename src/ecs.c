@@ -41,8 +41,6 @@ void ScryECS_RegisterDoubleBufferSync(struct ecs_world_t* world, uint64_t compon
     ecs_entity_desc_t ed = {0};
     ed.name = name;
     const ecs_entity_t sys_ent = ecs_entity_init(world, &ed);
-    
-    ecs_add_pair(world, sys_ent, EcsDependsOn, (ecs_entity_t)ScryPhase_Resolve);
 
     SyncData* sd = (SyncData*)malloc(sizeof(SyncData));
     sd->component_size = component_size;
@@ -50,6 +48,7 @@ void ScryECS_RegisterDoubleBufferSync(struct ecs_world_t* world, uint64_t compon
     ecs_system_desc_t sys_desc = {0};
     sys_desc.entity = sys_ent;
     sys_desc.query.terms[0].id = (ecs_entity_t)component_id;
+    sys_desc.phase = (ecs_entity_t)ScryPhase_Resolve;
     sys_desc.ctx = sd;
     sys_desc.callback = SyncCallback;
 

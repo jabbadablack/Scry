@@ -3,6 +3,7 @@
 #include <engine/input.h>
 #include <engine/engine.h>
 #include <engine/spatial.h>
+#include <engine/transform.h>
 #include <flecs.h>
 #include <assert.h>
 #include <math.h>
@@ -28,11 +29,18 @@ static void CameraInputSystemCallback(ecs_iter_t* it) {
     const float sensitivity = 0.002f;
 
     for (int i = 0; i < it->count; ++i) {
+        bool moved = false;
+
         if (ScryInput_IsKeyDown(SCRY_KEY_MOUSER)) {
-            cam[i].yaw   += g_ScryInput.states[g_ScryInput.read_index].mouse_dx * sensitivity;
-            cam[i].pitch -= g_ScryInput.states[g_ScryInput.read_index].mouse_dy * sensitivity;
-            if (cam[i].pitch > 1.5f) cam[i].pitch = 1.5f;
-            if (cam[i].pitch < -1.5f) cam[i].pitch = -1.5f;
+            float dx = g_ScryInput.states[g_ScryInput.read_index].mouse_dx;
+            float dy = g_ScryInput.states[g_ScryInput.read_index].mouse_dy;
+            if (dx != 0.0f || dy != 0.0f) {
+                cam[i].yaw   += dx * sensitivity;
+                cam[i].pitch -= dy * sensitivity;
+                if (cam[i].pitch >  1.5f) cam[i].pitch =  1.5f;
+                if (cam[i].pitch < -1.5f) cam[i].pitch = -1.5f;
+                moved = true;
+            }
         }
 
         vec3 fwd, right, up = {0, 1, 0};
@@ -47,19 +55,25 @@ static void CameraInputSystemCallback(ecs_iter_t* it) {
         if (ScryInput_IsKeyDown(SCRY_KEY_W)) {
             vec3 move; glm_vec3_scale(fwd, speed, move);
             glm_vec3_add(cam[i].position, move, cam[i].position);
+            moved = true;
         }
         if (ScryInput_IsKeyDown(SCRY_KEY_S)) {
             vec3 move; glm_vec3_scale(fwd, speed, move);
             glm_vec3_sub(cam[i].position, move, cam[i].position);
+            moved = true;
         }
         if (ScryInput_IsKeyDown(SCRY_KEY_A)) {
             vec3 move; glm_vec3_scale(right, speed, move);
             glm_vec3_sub(cam[i].position, move, cam[i].position);
+            moved = true;
         }
         if (ScryInput_IsKeyDown(SCRY_KEY_D)) {
             vec3 move; glm_vec3_scale(right, speed, move);
             glm_vec3_add(cam[i].position, move, cam[i].position);
+            moved = true;
         }
+
+        if (moved) ecs_add_id(it->world, it->entities[i], (ecs_entity_t)id_ScryDirtyMatrix);
     }
 }
 
@@ -122,7 +136,7 @@ void ScryCamera_Init(struct ecs_world_t* world) {
         s.entity = ecs_entity_init(world, &(ecs_entity_desc_t){ .name = "CameraInputSystem" });
         s.query.terms[0].id = (ecs_entity_t)id_ScryCamera;
         s.callback = CameraInputSystemCallback;
-        ecs_add_pair(world, s.entity, EcsDependsOn, (ecs_entity_t)ScryPhase_Evaluate);
+        s.phase = (ecs_entity_t)ScryPhase_Evaluate;
         ecs_system_init(world, &s);
     }
 
@@ -130,8 +144,9 @@ void ScryCamera_Init(struct ecs_world_t* world) {
         ecs_system_desc_t s = {0};
         s.entity = ecs_entity_init(world, &(ecs_entity_desc_t){ .name = "CameraMatrixSystem" });
         s.query.terms[0].id = (ecs_entity_t)id_ScryCamera;
+        s.query.terms[1].id = (ecs_entity_t)id_ScryDirtyMatrix; s.query.terms[1].inout = EcsIn;
         s.callback = CameraMatrixSystemCallback;
-        ecs_add_pair(world, s.entity, EcsDependsOn, (ecs_entity_t)ScryPhase_React);
+        s.phase = (ecs_entity_t)ScryPhase_React;
         ecs_system_init(world, &s);
     }
 }

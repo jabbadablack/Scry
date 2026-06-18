@@ -54,15 +54,12 @@ static ScryLODGroup DiscoverAndLoadMesh(const char* filename) {
 }
 
 static void RotateSystemCallback(ecs_iter_t* it) {
-    if (it->field_count < 2) {
-        printf("[RotateSystem] Error: field_count = %d\n", it->field_count);
-        return;
-    }
     ScryRotation* rot = ecs_field(it, ScryRotation, 0);
-    ScryDirtyMatrixIntent* dirty = ecs_field(it, ScryDirtyMatrixIntent, 1);
     for (int i = 0; i < it->count; ++i) {
         rot[i].value[1] += it->delta_time;
-        dirty[i].active = 1;
+        // Re-add DirtyMatrix so Phase_React/TransformSystem sees only this entity as dirty.
+        // Phase_Cleanup strips DirtyMatrix from all entities after each frame.
+        ecs_add_id(it->world, it->entities[i], (ecs_entity_t)id_ScryDirtyMatrix);
     }
 }
 
@@ -81,9 +78,9 @@ static void OnInit(ScryContext* ctx) {
 
     uint64_t tag_Spinner = ecs_entity_init(world, &(ecs_entity_desc_t){ .name = "Spinner" });
 
-    for (int i = 0; i < 10000; ++i) {
-        int row = i / 100;
-        int col = i % 100;
+    for (int i = 0; i < 1000; ++i) {
+        int row = i / 10;
+        int col = i % 10;
 
         ecs_entity_t ent = ecs_new(world);
 
@@ -94,8 +91,7 @@ static void OnInit(ScryContext* ctx) {
         ecs_set_id(world, ent, id_ScryScale, sizeof(ScryScale),
             &(ScryScale){ .value = {0.1f, 0.1f, 0.1f} });
 
-        ecs_set_id(world, ent, id_ScryDirtyMatrix, sizeof(ScryDirtyMatrixIntent),
-            &(ScryDirtyMatrixIntent){ .active = 1 });
+        ecs_add_id(world, ent, (ecs_entity_t)id_ScryDirtyMatrix);
 
         ScryWorldMatrix wm;
         glm_mat4_identity(wm.value);
@@ -126,18 +122,18 @@ static void OnInit(ScryContext* ctx) {
         glm_mat4_identity((float (*)[4])cam.view);
         glm_mat4_identity((float (*)[4])cam.proj);
         ecs_set_id(world, cam_ent, id_ScryCamera, sizeof(cam), &cam);
+        ecs_add_id(world, cam_ent, (ecs_entity_t)id_ScryDirtyMatrix);
     }
 
     {
         ecs_entity_desc_t ed = { .name = "RotateSystem" };
         ecs_entity_t sys_ent = ecs_entity_init(world, &ed);
-        ecs_add_pair(world, sys_ent, EcsDependsOn, (ecs_entity_t)ScryPhase_Evaluate);
 
         ecs_system_desc_t sd = {
             .entity = sys_ent,
-            .query.terms[0] = { .id = (ecs_entity_t)id_ScryRotation,   .inout = EcsInOut },
-            .query.terms[1] = { .id = (ecs_entity_t)id_ScryDirtyMatrix, .inout = EcsInOut },
-            .query.terms[2] = { .id = (ecs_entity_t)tag_Spinner },
+            .query.terms[0] = { .id = (ecs_entity_t)id_ScryRotation, .inout = EcsInOut },
+            .query.terms[1] = { .id = (ecs_entity_t)tag_Spinner },
+            .phase = (ecs_entity_t)ScryPhase_Evaluate,
             .callback = RotateSystemCallback
         };
         ecs_system_init(world, &sd);
@@ -163,7 +159,7 @@ int main(int argc, char* argv[]) {
     config.OnShutdown = OnShutdown;
     config.OnLog = AppLog;
     config.global_memory_pool_size = 256 * 1024;
-    config.thread_count = 8;  // 0 = hardware_concurrency - 1
+    config.thread_count = 0;  // 0 = hardware_concurrency - 1
 
     ScryError err = Scry_Run(&config);
     return (err == SCRY_SUCCESS) ? 0 : 1;

@@ -13,6 +13,7 @@
 #include "Graphics/GraphicsEngine/interface/ShaderResourceBinding.h"
 #include "Graphics/GraphicsEngine/interface/Shader.h"
 #include "Graphics/GraphicsEngine/interface/GraphicsTypes.h"
+#include "Graphics/GraphicsEngine/interface/CommandList.h"
 
 #include <cglm/cglm.h>
 #include <cglm/struct.h>
@@ -51,6 +52,9 @@ static RefCntAutoPtr<IBuffer> g_VisibleMatrixSSBO;
 
 static ecs_query_t* g_render_query = NULL;
 static ecs_query_t* g_camera_query = NULL;
+
+static RefCntAutoPtr<ICommandList> g_pCommandLists[4];
+static uint32_t                    g_NumCommandLists = 0;
 
 typedef struct IndirectCmd {
     uint32_t indexCount;
@@ -241,6 +245,13 @@ static void PassCullCallback(ecs_iter_t* it) {
 static void PassOpaqueCallback(ecs_iter_t* it) {
     (void)it;
     Renderer_DrawMDI(s_entity_count);
+}
+
+static void PassCleanupCallback(ecs_iter_t* it) {
+    (void)it;
+    for (uint32_t i = 0; i < g_NumCommandLists; ++i)
+        g_pCommandLists[i].Release();
+    g_NumCommandLists = 0;
 }
 
 static int compare_chunk_hashes(ecs_entity_t e1, const void* p1, ecs_entity_t e2, const void* p2) {
@@ -443,9 +454,9 @@ void ScryRenderer_Init(struct ecs_world_t* world) {
         sd.entity = ecs_entity_init(world, &ed);
         sd.query.terms[0].id = (ecs_entity_t)id_ScryCamera; sd.query.terms[0].inout = EcsIn;
         sd.callback = PassCullCallback;
+        sd.phase = (ecs_entity_t)ScryPhase_Resolve;
         sd.multi_threaded = false;
-        ecs_entity_t sys = ecs_system_init(world, &sd);
-        ecs_add_pair(world, sys, EcsDependsOn, (ecs_entity_t)ScryPhase_Resolve);
+        ecs_system_init(world, &sd);
     }
 
     {
@@ -456,9 +467,21 @@ void ScryRenderer_Init(struct ecs_world_t* world) {
         sd.entity = ecs_entity_init(world, &ed);
         sd.query.terms[0].id = (ecs_entity_t)id_ScryCamera; sd.query.terms[0].inout = EcsIn;
         sd.callback = PassOpaqueCallback;
+        sd.phase = (ecs_entity_t)ScryPhase_Resolve;
         sd.multi_threaded = false;
-        ecs_entity_t sys = ecs_system_init(world, &sd);
-        ecs_add_pair(world, sys, EcsDependsOn, (ecs_entity_t)ScryPhase_Resolve);
+        ecs_system_init(world, &sd);
+    }
+
+    {
+        ecs_entity_desc_t ed = {};
+        ed.name = "Pass_Cleanup";
+
+        ecs_system_desc_t sd = {};
+        sd.entity = ecs_entity_init(world, &ed);
+        sd.callback = PassCleanupCallback;
+        sd.phase = (ecs_entity_t)ScryPhase_Cleanup;
+        sd.multi_threaded = false;
+        ecs_system_init(world, &sd);
     }
 }
 

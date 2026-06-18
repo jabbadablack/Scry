@@ -8,46 +8,51 @@ uint64_t ScryPhase_Sense    = 0;
 uint64_t ScryPhase_Evaluate = 0;
 uint64_t ScryPhase_React    = 0;
 uint64_t ScryPhase_Resolve  = 0;
+uint64_t ScryPhase_Cleanup  = 0;
 uint64_t ScryIsIntent       = 0;
-
-static ecs_entity_t RegPhase(ecs_world_t* world, const char* name, ecs_entity_t parent) {
-    ecs_entity_desc_t ed = { .name = name };
-    ecs_entity_t ent = ecs_entity_init(world, &ed);
-    if (parent) ecs_add_pair(world, ent, EcsDependsOn, parent);
-    return ent;
-}
 
 void ScryPipeline_Init(struct ecs_world_t* world) {
     assert(world != NULL);
 
-    ScryPhase_Sense    = RegPhase(world, "Phase_Sense",    EcsOnLoad);
-    ScryPhase_Evaluate = RegPhase(world, "Phase_Evaluate", (ecs_entity_t)ScryPhase_Sense);
-    ScryPhase_React    = RegPhase(world, "Phase_React",    (ecs_entity_t)ScryPhase_Evaluate);
-    ScryPhase_Resolve  = RegPhase(world, "Phase_Resolve",  (ecs_entity_t)ScryPhase_React);
+    // Declare phase entities.
+    ScryPhase_Sense    = ecs_entity_init(world, &(ecs_entity_desc_t){ .name = "Phase_Sense"    });
+    ScryPhase_Evaluate = ecs_entity_init(world, &(ecs_entity_desc_t){ .name = "Phase_Evaluate" });
+    ScryPhase_React    = ecs_entity_init(world, &(ecs_entity_desc_t){ .name = "Phase_React"    });
+    ScryPhase_Resolve  = ecs_entity_init(world, &(ecs_entity_desc_t){ .name = "Phase_Resolve"  });
+    ScryPhase_Cleanup  = ecs_entity_init(world, &(ecs_entity_desc_t){ .name = "Phase_Cleanup"  });
 
-    ecs_entity_desc_t ed = { .name = "IsIntent" };
-    ScryIsIntent = ecs_entity_init(world, &ed);
+    // Tag them so Flecs' default pipeline recognises them as structural nodes.
+    ecs_add_id(world, (ecs_entity_t)ScryPhase_Sense,    EcsPhase);
+    ecs_add_id(world, (ecs_entity_t)ScryPhase_Evaluate, EcsPhase);
+    ecs_add_id(world, (ecs_entity_t)ScryPhase_React,    EcsPhase);
+    ecs_add_id(world, (ecs_entity_t)ScryPhase_Resolve,  EcsPhase);
+    ecs_add_id(world, (ecs_entity_t)ScryPhase_Cleanup,  EcsPhase);
+
+    // Anchor to EcsOnUpdate so Flecs computes DeltaTime before the ISR starts,
+    // then chain the rest topologically.
+    ecs_add_pair(world, (ecs_entity_t)ScryPhase_Sense,    EcsDependsOn, EcsOnUpdate);
+    ecs_add_pair(world, (ecs_entity_t)ScryPhase_Evaluate, EcsDependsOn, (ecs_entity_t)ScryPhase_Sense);
+    ecs_add_pair(world, (ecs_entity_t)ScryPhase_React,    EcsDependsOn, (ecs_entity_t)ScryPhase_Evaluate);
+    ecs_add_pair(world, (ecs_entity_t)ScryPhase_Resolve,  EcsDependsOn, (ecs_entity_t)ScryPhase_React);
+    ecs_add_pair(world, (ecs_entity_t)ScryPhase_Cleanup,  EcsDependsOn, (ecs_entity_t)ScryPhase_Resolve);
+
+    ScryIsIntent = ecs_entity_init(world, &(ecs_entity_desc_t){ .name = "IsIntent" });
 }
 
 static void ScryPipeline_CleanupIntentCallback(ecs_iter_t* it) {
-    size_t sz = (size_t)it->ctx;
-    void* data = ecs_field_w_size(it, sz, 0);
-    memset(data, 0, sz * (size_t)it->count);
+    // O(table) bulk removal — deferred to end of ecs_progress, safe to call here.
+    ecs_entity_t comp_id = (ecs_entity_t)(uintptr_t)it->ctx;
+    ecs_remove_all(it->world, comp_id);
 }
 
 void ScryPipeline_RegisterIntentComponent(struct ecs_world_t* world, uint64_t comp_id) {
-    const ecs_type_info_t* type = ecs_get_type_info(world, (ecs_entity_t)comp_id);
-    size_t sz = type ? type->size : 0;
-
     ecs_entity_desc_t ed = { .name = "CleanupIntent" };
     ecs_entity_t sys = ecs_entity_init(world, &ed);
-    ecs_add_pair(world, sys, EcsDependsOn, (ecs_entity_t)ScryPhase_Resolve);
 
     ecs_system_desc_t sd = {
         .entity = sys,
-        .query.terms[0] = { .id = (ecs_entity_t)comp_id, .inout = EcsInOut },
-        .query.terms[1] = { .id = (ecs_entity_t)ScryIsIntent },
-        .ctx = (void*)sz,
+        .phase = (ecs_entity_t)ScryPhase_Cleanup,
+        .ctx = (void*)(uintptr_t)comp_id,
         .callback = ScryPipeline_CleanupIntentCallback
     };
     ecs_system_init(world, &sd);

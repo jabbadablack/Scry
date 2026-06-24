@@ -76,7 +76,7 @@ target_include_directories(renderer PRIVATE
 )
 
 target_link_libraries(renderer PUBLIC
-    ENGINE
+    SCRY
     Diligent-BuildSettings
     Diligent-GraphicsEngineVk-static
 )

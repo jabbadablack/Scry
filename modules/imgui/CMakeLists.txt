@@ -39,6 +39,6 @@ target_include_directories(imgui_mod PUBLIC
 )
 
 target_link_libraries(imgui_mod PUBLIC
-    ENGINE
+    SCRY
     imgui::imgui
 )

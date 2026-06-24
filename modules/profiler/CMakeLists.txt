@@ -18,6 +18,6 @@ target_include_directories(profiler PUBLIC
 )
 
 target_link_libraries(profiler PUBLIC
-    ENGINE
+    SCRY
     TracyClient
 )

@@ -4,7 +4,7 @@ project(EngineBasic CXX)
 add_executable(engine-basic main.cpp)
 
 target_link_libraries(engine-basic PRIVATE
-    ENGINE
+    SCRY
     renderer
     glfw_module
 )

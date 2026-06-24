@@ -4,13 +4,14 @@
 #include "OS/types.h"
 #include "debug/assert.h"
 #include "ecs_allocator.hpp"
+#include "ecs_types.hpp"
 #include <entt/entt.hpp>
 
 namespace engine {
 namespace ecs {
 
     // Override the default EnTT registry to use our thread-safe custom allocator
-    using EnttRegistry = entt::basic_registry<entt::entity, engine::ecs::EcsAllocator<entt::entity>>;
+    using EnttRegistry = entt::basic_registry<engine::ecs::Entity, engine::ecs::EcsAllocator<engine::ecs::Entity>>;
 
     class Registry {
     public:
@@ -27,24 +28,24 @@ namespace ecs {
         ENGINE_INLINE Registry& operator=(Registry&& other) noexcept = default;
 
         // Entity APIs
-        [[nodiscard]] ENGINE_INLINE entt::entity CreateEntity();
-        ENGINE_INLINE void DestroyEntity(entt::entity entity);
+        [[nodiscard]] ENGINE_INLINE engine::ecs::Entity CreateEntity();
+        ENGINE_INLINE void DestroyEntity(engine::ecs::Entity entity);
 
         // Component CRUD operations
         template <typename T, typename... Args>
-        ENGINE_INLINE T& AddComponent(entt::entity entity, Args&&... args);
+        ENGINE_INLINE T& AddComponent(engine::ecs::Entity entity, Args&&... args);
 
         template <typename T>
-        ENGINE_INLINE void RemoveComponent(entt::entity entity);
+        ENGINE_INLINE void RemoveComponent(engine::ecs::Entity entity);
 
         template <typename T>
-        [[nodiscard]] ENGINE_INLINE T& GetComponent(entt::entity entity);
+        [[nodiscard]] ENGINE_INLINE T& GetComponent(engine::ecs::Entity entity);
 
         template <typename T>
-        [[nodiscard]] ENGINE_INLINE const T& GetComponent(entt::entity entity) const;
+        [[nodiscard]] ENGINE_INLINE const T& GetComponent(engine::ecs::Entity entity) const;
 
         template <typename T>
-        [[nodiscard]] ENGINE_INLINE bool HasComponent(entt::entity entity) const;
+        [[nodiscard]] ENGINE_INLINE bool HasComponent(engine::ecs::Entity entity) const;
 
         // Multi-component querying
         template <typename... Components>

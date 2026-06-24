@@ -2,6 +2,7 @@
 #define ENGINE_ECS_COMPONENTS_HPP
 
 #include "../math/algebra.hpp"
+#include "ecs_types.hpp"
 #include <entt/entt.hpp>
 
 namespace engine {
@@ -13,8 +14,8 @@ namespace ecs {
     };
 
     struct RenderComponent {
-        entt::hashed_string mesh_id;
-        entt::hashed_string texture_id;
+        engine::StringHash mesh_id;
+        engine::StringHash texture_id;
     };
 
 } // namespace ecs

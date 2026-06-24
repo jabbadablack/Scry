@@ -4,6 +4,7 @@
 #include "asset_types.h"
 #include "vfs.hpp"
 #include "threading/job_system.hpp"
+#include "../ecs/ecs_types.hpp"
 #include <entt/entt.hpp>
 #include <future>
 #include <vector>
@@ -62,19 +63,19 @@ namespace io {
         ResourceManager& operator=(ResourceManager&&) = delete;
 
         // Asynchronous Loading APIs
-        ENGINE_INLINE void SetTexture(const entt::hashed_string& id, const char* path);
-        ENGINE_INLINE void SetMesh(const entt::hashed_string& id, const char* path);
+        ENGINE_INLINE void SetTexture(const engine::StringHash& id, const char* path);
+        ENGINE_INLINE void SetMesh(const engine::StringHash& id, const char* path);
 
         // Frame updates (main-thread task commit)
         ENGINE_INLINE void Update();
 
         // Asset loaded checks
-        [[nodiscard]] ENGINE_INLINE bool IsTextureLoaded(const entt::hashed_string& id) const;
-        [[nodiscard]] ENGINE_INLINE bool IsMeshLoaded(const entt::hashed_string& id) const;
+        [[nodiscard]] ENGINE_INLINE bool IsTextureLoaded(const engine::StringHash& id) const;
+        [[nodiscard]] ENGINE_INLINE bool IsMeshLoaded(const engine::StringHash& id) const;
 
         // Retrieval APIs
-        [[nodiscard]] ENGINE_INLINE entt::resource<Texture> GetTexture(const entt::hashed_string& id);
-        [[nodiscard]] ENGINE_INLINE entt::resource<Mesh> GetMesh(const entt::hashed_string& id);
+        [[nodiscard]] ENGINE_INLINE entt::resource<Texture> GetTexture(const engine::StringHash& id);
+        [[nodiscard]] ENGINE_INLINE entt::resource<Mesh> GetMesh(const engine::StringHash& id);
 
     private:
         engine::io::JobSystem& m_jobSystem;
@@ -83,8 +84,8 @@ namespace io {
         entt::resource_cache<Texture, TextureLoader> m_textures;
         entt::resource_cache<Mesh, MeshLoader> m_meshes;
 
-        std::vector<std::pair<entt::hashed_string, std::future<std::shared_ptr<Texture>>>> m_pendingTextures;
-        std::vector<std::pair<entt::hashed_string, std::future<std::shared_ptr<Mesh>>>> m_pendingMeshes;
+        std::vector<std::pair<engine::StringHash, std::future<std::shared_ptr<Texture>>>> m_pendingTextures;
+        std::vector<std::pair<engine::StringHash, std::future<std::shared_ptr<Mesh>>>> m_pendingMeshes;
     };
 
 } // namespace io

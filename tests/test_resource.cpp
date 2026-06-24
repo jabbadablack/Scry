@@ -1,6 +1,6 @@
 #include <doctest/doctest.h>
 #include <memory/tracked_heap.hpp>
-#include <glfw/glfw_window.hpp>
+#include <OS/glfw/glfw_window.hpp>
 #include <IO/manager.hpp>
 
 // Mock loader that allocates tracked memory directly to prevent disk operations in CI tests

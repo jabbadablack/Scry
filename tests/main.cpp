@@ -3,7 +3,8 @@
 #include <IO/stb_impl.inl>
 
 #include <memory/chained_arena.hpp>
-#include <glfw/glfw_window.hpp>
+#include <OS/glfw/glfw_window.hpp>
+#include <OS/glfw/glfw_impl.inl>
 #include <GLFW/glfw3.h>
 #if defined(_WIN32) || defined(_WIN64)
     #ifdef CreateWindow

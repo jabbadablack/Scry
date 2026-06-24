@@ -2,6 +2,7 @@
 #define ENGINE_RENDERER_RENDER_QUEUE_HPP
 
 #include <math/algebra.hpp>
+#include <ecs/ecs_types.hpp>
 #include <memory/chained_arena.hpp>
 #include <entt/entt.hpp>
 #include <cstddef>
@@ -12,8 +13,8 @@ namespace renderer {
     struct RenderCommand {
         engine::math::Matrix4 transform;
         engine::math::Matrix4 previous_transform;
-        entt::hashed_string mesh_id;
-        entt::hashed_string texture_id;
+        engine::StringHash mesh_id;
+        engine::StringHash texture_id;
     };
 
     class RenderQueue {

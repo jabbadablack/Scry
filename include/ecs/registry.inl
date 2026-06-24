@@ -8,21 +8,21 @@ namespace engine {
 namespace ecs {
 
     // Create an entity in the registry using custom EcsAllocator
-    ENGINE_INLINE entt::entity Registry::CreateEntity() {
-        entt::entity entity = m_registry.create();
+    ENGINE_INLINE engine::ecs::Entity Registry::CreateEntity() {
+        engine::ecs::Entity entity = m_registry.create();
         ENGINE_ASSERT(m_registry.valid(entity), "Failed to create entity in EnttRegistry!");
         return entity;
     }
 
     // Destroy an entity and all its components
-    ENGINE_INLINE void Registry::DestroyEntity(entt::entity entity) {
+    ENGINE_INLINE void Registry::DestroyEntity(engine::ecs::Entity entity) {
         ENGINE_ASSERT(m_registry.valid(entity), "Cannot destroy an invalid entity!");
         m_registry.destroy(entity);
     }
 
     // Add a component to an entity using EcsAllocator
     template <typename T, typename... Args>
-    ENGINE_INLINE T& Registry::AddComponent(entt::entity entity, Args&&... args) {
+    ENGINE_INLINE T& Registry::AddComponent(engine::ecs::Entity entity, Args&&... args) {
         ENGINE_ASSERT(m_registry.valid(entity), "Cannot add component to an invalid entity!");
         ENGINE_ASSERT(!m_registry.all_of<T>(entity), "Component already exists on this entity!");
         
@@ -37,7 +37,7 @@ namespace ecs {
 
     // Remove a component from an entity
     template <typename T>
-    ENGINE_INLINE void Registry::RemoveComponent(entt::entity entity) {
+    ENGINE_INLINE void Registry::RemoveComponent(engine::ecs::Entity entity) {
         ENGINE_ASSERT(m_registry.valid(entity), "Cannot remove component from an invalid entity!");
         ENGINE_ASSERT(m_registry.all_of<T>(entity), "Component does not exist on this entity!");
         
@@ -46,7 +46,7 @@ namespace ecs {
 
     // Retrieve a reference to a component
     template <typename T>
-    ENGINE_INLINE T& Registry::GetComponent(entt::entity entity) {
+    ENGINE_INLINE T& Registry::GetComponent(engine::ecs::Entity entity) {
         ENGINE_ASSERT(m_registry.valid(entity), "Cannot get component from an invalid entity!");
         ENGINE_ASSERT(m_registry.all_of<T>(entity), "Component does not exist on this entity!");
         
@@ -60,7 +60,7 @@ namespace ecs {
 
     // Retrieve a const reference to a component
     template <typename T>
-    ENGINE_INLINE const T& Registry::GetComponent(entt::entity entity) const {
+    ENGINE_INLINE const T& Registry::GetComponent(engine::ecs::Entity entity) const {
         ENGINE_ASSERT(m_registry.valid(entity), "Cannot get component from an invalid entity!");
         ENGINE_ASSERT(m_registry.all_of<T>(entity), "Component does not exist on this entity!");
         
@@ -74,7 +74,7 @@ namespace ecs {
 
     // Query if an entity contains a component
     template <typename T>
-    ENGINE_INLINE bool Registry::HasComponent(entt::entity entity) const {
+    ENGINE_INLINE bool Registry::HasComponent(engine::ecs::Entity entity) const {
         ENGINE_ASSERT(m_registry.valid(entity), "Cannot check component presence on an invalid entity!");
         return m_registry.all_of<T>(entity);
     }

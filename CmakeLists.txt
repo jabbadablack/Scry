@@ -162,7 +162,6 @@ target_sources(${PROJECT_NAME} INTERFACE
     FILES ${SCRY_HEADERS}
 )
 
-add_subdirectory(modules/glfw)
 add_subdirectory(modules/renderer)
 add_subdirectory(modules/imgui)
 add_subdirectory(modules/profiler)

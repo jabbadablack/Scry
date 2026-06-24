@@ -155,7 +155,7 @@ namespace io {
 
 
     // Load a texture asynchronously via Taskflow executor
-    ENGINE_INLINE void ResourceManager::SetTexture(const entt::hashed_string& id, const char* path) {
+    ENGINE_INLINE void ResourceManager::SetTexture(const engine::StringHash& id, const char* path) {
         ENGINE_ASSERT(path != nullptr, "Texture path cannot be null");
         ENGINE_ASSERT(id.value() != 0, "Texture id hash cannot be zero");
 
@@ -182,7 +182,7 @@ namespace io {
     }
 
     // Load a mesh asynchronously via Taskflow executor
-    ENGINE_INLINE void ResourceManager::SetMesh(const entt::hashed_string& id, const char* path) {
+    ENGINE_INLINE void ResourceManager::SetMesh(const engine::StringHash& id, const char* path) {
         ENGINE_ASSERT(path != nullptr, "Mesh path cannot be null");
         ENGINE_ASSERT(id.value() != 0, "Mesh id hash cannot be zero");
 
@@ -242,27 +242,27 @@ namespace io {
     }
 
     // Retrieve cached texture handles
-    ENGINE_INLINE entt::resource<Texture> ResourceManager::GetTexture(const entt::hashed_string& id) {
+    ENGINE_INLINE entt::resource<Texture> ResourceManager::GetTexture(const engine::StringHash& id) {
         ENGINE_ASSERT(id.value() != 0, "GetTexture called with zero hash id");
         ENGINE_ASSERT(IsTextureLoaded(id), "GetTexture called for a texture that has not finished loading");
         return m_textures[id.value()];
     }
 
     // Retrieve cached mesh handles
-    ENGINE_INLINE entt::resource<Mesh> ResourceManager::GetMesh(const entt::hashed_string& id) {
+    ENGINE_INLINE entt::resource<Mesh> ResourceManager::GetMesh(const engine::StringHash& id) {
         ENGINE_ASSERT(id.value() != 0, "GetMesh called with zero hash id");
         ENGINE_ASSERT(IsMeshLoaded(id), "GetMesh called for a mesh that has not finished loading");
         return m_meshes[id.value()];
     }
 
     // Check if texture is loaded in the cache
-    ENGINE_INLINE bool ResourceManager::IsTextureLoaded(const entt::hashed_string& id) const {
+    ENGINE_INLINE bool ResourceManager::IsTextureLoaded(const engine::StringHash& id) const {
         ENGINE_ASSERT(id.value() != 0, "IsTextureLoaded called with zero hash id");
         return m_textures.contains(id.value());
     }
 
     // Check if mesh is loaded in the cache
-    ENGINE_INLINE bool ResourceManager::IsMeshLoaded(const entt::hashed_string& id) const {
+    ENGINE_INLINE bool ResourceManager::IsMeshLoaded(const engine::StringHash& id) const {
         ENGINE_ASSERT(id.value() != 0, "IsMeshLoaded called with zero hash id");
         return m_meshes.contains(id.value());
     }

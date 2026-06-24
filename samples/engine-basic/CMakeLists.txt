@@ -6,5 +6,4 @@ add_executable(engine-basic main.cpp)
 target_link_libraries(engine-basic PRIVATE
     SCRY
     renderer
-    glfw_module
 )

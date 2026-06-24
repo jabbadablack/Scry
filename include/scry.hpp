@@ -13,6 +13,8 @@
 #include "memory/tracked_heap.hpp"
 #include "engine.hpp"
 #include "module.hpp"
+#include "module/system_builder.hpp"
+#include "ecs/ecs_types.hpp"
 #include "ecs/ecs_allocator.hpp"
 #include "ecs/registry.hpp"
 #include "IO/asset_types.h"

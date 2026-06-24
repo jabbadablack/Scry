@@ -1,17 +1,17 @@
 #include <scry.hpp>
-#include <entt/entt.hpp>
 #include <renderer/diligent_module.hpp>
 #include <intent/intent_queue.hpp>
 #include <ecs/components.hpp>
 #include <debug/logger.hpp>
 #include <GLFW/glfw3.h>
-#include <glfw/glfw_window.hpp>
-#include <glfw/glfw_input.hpp>
+#include <OS/glfw/glfw_window.hpp>
+#include <OS/glfw/glfw_input.hpp>
+#include <OS/glfw/glfw_impl.inl>
 #include <chrono>
 #include <thread>
 
 struct MyMoveIntent {
-    entt::entity target;
+    engine::ecs::Entity target;
     engine::math::Vector3 velocity;
 };
 
@@ -49,45 +49,29 @@ public:
 
     void CompileFrameGraph(engine::FrameDAG& dag) override {
         int write_state = dag.write_state;
-        // Initialize intent queue
         m_moveQueue.Initialize(m_engine->GetFrameArena(write_state), 100);
 
-        // IntentGeneration task
-        tf::Task intent_task = dag.taskflow.emplace([this, write_state]() {
-            if (m_engine->GetInput() && m_engine->GetInput()->IsKeyHeld(GLFW_KEY_W)) {
-                auto view = m_engine->GetRegistry().View<engine::ecs::TransformComponent>();
-                for (auto ent : view) {
-                    MyMoveIntent intent;
-                    intent.target = ent;
-                    intent.velocity = engine::math::Vector3(0.0f, 1.0f, 0.0f);
-                    m_moveQueue.Push(intent, m_engine->GetFrameArena(write_state));
-                }
-                ENGINE_LOG_INFO("Input has been taken");
-            }
-        }).name("IntentGeneration");
-
-        // Reactor task
-        tf::Task reactor_task = dag.taskflow.emplace([this]() {
-            auto& registry = m_engine->GetRegistry();
-            for (auto* it = m_moveQueue.begin(); it != m_moveQueue.end(); ++it) {
-                if (it->state == engine::IntentState::Pending && it->data) {
-                    const auto& intent = *(it->data);
-                    if (registry.GetRawRegistry().valid(intent.target) && registry.HasComponent<engine::ecs::TransformComponent>(intent.target)) {
-                        auto& trans = registry.GetComponent<engine::ecs::TransformComponent>(intent.target);
-                        trans.previous_matrix = trans.matrix;
-                        trans.matrix(0, 3) += intent.velocity.x();
-                        trans.matrix(1, 3) += intent.velocity.y();
-                        trans.matrix(2, 3) += intent.velocity.z();
-                        ENGINE_LOG_INFO("Intent has been reacted to");
+        engine::SystemBuilder(dag)
+            .AddIntent("IntentGeneration", [this, write_state]() {
+                if (m_engine->GetInput() && m_engine->GetInput()->IsKeyHeld(GLFW_KEY_W)) {
+                    auto view = m_engine->GetRegistry().View<engine::ecs::TransformComponent>();
+                    for (auto ent : view) {
+                        m_moveQueue.Push({ent, {0.0f, 1.0f, 0.0f}}, m_engine->GetFrameArena(write_state));
                     }
-                    it->state = engine::IntentState::Consumed;
+                    ENGINE_LOG_INFO("Input has been taken");
                 }
-            }
-        }).name("Reactor");
-
-        intent_task.precede(dag.phase_intent);     // Generate intents BEFORE the Intent Barrier
-        dag.phase_intent.precede(reactor_task);    // Wait for Intent Barrier before Reacting
-        reactor_task.precede(dag.phase_reactor);   // Finish Reacting BEFORE the Reactor Barrier
+            })
+            .AddReactor("Reactor", engine::Process(m_moveQueue, [this](const MyMoveIntent& intent) {
+                auto& registry = m_engine->GetRegistry();
+                if (registry.GetRawRegistry().valid(intent.target) && registry.HasComponent<engine::ecs::TransformComponent>(intent.target)) {
+                    auto& trans = registry.GetComponent<engine::ecs::TransformComponent>(intent.target);
+                    trans.previous_matrix = trans.matrix;
+                    trans.matrix(0, 3) += intent.velocity.x();
+                    trans.matrix(1, 3) += intent.velocity.y();
+                    trans.matrix(2, 3) += intent.velocity.z();
+                    ENGINE_LOG_INFO("Intent has been reacted to");
+                }
+            }));
     }
 
     void Shutdown() override {}
@@ -129,9 +113,9 @@ int main() {
     transform.matrix = engine::math::Matrix4::Identity();
 
     auto& render = engine.GetRegistry().AddComponent<engine::ecs::RenderComponent>(entity);
-    engine.GetResourceManager().SetMesh(entt::hashed_string{"my_mesh"}, "res://objects/Hermanubis_low.fbx");
-    render.mesh_id = entt::hashed_string{"my_mesh"};
-    render.texture_id = entt::hashed_string{"mock_texture"};
+    engine.GetResourceManager().SetMesh(engine::StringHash{"my_mesh"}, "res://objects/Hermanubis_low.fbx");
+    render.mesh_id = engine::StringHash{"my_mesh"};
+    render.texture_id = engine::StringHash{"mock_texture"};
 
     // Rebuild the execution graph to register all modules
     engine.RebuildExecutionGraph();

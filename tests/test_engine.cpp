@@ -1,7 +1,7 @@
 #include <doctest/doctest.h>
 #include <engine.hpp>
-#include <glfw/glfw_window.hpp>
-#include <glfw/glfw_input.hpp>
+#include <OS/glfw/glfw_window.hpp>
+#include <OS/glfw/glfw_input.hpp>
 #include <IO/vfs.hpp>
 #include <GLFW/glfw3.h>
 

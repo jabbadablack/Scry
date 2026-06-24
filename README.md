@@ -2,7 +2,7 @@
 
 ### ROADMAP
 
-- [ ] Fix namespaces for types.
+- [x] Fix namespaces for types.
 - [x] implement window manager.
 - [ ] implement physics module.
 - [ ] implement audio module.
@@ -17,4 +17,4 @@
 - [ ] hot reloading.
 - [ ] serialization.
 - [x] decouple glfw from the core engine code and instead interface windowing from the core engine.
-- [ ] remove references to external libraries from syntax
+- [x] remove references to external libraries from syntax

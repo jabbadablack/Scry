@@ -9,7 +9,9 @@ class MockModule : public engine::IModule {
 public:
     bool init_called = false;
     bool build_graph_called = false;
-    bool shutdown_called = false;
+    bool* shutdown_ptr = nullptr;
+
+    MockModule(bool* shutdown_ptr = nullptr) : shutdown_ptr(shutdown_ptr) {}
 
     bool Initialize(engine::Engine& engine) override {
         init_called = true;
@@ -29,7 +31,9 @@ public:
     }
 
     void Shutdown() override {
-        shutdown_called = true;
+        if (shutdown_ptr) {
+            *shutdown_ptr = true;
+        }
     }
 
     const char* GetName() const override {
@@ -49,11 +53,12 @@ TEST_CASE("Engine Module Lifecycle Integration") {
     engine::Engine engine;
 
     // Register our MockModule
-    MockModule& mock = engine.RegisterModule<MockModule>();
+    bool shutdown_called = false;
+    auto& mock = engine.RegisterModule<MockModule>(&shutdown_called);
 
     REQUIRE(mock.init_called == false);
     REQUIRE(mock.build_graph_called == false);
-    REQUIRE(mock.shutdown_called == false);
+    REQUIRE(shutdown_called == false);
 
     // Initialize the engine with our decoupled window and input interfaces
     engine.GetWindowManager().SetMainWindow(&window);
@@ -63,7 +68,7 @@ TEST_CASE("Engine Module Lifecycle Integration") {
     // Verify lifecycle stages post-initialization
     REQUIRE(mock.init_called == true);
     REQUIRE(mock.build_graph_called == true);
-    REQUIRE(mock.shutdown_called == false);
+    REQUIRE(shutdown_called == false);
 
     // Verify execution graph rebuild can run dynamically without crashing
     engine.RebuildExecutionGraph();
@@ -72,7 +77,7 @@ TEST_CASE("Engine Module Lifecycle Integration") {
     engine.Shutdown();
 
     // Verify shutdown lifecycle stage
-    REQUIRE(mock.shutdown_called == true);
+    REQUIRE(shutdown_called == true);
 }
 
 TEST_CASE("Intent Queue Operations") {
@@ -92,7 +97,7 @@ TEST_CASE("Intent Queue Operations") {
     REQUIRE(begin_it == end_it);
     
     // Test push
-    MockIntent intent1{42, 3.14f};
+    MockIntent intent1{.x=42, .y=3.14F};
     auto handle1 = queue.Push(intent1, arena);
     
     REQUIRE(handle1 != nullptr);
@@ -108,7 +113,7 @@ TEST_CASE("Intent Queue Operations") {
     REQUIRE(begin_it[0].data->x == 42);
     
     // Test multiple pushes
-    MockIntent intent2{100, 1.23f};
+    MockIntent intent2{.x=100, .y=1.23F};
     auto handle2 = queue.Push(intent2, arena);
     REQUIRE(handle2 != nullptr);
     REQUIRE(handle2->data->x == 100);
@@ -123,7 +128,7 @@ class DynamicMockModule : public engine::IModule {
 public:
     bool compile_called = false;
 
-    bool Initialize(engine::Engine& engine) override {
+    bool Initialize(engine::Engine&  /*engine*/) override {
         return true;
     }
 

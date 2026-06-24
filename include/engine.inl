@@ -5,7 +5,6 @@
 #include "debug/logger.hpp"
 #include "OS/glfw/glfw_window.hpp"
 #include "OS/glfw/glfw_input.hpp"
-#include <thread>
 
 namespace engine {
 
@@ -91,18 +90,13 @@ namespace engine {
         ENGINE_ASSERT(!m_modules.empty(), "Engine::Run called with no registered modules");
         ENGINE_LOG_INFO("Engine run loop started");
 
-        using Clock = std::chrono::high_resolution_clock;
-        auto time_start = Clock::now();
+        m_timeManager.Initialize();
         double accumulator = 0.0;
-        constexpr double target_dt = 1.0 / 60.0;
+        const double target_dt = m_timeManager.GetFixedDeltaTime();
 
         while (!m_windowManager.ShouldClose()) {
-            auto time_now = Clock::now();
-            std::chrono::duration<double> duration = time_now - time_start;
-            double delta_time = duration.count();
-            time_start = time_now;
-
-            accumulator += delta_time;
+            m_timeManager.Update();
+            accumulator += m_timeManager.GetDeltaTime();
 
             while (accumulator >= target_dt) {
                 Tick();
@@ -111,7 +105,7 @@ namespace engine {
 
             SetInterpolationAlpha(accumulator / target_dt);
             m_windowManager.PollAllEvents();
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            engine::TimeManager::Sleep(1);
         }
 
         ENGINE_LOG_INFO("Engine run loop exited");

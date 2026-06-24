@@ -14,6 +14,7 @@
 #include "math/math.h"
 #include "memory/array.hpp"
 #include "memory/tracked_heap.hpp"
+#include "time/time_manager.hpp"
 #include "engine.hpp"
 #include "module/module.hpp"
 #include "module/system_builder.hpp"

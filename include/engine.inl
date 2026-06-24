@@ -121,7 +121,7 @@ namespace engine {
         m_writeState = 1 - m_writeState;
         m_frameArenas[m_writeState].Clear();
 
-        if (m_input) {
+        if (m_input != nullptr) {
             m_input->Update();
         }
 

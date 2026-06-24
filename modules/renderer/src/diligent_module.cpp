@@ -59,6 +59,57 @@ namespace engine::renderer {
             return false;
         }
 
+        // Configure Global Bindless Setup
+        Diligent::PipelineResourceDesc Resources[] = {
+            { Diligent::SHADER_TYPE_VERTEX | Diligent::SHADER_TYPE_PIXEL, "PushConstants", 1, Diligent::SHADER_RESOURCE_TYPE_CONSTANT_BUFFER, Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC },
+            { Diligent::SHADER_TYPE_PIXEL, "g_Textures", 1024, Diligent::SHADER_RESOURCE_TYPE_TEXTURE_SRV, Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE }
+        };
+
+        Diligent::PipelineResourceSignatureDesc PRSDesc;
+        PRSDesc.Name         = "Global Bindless Signature";
+        PRSDesc.Resources    = Resources;
+        PRSDesc.NumResources = 2;
+        PRSDesc.BindingIndex = 0;
+
+        m_pDevice->CreatePipelineResourceSignature(PRSDesc, &m_globalSignature);
+        ENGINE_ASSERT(m_globalSignature != nullptr, "Failed to create Global Bindless Signature");
+
+        m_globalSignature->CreateShaderResourceBinding(&m_globalSRB, true);
+        ENGINE_ASSERT(m_globalSRB != nullptr, "Failed to create Global SRB");
+
+        Diligent::BufferDesc CBDesc;
+        CBDesc.Name           = "PushConstants CB";
+        CBDesc.Size           = sizeof(PushConstants);
+        CBDesc.Usage          = Diligent::USAGE_DYNAMIC;
+        CBDesc.BindFlags      = Diligent::BIND_UNIFORM_BUFFER;
+        CBDesc.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
+        m_pDevice->CreateBuffer(CBDesc, nullptr, &m_pushConstants);
+        ENGINE_ASSERT(m_pushConstants != nullptr, "Failed to create PushConstants buffer");
+
+        m_globalSRB->GetVariableByName(Diligent::SHADER_TYPE_VERTEX, "PushConstants")->Set(m_pushConstants);
+
+        // Initialize a 1x1 dummy texture to fill the array and prevent Vulkan partially-bound validation crashes
+        Diligent::TextureDesc DummyDesc;
+        DummyDesc.Name      = "Bindless Dummy Texture";
+        DummyDesc.Type      = Diligent::RESOURCE_DIM_TEX_2D;
+        DummyDesc.Width     = 1;
+        DummyDesc.Height    = 1;
+        DummyDesc.Format    = Diligent::TEX_FORMAT_RGBA8_UNORM;
+        DummyDesc.BindFlags = Diligent::BIND_SHADER_RESOURCE;
+
+        engine::u32 DummyPixel = 0xFFFFFFFF; // White pixel
+        Diligent::TextureSubResData Mips[1] = { { &DummyPixel, 4 } };
+        Diligent::TextureData InitData(Mips, 1);
+        m_pDevice->CreateTexture(DummyDesc, &InitData, &m_dummyTexture);
+        ENGINE_ASSERT(m_dummyTexture != nullptr, "Failed to create Dummy Texture");
+
+        auto* pDummySRV = m_dummyTexture->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+        Diligent::IDeviceObject* pDummyObject = pDummySRV;
+        auto* pTexVar   = m_globalSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "g_Textures");
+        for (engine::u32 i = 0; i < 1024; ++i) {
+            pTexVar->SetArray(&pDummyObject, i, 1);
+        }
+
         m_running.store(true, std::memory_order_release);
         m_renderThread = std::thread(&DiligentModule::RenderThreadLoop, this);
 
@@ -115,6 +166,11 @@ namespace engine::renderer {
         }
 
         ENGINE_ASSERT(!m_renderThread.joinable(), "DiligentModule: render thread failed to join at shutdown");
+
+        m_dummyTexture.Release();
+        m_pushConstants.Release();
+        m_globalSRB.Release();
+        m_globalSignature.Release();
 
         m_pSwapChain.Release();
         m_pImmediateContext.Release();
@@ -181,6 +237,11 @@ namespace engine::renderer {
 
                 Diligent::RefCntAutoPtr<Diligent::ITexture> pTexture;
                 m_pDevice->CreateTexture(TexDesc, (intent.data != nullptr) ? &SubResources : nullptr, &pTexture);
+                if (pTexture) {
+                    auto* pTexSRV = pTexture->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+                    Diligent::IDeviceObject* pTexObject = pTexSRV;
+                    m_globalSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "g_Textures")->SetArray(&pTexObject, intent.handle.GetIndex(), 1);
+                }
                 m_textures.Insert(intent.handle.GetIndex(), intent.handle.GetGeneration(), std::move(pTexture));
             }
 
@@ -218,6 +279,9 @@ namespace engine::renderer {
 
                 PSOCreateInfo.PSODesc.Name = "DoD PSO";
                 PSOCreateInfo.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
+                Diligent::IPipelineResourceSignature* ppSignatures[] = { m_globalSignature.RawPtr() };
+                PSOCreateInfo.ppResourceSignatures                   = ppSignatures;
+                PSOCreateInfo.ResourceSignaturesCount                = 1;
 
                 Diligent::RefCntAutoPtr<Diligent::IPipelineState> pPSO;
                 m_pDevice->CreatePipelineState(PSOCreateInfo, &pPSO);
@@ -228,6 +292,9 @@ namespace engine::renderer {
 
             for (const auto& intent : ready_deletions) {
                 m_buffers.Remove(intent.handle_id & 0xFFFFF, (intent.handle_id >> 20) & 0xFFF);
+                auto* pDummySRV = m_dummyTexture->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+                Diligent::IDeviceObject* pDummyObject = pDummySRV;
+                m_globalSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "g_Textures")->SetArray(&pDummyObject, intent.handle_id & 0xFFFFF, 1);
                 m_textures.Remove(intent.handle_id & 0xFFFFF, (intent.handle_id >> 20) & 0xFFF);
                 m_pipelines.Remove(intent.handle_id & 0xFFFFF, (intent.handle_id >> 20) & 0xFFF);
             }
@@ -250,26 +317,34 @@ namespace engine::renderer {
                 m_pImmediateContext->ClearDepthStencil(pDSV, Diligent::CLEAR_DEPTH_FLAG, 1.0F, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
             }
 
+            // Commit the Global SRB exactly ONCE per frame
+            m_pImmediateContext->CommitShaderResources(m_globalSRB, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
             // Draw loop processing Intent-Based Packets
             for (size_t i = 0; i < queue.GetCount(); ++i) {
                 const auto& packet = queue.GetCommands()[i];
 
                 auto* pso = m_pipelines.Get(packet.pipeline.GetIndex(), packet.pipeline.GetGeneration());
-                if (pso == nullptr) { continue;
-}
+                if (pso == nullptr) {
+                    continue;
+                }
 
                 m_pImmediateContext->SetPipelineState(pso);
 
-                // Bind SRB (Shader Resource Binding)
-                auto* srb = m_srbs.Get(packet.pipeline.GetIndex(), packet.pipeline.GetGeneration());
-                if (srb != nullptr) { m_pImmediateContext->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-}
+                // Simulate Vulkan Push Constants via fast-mapped dynamic upload heap
+                void* mappedData = nullptr;
+                m_pImmediateContext->MapBuffer(m_pushConstants, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mappedData);
+                if (mappedData != nullptr) {
+                    auto* pc          = static_cast<PushConstants*>(mappedData);
+                    pc->transform     = packet.transform;
+                    pc->texture_index = packet.texture.IsValid() ? packet.texture.GetIndex() : 0;
+                    m_pImmediateContext->UnmapBuffer(m_pushConstants, Diligent::MAP_WRITE);
+                }
 
-                // Bind Vertex/Index Buffers
                 auto* vBuffer = m_buffers.Get(packet.vertex_buffer.GetIndex(), packet.vertex_buffer.GetGeneration());
                 if (vBuffer != nullptr) {
-                    Diligent::IBuffer* pBuffs[] = {vBuffer};
-                    Diligent::Uint64 offsets[] = {0};
+                    Diligent::IBuffer* pBuffs[]  = { vBuffer };
+                    Diligent::Uint64   offsets[] = { 0 };
                     m_pImmediateContext->SetVertexBuffers(0, 1, pBuffs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION, Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
                 }
 
@@ -278,8 +353,8 @@ namespace engine::renderer {
                     m_pImmediateContext->SetIndexBuffer(iBuffer, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
                     Diligent::DrawIndexedAttribs DrawAttrs;
                     DrawAttrs.NumIndices = packet.index_count;
-                    DrawAttrs.IndexType = Diligent::VT_UINT32;
-                    DrawAttrs.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+                    DrawAttrs.IndexType  = Diligent::VT_UINT32;
+                    DrawAttrs.Flags      = Diligent::DRAW_FLAG_VERIFY_ALL;
                     m_pImmediateContext->DrawIndexed(DrawAttrs);
                 }
             }

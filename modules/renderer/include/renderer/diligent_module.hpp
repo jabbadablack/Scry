@@ -14,10 +14,17 @@
 #include "Graphics/GraphicsEngine/interface/RenderDevice.h"
 #include "Graphics/GraphicsEngine/interface/DeviceContext.h"
 #include "Graphics/GraphicsEngine/interface/SwapChain.h"
+#include "Graphics/GraphicsEngine/interface/PipelineResourceSignature.h"
 #include "Common/interface/RefCntAutoPtr.hpp"
 
 
 namespace engine::renderer {
+
+    struct PushConstants {
+        engine::math::Matrix4 transform;
+        engine::u32           texture_index;
+        engine::u32           pad[3]; // Align to 16 bytes
+    };
 
     class DiligentModule : public engine::IModule {
     public:
@@ -64,8 +71,12 @@ namespace engine::renderer {
         ResourcePool<Diligent::IBuffer> m_buffers;
         ResourcePool<Diligent::ITexture> m_textures;
         ResourcePool<Diligent::IPipelineState> m_pipelines;
-        ResourcePool<Diligent::IShaderResourceBinding> m_srbs;
         u64 m_frameCount = 0;
+
+        Diligent::RefCntAutoPtr<Diligent::IPipelineResourceSignature> m_globalSignature;
+        Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding>     m_globalSRB;
+        Diligent::RefCntAutoPtr<Diligent::IBuffer>                    m_pushConstants;
+        Diligent::RefCntAutoPtr<Diligent::ITexture>                   m_dummyTexture;
     };
 
 } // namespace engine::renderer

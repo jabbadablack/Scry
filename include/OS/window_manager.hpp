@@ -12,8 +12,8 @@ namespace engine {
         WindowManager() = default;
         ~WindowManager() = default;
 
-        ENGINE_INLINE void RegisterMainWindow(IWindow* window);
-        ENGINE_INLINE void RegisterSubWindow(IWindow* window);
+        ENGINE_INLINE void SetMainWindow(IWindow* window);
+        ENGINE_INLINE void SetSubWindow(IWindow* window);
         
         [[nodiscard]] ENGINE_INLINE IWindow* GetMainWindow() const noexcept;
         [[nodiscard]] ENGINE_INLINE const std::vector<IWindow*>& GetWindows() const noexcept;

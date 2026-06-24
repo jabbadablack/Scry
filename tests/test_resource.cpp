@@ -85,7 +85,7 @@ TEST_CASE("ResourceManager Asynchronous Pipeline") {
         auto mesh_id = entt::hashed_string{"test_async_mesh"};
 
         // Submit asynchronous load task using the mock prefix to bypass filesystem
-        manager.LoadMeshAsync(mesh_id, "mock://test_mesh_file.obj");
+        manager.SetMesh(mesh_id, "mock://test_mesh_file.obj");
 
         // Wait for all Taskflow background threads to complete
         jobSystem.GetExecutor().wait_for_all();

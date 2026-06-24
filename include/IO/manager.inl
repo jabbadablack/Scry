@@ -155,7 +155,7 @@ namespace io {
 
 
     // Load a texture asynchronously via Taskflow executor
-    ENGINE_INLINE void ResourceManager::LoadTextureAsync(const entt::hashed_string& id, const char* path) {
+    ENGINE_INLINE void ResourceManager::SetTexture(const entt::hashed_string& id, const char* path) {
         ENGINE_ASSERT(path != nullptr, "Texture path cannot be null");
         ENGINE_ASSERT(id.value() != 0, "Texture id hash cannot be zero");
 
@@ -182,7 +182,7 @@ namespace io {
     }
 
     // Load a mesh asynchronously via Taskflow executor
-    ENGINE_INLINE void ResourceManager::LoadMeshAsync(const entt::hashed_string& id, const char* path) {
+    ENGINE_INLINE void ResourceManager::SetMesh(const entt::hashed_string& id, const char* path) {
         ENGINE_ASSERT(path != nullptr, "Mesh path cannot be null");
         ENGINE_ASSERT(id.value() != 0, "Mesh id hash cannot be zero");
 

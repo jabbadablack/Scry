@@ -6,7 +6,7 @@
 
 namespace engine {
 
-    ENGINE_INLINE void WindowManager::RegisterMainWindow(IWindow* window) {
+    ENGINE_INLINE void WindowManager::SetMainWindow(IWindow* window) {
         ENGINE_ASSERT(window != nullptr, "Cannot register a null main window");
         ENGINE_ASSERT(m_mainWindow == nullptr, "A main window is already registered");
 
@@ -15,7 +15,7 @@ namespace engine {
         ENGINE_LOG_INFO("WindowManager: main window registered");
     }
 
-    ENGINE_INLINE void WindowManager::RegisterSubWindow(IWindow* window) {
+    ENGINE_INLINE void WindowManager::SetSubWindow(IWindow* window) {
         ENGINE_ASSERT(window != nullptr, "Cannot register a null sub-window");
         ENGINE_ASSERT(m_mainWindow != nullptr, "Main window must be registered before sub-windows");
 

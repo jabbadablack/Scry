@@ -62,8 +62,8 @@ namespace io {
         ResourceManager& operator=(ResourceManager&&) = delete;
 
         // Asynchronous Loading APIs
-        ENGINE_INLINE void LoadTextureAsync(const entt::hashed_string& id, const char* path);
-        ENGINE_INLINE void LoadMeshAsync(const entt::hashed_string& id, const char* path);
+        ENGINE_INLINE void SetTexture(const entt::hashed_string& id, const char* path);
+        ENGINE_INLINE void SetMesh(const entt::hashed_string& id, const char* path);
 
         // Frame updates (main-thread task commit)
         ENGINE_INLINE void Update();

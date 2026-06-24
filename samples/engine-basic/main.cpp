@@ -88,7 +88,7 @@ int main() {
     input.Initialize(window.GetRawWindow());
 
     engine::Engine engine;
-    engine.GetWindowManager().RegisterMainWindow(&window);
+    engine.GetWindowManager().SetMainWindow(&window);
 
     // Register modules
     auto& renderer = engine.RegisterModule<engine::renderer::DiligentModule>();
@@ -111,7 +111,7 @@ int main() {
     transform.matrix = engine::math::Matrix4::Identity();
 
     auto& render = engine.GetRegistry().AddComponent<engine::ecs::RenderComponent>(entity);
-    engine.GetResourceManager().LoadMeshAsync(entt::hashed_string{"my_mesh"}, "res://objects/Hermanubis_low.fbx");
+    engine.GetResourceManager().SetMesh(entt::hashed_string{"my_mesh"}, "res://objects/Hermanubis_low.fbx");
     render.mesh_id = entt::hashed_string{"my_mesh"};
     render.texture_id = entt::hashed_string{"mock_texture"};
 

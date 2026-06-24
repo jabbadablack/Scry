@@ -56,7 +56,7 @@ TEST_CASE("Engine Module Lifecycle Integration") {
     REQUIRE(mock.shutdown_called == false);
 
     // Initialize the engine with our decoupled window and input interfaces
-    engine.GetWindowManager().RegisterMainWindow(&window);
+    engine.GetWindowManager().SetMainWindow(&window);
     bool init_result = engine.Initialize(&input);
     REQUIRE(init_result == true);
 
@@ -156,7 +156,7 @@ TEST_CASE("Dynamic Module Frame Graph Compilation") {
 
     DynamicMockModule& mock = engine.RegisterModule<DynamicMockModule>();
 
-    engine.GetWindowManager().RegisterMainWindow(&window);
+    engine.GetWindowManager().SetMainWindow(&window);
     bool init_result = engine.Initialize(&input);
     REQUIRE(init_result == true);
 

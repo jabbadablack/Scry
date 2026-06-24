@@ -9,8 +9,7 @@
 #include <string_view>
 #include "../debug/logger.hpp"
 
-namespace engine {
-namespace io {
+namespace engine::io {
 
     // TextureLoader implementation
     ENGINE_INLINE ResourceManager::TextureLoader::result_type 
@@ -267,7 +266,6 @@ namespace io {
         return m_meshes.contains(id.value());
     }
 
-} // namespace io
-} // namespace engine
+} // namespace engine::io
 
 #endif // ENGINE_RESOURCE_MANAGER_INL

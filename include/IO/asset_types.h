@@ -7,8 +7,8 @@
 #include <vector>
 #include <memory>
 
-namespace engine {
-namespace io {
+
+namespace engine::io {
 
     struct Texture {
         int width = 0;
@@ -30,7 +30,7 @@ namespace io {
         std::vector<uint32_t, engine::ecs::EcsAllocator<uint32_t>> indices;
     };
 
-} // namespace io
-} // namespace engine
+} // namespace engine::io
+
 
 #endif // ENGINE_RESOURCE_ASSET_TYPES_H

@@ -1,8 +1,8 @@
 #ifndef ENGINE_IO_THREADING_JOB_SYSTEM_INL
 #define ENGINE_IO_THREADING_JOB_SYSTEM_INL
 
-namespace engine {
-namespace io {
+
+namespace engine::io {
 
     ENGINE_INLINE JobSystem::JobSystem() {
         ENGINE_ASSERT(m_executor.num_workers() > 0, "JobSystem executor initialized with zero worker threads");
@@ -29,7 +29,7 @@ namespace io {
         m_executor.silent_async(std::forward<F>(func));
     }
 
-} // namespace io
-} // namespace engine
+} // namespace engine::io
+
 
 #endif // ENGINE_IO_THREADING_JOB_SYSTEM_INL

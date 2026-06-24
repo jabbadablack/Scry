@@ -3,8 +3,8 @@
 
 #include <iostream>
 
-namespace engine {
-namespace debug {
+
+namespace engine::debug {
 
     inline AsyncLogger::AsyncLogger() {
         Init();
@@ -96,7 +96,7 @@ namespace debug {
         }
     }
 
-} // namespace debug
-} // namespace engine
+} // namespace engine::debug
+
 
 #endif // ENGINE_CORE_DEBUG_LOGGER_INL

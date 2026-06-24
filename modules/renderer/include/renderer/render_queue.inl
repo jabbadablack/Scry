@@ -4,8 +4,8 @@
 #include "render_queue.hpp"
 #include <debug/assert.h>
 
-namespace engine {
-namespace renderer {
+
+namespace engine::renderer {
 
     ENGINE_INLINE void RenderQueue::Initialize(engine::ChainedArena& arena, size_t max_commands) {
         ENGINE_ASSERT(max_commands > 0, "RenderQueue capacity must be greater than zero");
@@ -38,7 +38,7 @@ namespace renderer {
         return m_count;
     }
 
-} // namespace renderer
-} // namespace engine
+} // namespace engine::renderer
+
 
 #endif // ENGINE_RENDERER_RENDER_QUEUE_INL

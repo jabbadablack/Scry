@@ -4,9 +4,7 @@
 #include "memory/tracked_heap.hpp"
 #include <cstring>
 
-namespace engine {
-namespace io {
-namespace detail {
+namespace engine::io::detail {
 
     struct StbAllocationHeader {
         size_t size;
@@ -47,9 +45,7 @@ namespace detail {
         return new_ptr;
     }
 
-} // namespace detail
-} // namespace io
-} // namespace engine
+} // namespace engine::io::detail
 
 // Wire stb_image allocator hooks to our tracked heap wrappers
 #define STBI_MALLOC(sz)          engine::io::detail::StbMalloc(sz)

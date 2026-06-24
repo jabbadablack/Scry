@@ -9,6 +9,9 @@ namespace engine {
     struct Handle {
         u32 id = 0;
 
+        constexpr Handle() noexcept = default;
+        explicit constexpr Handle(u32 handleId) noexcept : id(handleId) {}
+
         [[nodiscard]] ENGINE_INLINE bool IsValid() const noexcept { return id != 0; }
         [[nodiscard]] ENGINE_INLINE u32 GetBlockIndex()   const noexcept { return (id >> 20) - 1; }
         [[nodiscard]] ENGINE_INLINE u32 GetElementIndex() const noexcept { return id & 0xFFFFF; }

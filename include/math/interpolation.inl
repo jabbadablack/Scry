@@ -1,8 +1,8 @@
 #ifndef ENGINE_MATH_INTERPOLATION_INL
 #define ENGINE_MATH_INTERPOLATION_INL
 
-namespace engine {
-namespace math {
+
+namespace engine::math {
 
     ENGINE_INLINE f32 Clamp(f32 value, f32 min, f32 max) {
         return (value < min) ? min : (value > max) ? max : value;
@@ -19,7 +19,7 @@ namespace math {
         return 1.0f - (inv * inv) / 2.0f;
     }
 
-} // namespace math
-} // namespace engine
+} // namespace engine::math
+
 
 #endif // ENGINE_MATH_INTERPOLATION_INL

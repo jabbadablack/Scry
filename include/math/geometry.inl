@@ -4,8 +4,7 @@
 #include <limits>
 #include <algorithm>
 
-namespace engine {
-namespace math {
+namespace engine::math {
 
     ENGINE_INLINE bool Intersect(const AABB& a, const AABB& b) {
         return (a.min.x() <= b.max.x() && a.max.x() >= b.min.x()) &&
@@ -56,7 +55,6 @@ namespace math {
         return true;
     }
 
-} // namespace math
-} // namespace engine
+} // namespace engine::math
 
 #endif // ENGINE_MATH_GEOMETRY_INL

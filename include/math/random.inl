@@ -3,8 +3,8 @@
 
 #include "trigonometry.hpp"
 
-namespace engine {
-namespace math {
+
+namespace engine::math {
 
     inline thread_local u32 s[4] = { 123456789, 362436069, 521288629, 88675123 };
 
@@ -52,7 +52,7 @@ namespace math {
         return Vector3(radius * engine::math::Cos(theta), radius * engine::math::Sin(theta), z);
     }
 
-} // namespace math
-} // namespace engine
+} // namespace engine::math
+
 
 #endif // ENGINE_MATH_RANDOM_INL

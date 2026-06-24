@@ -13,8 +13,8 @@ namespace engine {
         virtual ~IWindow() = default;
         virtual void PollEvents() = 0;
         virtual void SwapBuffers() = 0;
-        virtual bool ShouldClose() const = 0;
-        virtual NativeHandles GetNativeHandles() const = 0;
+        [[nodiscard]] virtual bool ShouldClose() const = 0;
+        [[nodiscard]] virtual NativeHandles GetNativeHandles() const = 0;
     };
 
 } // namespace engine

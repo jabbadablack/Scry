@@ -174,7 +174,7 @@ namespace engine {
         ENGINE_ASSERT(m_initialized, "GlfwWindow::GetNativeHandles called before Initialize");
         ENGINE_ASSERT(m_window != nullptr, "GlfwWindow::GetNativeHandles called with no window");
 
-        NativeHandles handles{nullptr, nullptr};
+        NativeHandles handles{.window=nullptr, .display=nullptr};
 #if defined(ENGINE_PLATFORM_WINDOWS)
         handles.window = glfwGetWin32Window(m_window);
 #elif defined(ENGINE_PLATFORM_LINUX)
@@ -222,7 +222,7 @@ namespace engine {
         return !m_keys.test(k) && m_keysPrevious.test(k);
     }
 
-    void GlfwInput::KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    void GlfwInput::KeyCallback(GLFWwindow* window, int key, int  /*scancode*/, int action, int  /*mods*/) {
         ENGINE_ASSERT(window != nullptr, "GlfwInput::KeyCallback received a null window pointer");
 
         auto* input = static_cast<GlfwInput*>(glfwGetWindowUserPointer(window));

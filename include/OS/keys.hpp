@@ -5,7 +5,7 @@
 
 namespace engine {
 
-    enum class Key : i32 {
+    enum class Key : i16 {
         Unknown = -1,
         Space = 32, Apostrophe = 39, Comma = 44, Minus = 45, Period = 46, Slash = 47,
         Num0 = 48, Num1 = 49, Num2 = 50, Num3 = 51, Num4 = 52, Num5 = 53, Num6 = 54, Num7 = 55, Num8 = 56, Num9 = 57,

@@ -36,7 +36,7 @@ namespace engine {
         virtual void Shutdown() = 0;
 
         // For logging/debugging
-        virtual const char* GetName() const = 0;
+        [[nodiscard]] virtual const char* GetName() const = 0;
     };
 
 

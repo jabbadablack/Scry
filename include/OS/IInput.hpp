@@ -9,9 +9,9 @@ namespace engine {
     public:
         virtual ~IInput() = default;
         virtual void Update() = 0;
-        virtual bool IsKeyPressed(Key key) const = 0;
-        virtual bool IsKeyHeld(Key key) const = 0;
-        virtual bool IsKeyReleased(Key key) const = 0;
+        [[nodiscard]] virtual bool IsKeyPressed(Key key) const = 0;
+        [[nodiscard]] virtual bool IsKeyHeld(Key key) const = 0;
+        [[nodiscard]] virtual bool IsKeyReleased(Key key) const = 0;
     };
 
 } // namespace engine

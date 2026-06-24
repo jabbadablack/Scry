@@ -3,8 +3,8 @@
 
 #include <algorithm>
 
-namespace engine {
-namespace math {
+
+namespace engine::math {
 
     struct AStarElement {
         NodeID node;
@@ -61,7 +61,7 @@ namespace math {
         return false;
     }
 
-} // namespace math
-} // namespace engine
+} // namespace engine::math
+
 
 #endif // ENGINE_MATH_PATHFINDING_INL

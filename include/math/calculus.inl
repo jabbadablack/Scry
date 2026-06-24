@@ -1,8 +1,8 @@
 #ifndef ENGINE_MATH_CALCULUS_INL
 #define ENGINE_MATH_CALCULUS_INL
 
-namespace engine {
-namespace math {
+
+namespace engine::math {
 
     ENGINE_INLINE void Integrator::SemiImplicitEuler(Vector3& position, Vector3& velocity, const Vector3& acceleration, f32 dt) {
         velocity += acceleration * dt;
@@ -26,7 +26,7 @@ namespace math {
         position += (k1_pos + 2.0f * k2_pos + 2.0f * k3_pos + k4_pos) / 6.0f;
     }
 
-} // namespace math
-} // namespace engine
+} // namespace engine::math
+
 
 #endif // ENGINE_MATH_CALCULUS_INL

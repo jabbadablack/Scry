@@ -38,7 +38,7 @@ namespace engine::renderer {
 #endif
 
         auto* pFactoryVk = Diligent::GetEngineFactoryVk();
-        if (!pFactoryVk) {
+        if (pFactoryVk == nullptr) {
             ENGINE_LOG_ERROR("DiligentModule: failed to retrieve EngineFactoryVk");
             return false;
         }
@@ -119,7 +119,7 @@ namespace engine::renderer {
 
         ENGINE_ASSERT(!m_pDevice, "DiligentModule: Vulkan device was not released at shutdown");
 
-        if (m_allocatorInstance) {
+        if (m_allocatorInstance != nullptr) {
             delete static_cast<EngineDiligentAllocator*>(m_allocatorInstance);
             m_allocatorInstance = nullptr;
         }
@@ -161,11 +161,11 @@ namespace engine::renderer {
             // Set Render Target and Clear Screen (Vulkan swap chain operations)
             auto* pRTV = m_pSwapChain->GetCurrentBackBufferRTV();
             auto* pDSV = m_pSwapChain->GetDepthBufferDSV();
-            if (pRTV && pDSV) {
+            if ((pRTV != nullptr) && (pDSV != nullptr)) {
                 m_pImmediateContext->SetRenderTargets(1, &pRTV, pDSV, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-                const float ClearColor[] = { 0.15f, 0.15f, 0.15f, 1.0f };
+                const float ClearColor[] = { 0.15F, 0.15F, 0.15F, 1.0F };
                 m_pImmediateContext->ClearRenderTarget(pRTV, ClearColor, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-                m_pImmediateContext->ClearDepthStencil(pDSV, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+                m_pImmediateContext->ClearDepthStencil(pDSV, Diligent::CLEAR_DEPTH_FLAG, 1.0F, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
             }
 
             m_pSwapChain->Present();

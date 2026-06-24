@@ -5,6 +5,7 @@
 #include "../debug/assert.h"
 #include "tracked_heap.hpp"
 #include <atomic>
+#include <cstddef>
 #include <mutex>
 #include <cstddef>
 #include <algorithm>
@@ -20,7 +21,7 @@ namespace engine {
             Block*               next;
         };
 
-        ENGINE_INLINE explicit ChainedArena(size_t blockSize = 64 * 1024);
+        ENGINE_INLINE explicit ChainedArena(size_t blockSize = static_cast<long long>(64) * 1024);
         ENGINE_INLINE ~ChainedArena();
 
         ChainedArena(const ChainedArena&)            = delete;

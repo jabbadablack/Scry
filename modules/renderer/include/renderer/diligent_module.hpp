@@ -1,6 +1,7 @@
 #ifndef ENGINE_RENDERER_DILIGENT_MODULE_HPP
 #define ENGINE_RENDERER_DILIGENT_MODULE_HPP
 
+#include <cstddef>
 #include <module/module.hpp>
 #include <memory/chained_arena.hpp>
 #include "render_queue.hpp"
@@ -20,8 +21,8 @@ namespace engine::renderer {
     class DiligentModule : public engine::IModule {
     public:
         DiligentModule()
-            : m_renderArenas{engine::ChainedArena(64 * 1024),
-                             engine::ChainedArena(64 * 1024)} {}
+            : m_renderArenas{engine::ChainedArena(static_cast<long long>(64) * 1024),
+                             engine::ChainedArena(static_cast<long long>(64) * 1024)} {}
         ~DiligentModule() override = default;
 
         // Disable copy and move semantics

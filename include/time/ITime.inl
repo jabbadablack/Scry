@@ -18,7 +18,7 @@ extern "C" {
 
 namespace engine {
 
-    ENGINE_INLINE void TimeManager::Initialize() {
+    ENGINE_INLINE void ITime::Initialize() {
         #if defined(ENGINE_PLATFORM_WINDOWS)
             i64 freq = 0;
             QueryPerformanceFrequency(&freq);
@@ -27,13 +27,13 @@ namespace engine {
             m_frequency = 1000000ULL;
         #endif
 
-        ENGINE_ASSERT(m_frequency > 0, "TimeManager: performance frequency must be greater than zero");
+        ENGINE_ASSERT(m_frequency > 0, "ITime: performance frequency must be greater than zero");
 
         m_startupTime  = GetOSMicroseconds();
         m_previousTime = m_startupTime;
     }
 
-    ENGINE_INLINE void TimeManager::Update() {
+    ENGINE_INLINE void ITime::Update() {
         u64 current = GetOSMicroseconds();
         u64 delta   = current - m_previousTime;
 
@@ -46,19 +46,19 @@ namespace engine {
         m_previousTime = current;
     }
 
-    [[nodiscard]] ENGINE_INLINE f64 TimeManager::GetDeltaTime() const noexcept {
+    [[nodiscard]] ENGINE_INLINE f64 ITime::GetDeltaTime() const noexcept {
         return m_deltaTime;
     }
 
-    [[nodiscard]] ENGINE_INLINE f64 TimeManager::GetTotalTime() const noexcept {
+    [[nodiscard]] ENGINE_INLINE f64 ITime::GetTotalTime() const noexcept {
         return m_totalTime;
     }
 
-    [[nodiscard]] ENGINE_INLINE f64 TimeManager::GetFixedDeltaTime() const noexcept {
+    [[nodiscard]] ENGINE_INLINE f64 ITime::GetFixedDeltaTime() const noexcept {
         return m_fixedDeltaTime;
     }
 
-    ENGINE_INLINE void TimeManager::Sleep(u32 milliseconds) noexcept {
+    ENGINE_INLINE void ITime::Sleep(u32 milliseconds) noexcept {
         #if defined(ENGINE_PLATFORM_WINDOWS)
             ::Sleep(milliseconds);
         #elif defined(ENGINE_PLATFORM_LINUX)
@@ -66,7 +66,7 @@ namespace engine {
         #endif
     }
 
-    [[nodiscard]] ENGINE_INLINE u64 TimeManager::GetOSMicroseconds() const noexcept {
+    [[nodiscard]] ENGINE_INLINE u64 ITime::GetOSMicroseconds() const noexcept {
         #if defined(ENGINE_PLATFORM_WINDOWS)
             i64 count = 0;
             QueryPerformanceCounter(&count);

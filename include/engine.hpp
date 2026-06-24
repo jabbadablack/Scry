@@ -10,7 +10,7 @@
 #include "module/module.hpp"
 #include "memory/chained_arena.hpp"
 #include "intent/intent_queue.hpp"
-#include "time/time_manager.hpp"
+#include "time/ITime.hpp"
 #include <vector>
 #include <memory>
 #include <mutex>
@@ -60,7 +60,7 @@ namespace engine {
         [[nodiscard]] ENGINE_INLINE engine::ChainedArena& GetFrameArena() noexcept;
         [[nodiscard]] ENGINE_INLINE tf::Taskflow& GetTaskflow() noexcept;
         [[nodiscard]] ENGINE_INLINE const ecs::Registry& GetRegistry() const noexcept;
-        [[nodiscard]] ENGINE_INLINE const engine::TimeManager& GetTime() const noexcept { return m_timeManager; }
+        [[nodiscard]] ENGINE_INLINE const engine::ITime& GetTime() const noexcept { return m_ITime; }
 
         // Double-buffer and thread-sync accessors
         [[nodiscard]] ENGINE_INLINE int GetWriteState() const noexcept { return m_writeState; }
@@ -75,7 +75,7 @@ namespace engine {
         engine::io::JobSystem m_jobSystem;
         engine::VirtualFileSystem m_vfs;
         engine::io::ResourceManager m_resourceManager;
-        engine::TimeManager m_timeManager;
+        engine::ITime m_ITime;
         ecs::Registry m_registry;
         tf::Taskflow m_taskflow;
         std::vector<std::unique_ptr<IModule>> m_modules;

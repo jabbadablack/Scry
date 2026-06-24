@@ -5,15 +5,15 @@
 
 namespace engine {
 
-    class TimeManager {
+    class ITime {
     public:
-        ENGINE_INLINE TimeManager() = default;
-        ENGINE_INLINE ~TimeManager() = default;
+        ENGINE_INLINE ITime() = default;
+        ENGINE_INLINE ~ITime() = default;
 
-        TimeManager(const TimeManager&)            = delete;
-        TimeManager& operator=(const TimeManager&) = delete;
-        TimeManager(TimeManager&&)                 = delete;
-        TimeManager& operator=(TimeManager&&)      = delete;
+        ITime(const ITime&)            = delete;
+        ITime& operator=(const ITime&) = delete;
+        ITime(ITime&&)                 = delete;
+        ITime& operator=(ITime&&)      = delete;
 
         ENGINE_INLINE void Initialize();
         ENGINE_INLINE void Update();
@@ -38,6 +38,6 @@ namespace engine {
 
 } // namespace engine
 
-#include "time_manager.inl"
+#include "ITime.inl"
 
 #endif // ENGINE_TIME_TIME_MANAGER_HPP

@@ -90,13 +90,13 @@ namespace engine {
         ENGINE_ASSERT(!m_modules.empty(), "Engine::Run called with no registered modules");
         ENGINE_LOG_INFO("Engine run loop started");
 
-        m_timeManager.Initialize();
+        m_ITime.Initialize();
         double accumulator = 0.0;
-        const double target_dt = m_timeManager.GetFixedDeltaTime();
+        const double target_dt = m_ITime.GetFixedDeltaTime();
 
         while (!m_windowManager.ShouldClose()) {
-            m_timeManager.Update();
-            accumulator += m_timeManager.GetDeltaTime();
+            m_ITime.Update();
+            accumulator += m_ITime.GetDeltaTime();
 
             while (accumulator >= target_dt) {
                 Tick();
@@ -105,7 +105,7 @@ namespace engine {
 
             SetInterpolationAlpha(accumulator / target_dt);
             m_windowManager.PollAllEvents();
-            engine::TimeManager::Sleep(1);
+            engine::ITime::Sleep(1);
         }
 
         ENGINE_LOG_INFO("Engine run loop exited");

@@ -3,8 +3,8 @@
 
 #include "algebra.hpp"
 
-namespace engine {
-namespace math {
+
+namespace engine::math {
 
     template<typename T>
     [[nodiscard]] ENGINE_INLINE T Lerp(const T& a, const T& b, f32 t) {
@@ -19,8 +19,8 @@ namespace math {
     [[nodiscard]] ENGINE_INLINE f32 Smoothstep(f32 edge0, f32 edge1, f32 x);
     [[nodiscard]] ENGINE_INLINE f32 EaseInOutQuad(f32 t);
 
-} // namespace math
-} // namespace engine
+} // namespace engine::math
+
 
 #include "interpolation.inl"
 

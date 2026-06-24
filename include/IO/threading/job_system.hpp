@@ -7,8 +7,8 @@
 #include <taskflow/taskflow.hpp>
 #include "../../OS/types.h"
 
-namespace engine {
-namespace io {
+
+namespace engine::io {
 
     class JobSystem {
     public:
@@ -31,8 +31,8 @@ namespace io {
         tf::Executor m_executor;
     };
 
-} // namespace io
-} // namespace engine
+} // namespace engine::io
+
 
 #include "job_system.inl"
 

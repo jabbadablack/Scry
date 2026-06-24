@@ -3,8 +3,8 @@
 #include <memory/tracked_heap.hpp>
 #include "Primitives/interface/MemoryAllocator.h"
 
-namespace engine {
-namespace renderer {
+
+namespace engine::renderer {
 
     class EngineDiligentAllocator final : public Diligent::IMemoryAllocator {
     public:
@@ -31,5 +31,5 @@ namespace renderer {
         }
     };
 
-} // namespace renderer
-} // namespace engine
+} // namespace engine::renderer
+

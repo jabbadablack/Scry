@@ -4,8 +4,8 @@
 #include "memory/tracked_heap.hpp"
 #include <cstddef>
 
-namespace engine {
-namespace ecs {
+
+namespace engine::ecs {
 
     template <typename T>
     struct EcsAllocator {
@@ -45,7 +45,7 @@ namespace ecs {
         return false;
     }
 
-} // namespace ecs
-} // namespace engine
+} // namespace engine::ecs
+
 
 #endif // ENGINE_ECS_ALLOCATOR_HPP

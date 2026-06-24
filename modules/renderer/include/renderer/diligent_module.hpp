@@ -14,8 +14,8 @@
 #include "Graphics/GraphicsEngine/interface/SwapChain.h"
 #include "Common/interface/RefCntAutoPtr.hpp"
 
-namespace engine {
-namespace renderer {
+
+namespace engine::renderer {
 
     class DiligentModule : public engine::IModule {
     public:
@@ -60,7 +60,7 @@ namespace renderer {
         engine::Engine* m_engine = nullptr;
     };
 
-} // namespace renderer
-} // namespace engine
+} // namespace engine::renderer
+
 
 #endif // ENGINE_RENDERER_DILIGENT_MODULE_HPP

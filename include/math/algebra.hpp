@@ -17,8 +17,8 @@
     #pragma warning(pop)
 #endif
 
-namespace engine {
-namespace math {
+
+namespace engine::math {
 
     using Vector2    = Eigen::Vector2f;
     using Vector3    = Eigen::Vector3f;
@@ -32,8 +32,8 @@ namespace math {
     template <typename T>
     using AlignedAllocator = Eigen::aligned_allocator<T>;
 
-} // namespace math
-} // namespace engine
+} // namespace engine::math
+
 
 #ifndef ENGINE_MAKE_ALIGNED_OPERATOR_NEW
     #define ENGINE_MAKE_ALIGNED_OPERATOR_NEW EIGEN_MAKE_ALIGNED_OPERATOR_NEW

@@ -3,6 +3,7 @@
 
 #include <OS/IInput.hpp>
 #include <OS/types.h>
+#include "../keys.hpp"
 #include <bitset>
 
 struct GLFWwindow;
@@ -19,9 +20,9 @@ namespace engine {
 
         // Interface Overrides
         void Update() override;
-        bool IsKeyPressed(int key) const override;
-        bool IsKeyHeld(int key) const override;
-        bool IsKeyReleased(int key) const override;
+        [[nodiscard]] bool IsKeyPressed(Key key) const override;
+        [[nodiscard]] bool IsKeyHeld(Key key) const override;
+        [[nodiscard]] bool IsKeyReleased(Key key) const override;
 
     private:
         std::bitset<348> m_keys;

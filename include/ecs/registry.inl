@@ -4,8 +4,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace engine {
-namespace ecs {
+namespace engine::ecs {
 
     // Create an entity in the registry using custom EcsAllocator
     ENGINE_INLINE engine::ecs::Entity Registry::CreateEntity() {
@@ -100,7 +99,6 @@ namespace ecs {
         return m_registry;
     }
 
-} // namespace ecs
-} // namespace engine
+} // namespace engine::ecs
 
 #endif // ENGINE_ECS_REGISTRY_INL

@@ -201,25 +201,25 @@ namespace engine {
         m_keysPrevious = m_keys;
     }
 
-    bool GlfwInput::IsKeyPressed(int key) const {
-        ENGINE_ASSERT(key >= 0, "Key index cannot be negative");
-        ENGINE_ASSERT(key < 348, "Key index out of range (max 347)");
+    bool GlfwInput::IsKeyPressed(Key key) const {
+        i32 k = static_cast<i32>(key);
+        ENGINE_ASSERT(k >= 0 && k < 348, "Key index out of range");
 
-        return m_keys.test(key) && !m_keysPrevious.test(key);
+        return m_keys.test(k) && !m_keysPrevious.test(k);
     }
 
-    bool GlfwInput::IsKeyHeld(int key) const {
-        ENGINE_ASSERT(key >= 0, "Key index cannot be negative");
-        ENGINE_ASSERT(key < 348, "Key index out of range (max 347)");
+    bool GlfwInput::IsKeyHeld(Key key) const {
+        i32 k = static_cast<i32>(key);
+        ENGINE_ASSERT(k >= 0 && k < 348, "Key index out of range");
 
-        return m_keys.test(key);
+        return m_keys.test(k);
     }
 
-    bool GlfwInput::IsKeyReleased(int key) const {
-        ENGINE_ASSERT(key >= 0, "Key index cannot be negative");
-        ENGINE_ASSERT(key < 348, "Key index out of range (max 347)");
+    bool GlfwInput::IsKeyReleased(Key key) const {
+        i32 k = static_cast<i32>(key);
+        ENGINE_ASSERT(k >= 0 && k < 348, "Key index out of range");
 
-        return !m_keys.test(key) && m_keysPrevious.test(key);
+        return !m_keys.test(k) && m_keysPrevious.test(k);
     }
 
     void GlfwInput::KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {

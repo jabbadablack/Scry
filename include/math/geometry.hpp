@@ -3,8 +3,8 @@
 
 #include "algebra.hpp"
 
-namespace engine {
-namespace math {
+
+namespace engine::math {
 
     struct Ray {
         Vector3 origin;
@@ -38,8 +38,8 @@ namespace math {
     [[nodiscard]] ENGINE_INLINE bool Intersect(const Sphere& a, const Sphere& b);
     [[nodiscard]] ENGINE_INLINE bool Intersect(const Ray& ray, const AABB& aabb, f32& out_t);
 
-} // namespace math
-} // namespace engine
+} // namespace engine::math
+
 
 #include "geometry.inl"
 

@@ -5,8 +5,8 @@
 #include "ecs_types.hpp"
 #include <entt/entt.hpp>
 
-namespace engine {
-namespace ecs {
+
+namespace engine::ecs {
 
     struct TransformComponent {
         engine::math::Matrix4 matrix = engine::math::Matrix4::Identity();
@@ -18,7 +18,7 @@ namespace ecs {
         engine::StringHash texture_id;
     };
 
-} // namespace ecs
-} // namespace engine
+} // namespace engine::ecs
+
 
 #endif // ENGINE_ECS_COMPONENTS_HPP

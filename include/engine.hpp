@@ -32,10 +32,12 @@ namespace engine {
 
         // Core Engine API
         ENGINE_INLINE bool Initialize(IInput* input);
+        ENGINE_INLINE bool Initialize(int width = 800, int height = 600, const char* title = "Engine Runtime");
         ENGINE_INLINE void Tick();
         ENGINE_INLINE void SetInterpolationAlpha(double alpha);
         ENGINE_INLINE void Shutdown();
         ENGINE_INLINE void RebuildExecutionGraph();
+        ENGINE_INLINE void Run();
 
         // Execute Intent Frame to generate intents
         ENGINE_INLINE void ExecuteIntentFrame();
@@ -81,6 +83,9 @@ namespace engine {
         int m_renderReadState = 1;
         std::mutex m_renderSwapMutex;
         double m_interpolationAlpha = 0.0;
+
+        std::unique_ptr<IWindow> m_defaultWindow;
+        std::unique_ptr<IInput> m_defaultInput;
     };
 
 } // namespace engine

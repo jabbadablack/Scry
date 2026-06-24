@@ -14,8 +14,8 @@ extern "C" {
 
 #include "Graphics/GraphicsEngineVulkan/interface/EngineFactoryVk.h"
 
-namespace engine {
-namespace renderer {
+
+namespace engine::renderer {
 
     bool DiligentModule::Initialize(engine::Engine& engine) {
         ENGINE_ASSERT(m_engine == nullptr, "DiligentModule::Initialize called more than once");
@@ -173,5 +173,5 @@ namespace renderer {
         }
     }
 
-} // namespace renderer
-} // namespace engine
+} // namespace engine::renderer
+

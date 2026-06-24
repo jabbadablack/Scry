@@ -7,8 +7,8 @@
 #include <entt/entt.hpp>
 #include <cstddef>
 
-namespace engine {
-namespace renderer {
+
+namespace engine::renderer {
 
     struct RenderCommand {
         engine::math::Matrix4 transform;
@@ -37,8 +37,8 @@ namespace renderer {
         size_t m_capacity = 0;
     };
 
-} // namespace renderer
-} // namespace engine
+} // namespace engine::renderer
+
 
 #include "render_queue.inl"
 

@@ -3,8 +3,7 @@
 
 #include "algebra.hpp"
 
-namespace engine {
-namespace math {
+namespace engine::math {
 
     class Integrator {
     public:
@@ -12,8 +11,7 @@ namespace math {
         static ENGINE_INLINE void RK4(Vector3& position, Vector3& velocity, const Vector3& acceleration, f32 dt);
     };
 
-} // namespace math
-} // namespace engine
+} // namespace engine::math
 
 #include "calculus.inl"
 

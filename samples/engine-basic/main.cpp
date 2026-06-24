@@ -3,10 +3,6 @@
 #include <intent/intent_queue.hpp>
 #include <ecs/components.hpp>
 #include <debug/logger.hpp>
-#include <GLFW/glfw3.h>
-#include <OS/glfw/glfw_impl.inl>
-#include <chrono>
-#include <thread>
 
 namespace {
 
@@ -20,18 +16,15 @@ public:
     GameLogicModule() = default;
 
     void RegisterReflection() override {
-        using namespace entt::literals;
-        // Reflect the core engine Transform Component so the future Editor can see it
-        entt::meta<engine::ecs::TransformComponent>()
-            .type("TransformComponent"_hs)
-            .data<&engine::ecs::TransformComponent::matrix>("matrix"_hs)
-            .data<&engine::ecs::TransformComponent::previous_matrix>("previous_matrix"_hs);
+        engine::ecs::Meta<engine::ecs::TransformComponent>()
+            .type(engine::ecs::Hash("TransformComponent"))
+            .data<&engine::ecs::TransformComponent::matrix>(engine::ecs::Hash("matrix"))
+            .data<&engine::ecs::TransformComponent::previous_matrix>(engine::ecs::Hash("previous_matrix"));
 
-        // Reflect the Custom Intent
-        entt::meta<MyMoveIntent>()
-            .type("MyMoveIntent"_hs)
-            .data<&MyMoveIntent::target>("target"_hs)
-            .data<&MyMoveIntent::velocity>("velocity"_hs);
+        engine::ecs::Meta<MyMoveIntent>()
+            .type(engine::ecs::Hash("MyMoveIntent"))
+            .data<&MyMoveIntent::target>(engine::ecs::Hash("target"))
+            .data<&MyMoveIntent::velocity>(engine::ecs::Hash("velocity"));
 
         ENGINE_LOG_INFO("GameLogicModule: Reflection registered");
     }
@@ -53,7 +46,7 @@ public:
 
         engine::SystemBuilder(dag)
             .AddIntent("IntentGeneration", [this, write_state]() {
-                if (m_engine->GetInput() && m_engine->GetInput()->IsKeyHeld(GLFW_KEY_W)) {
+                if (m_engine->GetInput() && m_engine->GetInput()->IsKeyHeld(engine::Key::W)) {
                     auto view = m_engine->GetRegistry().View<engine::ecs::TransformComponent>();
                     for (auto ent : view) {
                         m_moveQueue.Push({.target=ent, .velocity={0.0F, 1.0F, 0.0F}}, m_engine->GetFrameArena(write_state));
@@ -84,33 +77,16 @@ private:
 } // anonymous namespace
 
 int main() {
-    engine::GlfwWindow window;
-    window.Initialize();
-    window.CreateWindow(800, 600, "Standalone Runtime");
-
-    engine::GlfwInput input;
-    input.Initialize(window.GetRawWindow());
-
     engine::Engine engine;
-    engine.GetWindowManager().SetMainWindow(&window);
 
-    // Register modules
-    auto& renderer = engine.RegisterModule<engine::renderer::DiligentModule>();
-    auto& logic = engine.RegisterModule<GameLogicModule>();
+    engine.RegisterModule<engine::renderer::DiligentModule>();
+    engine.RegisterModule<GameLogicModule>();
 
-    ENGINE_LOG_INFO("[SAMPLE] Registered module: " + std::string(renderer.GetName()));
-    ENGINE_LOG_INFO("[SAMPLE] Registered module: " + std::string(logic.GetName()));
-
-    // Initialize the engine
-    if (!engine.Initialize(&input)) {
-        ENGINE_LOG_ERROR("[SAMPLE] Failed to initialize engine");
+    if (!engine.Initialize(800, 600, "SCRY Standalone Runtime")) {
         return -1;
     }
 
-    // Create a mock renderable entity
     auto entity = engine.GetRegistry().CreateEntity();
-
-    // Attach components
     auto& transform = engine.GetRegistry().AddComponent<engine::ecs::TransformComponent>(entity);
     transform.matrix = engine::math::Matrix4::Identity();
 
@@ -119,33 +95,10 @@ int main() {
     render.mesh_id = engine::StringHash{"my_mesh"};
     render.texture_id = engine::StringHash{"mock_texture"};
 
-    // Rebuild the execution graph to register all modules
     engine.RebuildExecutionGraph();
-
-    using Clock = std::chrono::high_resolution_clock;
-    auto time_start = Clock::now();
-    double accumulator = 0.0;
-    constexpr double target_dt = 1.0 / 60.0; // 60 Hz dt
-
-    while (!engine.GetWindowManager().ShouldClose()) {
-        auto time_now = Clock::now();
-        std::chrono::duration<double> duration = time_now - time_start;
-        double delta_time = duration.count();
-        time_start = time_now;
-
-        accumulator += delta_time;
-
-        while (accumulator >= target_dt) {
-            engine.Tick();
-            accumulator -= target_dt;
-        }
-
-        engine.SetInterpolationAlpha(accumulator / target_dt);
-        engine.GetWindowManager().PollAllEvents();
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-
-    ENGINE_LOG_INFO("[SAMPLE] Engine run loop exited");
+    
+    // Let the engine take control!
+    engine.Run();
 
     return 0;
 }

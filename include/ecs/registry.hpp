@@ -7,8 +7,7 @@
 #include "ecs_types.hpp"
 #include <entt/entt.hpp>
 
-namespace engine {
-namespace ecs {
+namespace engine::ecs {
 
     // Override the default EnTT registry to use our thread-safe custom allocator
     using EnttRegistry = entt::basic_registry<engine::ecs::Entity, engine::ecs::EcsAllocator<engine::ecs::Entity>>;
@@ -63,8 +62,7 @@ namespace ecs {
         EnttRegistry m_registry;
     };
 
-} // namespace ecs
-} // namespace engine
+} // namespace engine::ecs
 
 // Include inline implementations
 #include "registry.inl"

@@ -3,8 +3,8 @@
 
 #include "algebra.hpp"
 
-namespace engine {
-namespace math {
+
+namespace engine::math {
 
     class Random {
     public:
@@ -15,8 +15,8 @@ namespace math {
         [[nodiscard]] static ENGINE_INLINE Vector3 Direction();
     };
 
-} // namespace math
-} // namespace engine
+} // namespace engine::math
+
 
 #include "random.inl"
 

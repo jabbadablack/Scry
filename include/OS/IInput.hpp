@@ -1,15 +1,17 @@
 #ifndef ENGINE_OS_IINPUT_HPP
 #define ENGINE_OS_IINPUT_HPP
 
+#include "keys.hpp"
+
 namespace engine {
 
     class IInput {
     public:
         virtual ~IInput() = default;
         virtual void Update() = 0;
-        virtual bool IsKeyPressed(int key) const = 0;
-        virtual bool IsKeyHeld(int key) const = 0;
-        virtual bool IsKeyReleased(int key) const = 0;
+        virtual bool IsKeyPressed(Key key) const = 0;
+        virtual bool IsKeyHeld(Key key) const = 0;
+        virtual bool IsKeyReleased(Key key) const = 0;
     };
 
 } // namespace engine

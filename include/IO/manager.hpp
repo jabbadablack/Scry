@@ -12,8 +12,7 @@
 #include <utility>
 #include <memory>
 
-namespace engine {
-namespace io {
+namespace engine::io {
 
     // Loader wrapper to inject pre-parsed assets directly into EnTT resource caches
     template <typename T>
@@ -88,8 +87,7 @@ namespace io {
         std::vector<std::pair<engine::StringHash, std::future<std::shared_ptr<Mesh>>>> m_pendingMeshes;
     };
 
-} // namespace io
-} // namespace engine
+} // namespace engine::io
 
 #include "manager.inl"
 

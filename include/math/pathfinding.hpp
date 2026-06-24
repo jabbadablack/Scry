@@ -7,8 +7,7 @@
 #include <unordered_map>
 #include <functional>
 
-namespace engine {
-namespace math {
+namespace engine::math {
 
     using NodeID = u32;
 
@@ -25,8 +24,7 @@ namespace math {
         static ENGINE_INLINE bool FindPath(const IGraph& graph, NodeID start, NodeID goal, std::vector<NodeID>& out_path);
     };
 
-} // namespace math
-} // namespace engine
+} // namespace engine::math
 
 #include "pathfinding.inl"
 

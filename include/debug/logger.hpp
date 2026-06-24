@@ -8,8 +8,8 @@
 #include <condition_variable>
 #include <atomic>
 
-namespace engine {
-namespace debug {
+
+namespace engine::debug {
 
     enum class LogLevel {
         Info,
@@ -46,8 +46,8 @@ namespace debug {
         std::atomic<bool> m_running{false};
     };
 
-} // namespace debug
-} // namespace engine
+} // namespace engine::debug
+
 
 #define ENGINE_LOG_INFO(msg) engine::debug::AsyncLogger::Get().Log(engine::debug::LogLevel::Info, msg)
 #define ENGINE_LOG_WARN(msg) engine::debug::AsyncLogger::Get().Log(engine::debug::LogLevel::Warn, msg)

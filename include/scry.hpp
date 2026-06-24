@@ -5,6 +5,7 @@
 #include "OS/window_manager.hpp"
 #include "OS/glfw/glfw_window.hpp"
 #include "OS/glfw/glfw_input.hpp"
+#include "OS/keys.hpp"
 #include "OS/types.h"
 #include "IO/vfs.hpp"
 #include "IO/threading/job_system.hpp"

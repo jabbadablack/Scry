@@ -7,7 +7,7 @@
 #include "IO/manager.hpp"
 #include "IO/vfs.hpp"
 #include "IO/threading/job_system.hpp"
-#include "module.hpp"
+#include "module/module.hpp"
 #include "memory/chained_arena.hpp"
 #include "intent/intent_queue.hpp"
 #include <vector>

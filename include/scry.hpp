@@ -1,9 +1,11 @@
 #ifndef ENGINE_CORE_HPP
 #define ENGINE_CORE_HPP
 
-#include "OS/types.h"
 #include "debug/assert.h"
 #include "OS/window_manager.hpp"
+#include "OS/glfw/glfw_window.hpp"
+#include "OS/glfw/glfw_input.hpp"
+#include "OS/types.h"
 #include "IO/vfs.hpp"
 #include "IO/threading/job_system.hpp"
 #include "memory/chained_arena.hpp"
@@ -12,7 +14,7 @@
 #include "memory/array.hpp"
 #include "memory/tracked_heap.hpp"
 #include "engine.hpp"
-#include "module.hpp"
+#include "module/module.hpp"
 #include "module/system_builder.hpp"
 #include "ecs/ecs_types.hpp"
 #include "ecs/ecs_allocator.hpp"

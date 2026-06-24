@@ -1,7 +1,7 @@
 #ifndef ENGINE_RENDERER_DILIGENT_MODULE_HPP
 #define ENGINE_RENDERER_DILIGENT_MODULE_HPP
 
-#include <module.hpp>
+#include <module/module.hpp>
 #include <memory/chained_arena.hpp>
 #include "render_queue.hpp"
 #include <thread>

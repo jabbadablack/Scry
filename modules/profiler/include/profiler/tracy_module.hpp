@@ -1,7 +1,7 @@
 #ifndef ENGINE_PROFILER_TRACY_MODULE_HPP
 #define ENGINE_PROFILER_TRACY_MODULE_HPP
 
-#include <module.hpp>
+#include <module/module.hpp>
 
 namespace engine {
 

@@ -1,7 +1,7 @@
 #ifndef ENGINE_IMGUI_IMGUI_MODULE_HPP
 #define ENGINE_IMGUI_IMGUI_MODULE_HPP
 
-#include <module.hpp>
+#include <module/module.hpp>
 #include <imgui.h>
 
 namespace engine {

@@ -1,7 +1,7 @@
 #ifndef ENGINE_MODULE_SYSTEM_BUILDER_HPP
 #define ENGINE_MODULE_SYSTEM_BUILDER_HPP
 
-#include "../module.hpp"
+#include "module.hpp"
 #include "../intent/intent_queue.hpp"
 #include <utility>
 

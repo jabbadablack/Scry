@@ -4,8 +4,6 @@
 #include <ecs/components.hpp>
 #include <debug/logger.hpp>
 #include <GLFW/glfw3.h>
-#include <OS/glfw/glfw_window.hpp>
-#include <OS/glfw/glfw_input.hpp>
 #include <OS/glfw/glfw_impl.inl>
 #include <chrono>
 #include <thread>

@@ -45,6 +45,11 @@ namespace engine {
         m_input = input;
         ENGINE_LOG_INFO("Engine initializing");
 
+        ENGINE_LOG_INFO("Engine: Registering module reflection types");
+        for (auto& module : m_modules) {
+            module->RegisterReflection();
+        }
+
         for (auto& module : m_modules) {
             ENGINE_ASSERT(module != nullptr, "Null module registered in Engine");
             ENGINE_ASSERT(module->GetName() != nullptr, "Module returned null name");

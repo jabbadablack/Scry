@@ -27,6 +27,9 @@ namespace engine {
         // Called once to allow the module to inject its execution nodes into the global DAG
         virtual void BuildGraph(tf::Taskflow& taskflow) = 0;
 
+        // Called once at startup to register entt::meta reflection types (optional)
+        virtual void RegisterReflection() {}
+
         virtual void CompileFrameGraph(FrameDAG& dag) {}
 
         // Called on engine exit

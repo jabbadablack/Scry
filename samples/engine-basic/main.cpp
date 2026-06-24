@@ -1,4 +1,5 @@
 #include <scry.hpp>
+#include <entt/entt.hpp>
 #include <renderer/diligent_module.hpp>
 #include <intent/intent_queue.hpp>
 #include <ecs/components.hpp>
@@ -17,6 +18,23 @@ struct MyMoveIntent {
 class GameLogicModule : public engine::IModule {
 public:
     GameLogicModule() = default;
+
+    void RegisterReflection() override {
+        using namespace entt::literals;
+        // Reflect the core engine Transform Component so the future Editor can see it
+        entt::meta<engine::ecs::TransformComponent>()
+            .type("TransformComponent"_hs)
+            .data<&engine::ecs::TransformComponent::matrix>("matrix"_hs)
+            .data<&engine::ecs::TransformComponent::previous_matrix>("previous_matrix"_hs);
+
+        // Reflect the Custom Intent
+        entt::meta<MyMoveIntent>()
+            .type("MyMoveIntent"_hs)
+            .data<&MyMoveIntent::target>("target"_hs)
+            .data<&MyMoveIntent::velocity>("velocity"_hs);
+
+        ENGINE_LOG_INFO("GameLogicModule: Reflection registered");
+    }
 
     const char* GetName() const override {
         return "GameLogicModule";

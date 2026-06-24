@@ -10,22 +10,22 @@ namespace engine::renderer {
     ENGINE_INLINE void RenderQueue::Initialize(engine::ChainedArena& arena, size_t max_commands) {
         ENGINE_ASSERT(max_commands > 0, "RenderQueue capacity must be greater than zero");
 
-        m_commands = reinterpret_cast<RenderCommand*>(
-            arena.Allocate(max_commands * sizeof(RenderCommand), alignof(RenderCommand))
+        m_commands = reinterpret_cast<engine::graphics::RenderPacket*>(
+            arena.Allocate(max_commands * sizeof(engine::graphics::RenderPacket), alignof(engine::graphics::RenderPacket))
         );
         ENGINE_ASSERT(m_commands != nullptr, "Failed to allocate memory from ChainedArena for RenderQueue");
         m_count = 0;
         m_capacity = max_commands;
     }
 
-    ENGINE_INLINE void RenderQueue::Push(const RenderCommand& cmd) {
+    ENGINE_INLINE void RenderQueue::Push(const engine::graphics::RenderPacket& cmd) {
         ENGINE_ASSERT(m_commands != nullptr, "Cannot push to uninitialized RenderQueue");
         ENGINE_ASSERT(m_count < m_capacity, "RenderQueue capacity exhausted");
         m_commands[m_count] = cmd;
         m_count++;
     }
 
-    ENGINE_INLINE const RenderCommand* RenderQueue::GetCommands() const noexcept {
+    ENGINE_INLINE const engine::graphics::RenderPacket* RenderQueue::GetCommands() const noexcept {
         ENGINE_ASSERT(m_commands != nullptr, "GetCommands called on uninitialized RenderQueue");
         ENGINE_ASSERT(m_capacity > 0, "GetCommands called on zero-capacity RenderQueue");
         return m_commands;

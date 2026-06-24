@@ -4,18 +4,12 @@
 #include <math/algebra.hpp>
 #include <ecs/ecs_types.hpp>
 #include <memory/chained_arena.hpp>
+#include <graphics/render_packet.hpp>
 #include <entt/entt.hpp>
 #include <cstddef>
 
 
 namespace engine::renderer {
-
-    struct RenderCommand {
-        engine::math::Matrix4 transform;
-        engine::math::Matrix4 previous_transform;
-        engine::StringHash mesh_id;
-        engine::StringHash texture_id;
-    };
 
     class RenderQueue {
     public:
@@ -26,13 +20,13 @@ namespace engine::renderer {
         RenderQueue& operator=(const RenderQueue&) = delete;
 
         ENGINE_INLINE void Initialize(engine::ChainedArena& arena, size_t max_commands);
-        ENGINE_INLINE void Push(const RenderCommand& cmd);
+        ENGINE_INLINE void Push(const engine::graphics::RenderPacket& cmd);
 
-        [[nodiscard]] ENGINE_INLINE const RenderCommand* GetCommands() const noexcept;
+        [[nodiscard]] ENGINE_INLINE const engine::graphics::RenderPacket* GetCommands() const noexcept;
         [[nodiscard]] ENGINE_INLINE size_t GetCount() const noexcept;
 
     private:
-        RenderCommand* m_commands = nullptr;
+        engine::graphics::RenderPacket* m_commands = nullptr;
         size_t m_count = 0;
         size_t m_capacity = 0;
     };

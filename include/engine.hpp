@@ -11,6 +11,7 @@
 #include "memory/chained_arena.hpp"
 #include "intent/intent_queue.hpp"
 #include "time/ITime.hpp"
+#include "graphics/IGraphics.hpp"
 #include <vector>
 #include <memory>
 #include <mutex>
@@ -61,6 +62,7 @@ namespace engine {
         [[nodiscard]] ENGINE_INLINE tf::Taskflow& GetTaskflow() noexcept;
         [[nodiscard]] ENGINE_INLINE const ecs::Registry& GetRegistry() const noexcept;
         [[nodiscard]] ENGINE_INLINE const engine::ITime& GetTime() const noexcept { return m_ITime; }
+        [[nodiscard]] ENGINE_INLINE engine::graphics::IGraphics& GetIGraphics() noexcept { return m_IGraphics; }
 
         // Double-buffer and thread-sync accessors
         [[nodiscard]] ENGINE_INLINE int GetWriteState() const noexcept { return m_writeState; }
@@ -75,6 +77,7 @@ namespace engine {
         engine::io::JobSystem m_jobSystem;
         engine::VirtualFileSystem m_vfs;
         engine::io::ResourceManager m_resourceManager;
+        engine::graphics::IGraphics m_IGraphics;
         engine::ITime m_ITime;
         ecs::Registry m_registry;
         tf::Taskflow m_taskflow;

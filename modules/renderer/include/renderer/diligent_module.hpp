@@ -5,6 +5,7 @@
 #include <module/module.hpp>
 #include <memory/chained_arena.hpp>
 #include "render_queue.hpp"
+#include "../../src/diligent_resource_pool.hpp"
 #include <thread>
 #include <mutex>
 #include <atomic>
@@ -59,6 +60,12 @@ namespace engine::renderer {
         std::thread m_renderThread;
         std::atomic<bool> m_running{false};
         engine::Engine* m_engine = nullptr;
+
+        ResourcePool<Diligent::IBuffer> m_buffers;
+        ResourcePool<Diligent::ITexture> m_textures;
+        ResourcePool<Diligent::IPipelineState> m_pipelines;
+        ResourcePool<Diligent::IShaderResourceBinding> m_srbs;
+        u64 m_frameCount = 0;
     };
 
 } // namespace engine::renderer

@@ -13,6 +13,7 @@ extern "C" {
 }
 
 #include "Graphics/GraphicsEngineVulkan/interface/EngineFactoryVk.h"
+#include "Graphics/GraphicsEngine/interface/Shader.h"
 
 
 namespace engine::renderer {
@@ -84,15 +85,16 @@ namespace engine::renderer {
             auto view = registry.View<engine::ecs::TransformComponent, engine::ecs::RenderComponent>();
             for (auto ent : view) {
                 const auto& trans = registry.GetComponent<engine::ecs::TransformComponent>(ent);
-                const auto& rnd = registry.GetComponent<engine::ecs::RenderComponent>(ent);
 
-                engine::renderer::RenderCommand cmd;
-                cmd.transform = trans.matrix;
-                cmd.previous_transform = trans.previous_matrix;
-                cmd.mesh_id = rnd.mesh_id;
-                cmd.texture_id = rnd.texture_id;
+                engine::graphics::RenderPacket packet;
+                packet.transform = trans.matrix;
+                packet.pipeline = {};
+                packet.vertex_buffer = {};
+                packet.index_buffer = {};
+                packet.texture = {};
+                packet.index_count = 0;
 
-                m_renderQueues[write_state].Push(cmd);
+                m_renderQueues[write_state].Push(packet);
             }
         }).name("DiligentExtract");
 
@@ -129,34 +131,113 @@ namespace engine::renderer {
 
     void DiligentModule::RenderThreadLoop() {
         while (m_running.load(std::memory_order_relaxed)) {
+            // Process resource intents before locking swap mutex
+            std::vector<engine::graphics::BufferIntent> new_buffers;
+            std::vector<engine::graphics::TextureIntent> new_textures;
+            std::vector<engine::graphics::PipelineIntent> new_pipelines;
+            std::vector<engine::graphics::DeletionIntent> ready_deletions;
+
+            m_engine->GetIGraphics().FlushCreations(new_buffers, new_textures, new_pipelines);
+            m_engine->GetIGraphics().FlushDeletions(m_frameCount, ready_deletions);
+
+            for (const auto& intent : new_buffers) {
+                Diligent::BufferDesc BuffDesc;
+                BuffDesc.Name = "DoDBuffer";
+                BuffDesc.Size = intent.desc.size;
+                BuffDesc.BindFlags = (intent.desc.bind == engine::graphics::BufferBind::Vertex) ? Diligent::BIND_VERTEX_BUFFER : Diligent::BIND_INDEX_BUFFER;
+                BuffDesc.Usage = (intent.desc.usage == engine::graphics::BufferUsage::Static) ? Diligent::USAGE_IMMUTABLE : Diligent::USAGE_DYNAMIC;
+
+                Diligent::BufferData BuffData;
+                BuffData.pData = intent.data;
+                BuffData.DataSize = intent.desc.size;
+
+                Diligent::RefCntAutoPtr<Diligent::IBuffer> pBuffer;
+                m_pDevice->CreateBuffer(BuffDesc, intent.data ? &BuffData : nullptr, &pBuffer);
+                m_buffers.Insert(intent.handle.GetIndex(), intent.handle.GetGeneration(), std::move(pBuffer));
+            }
+
+            for (const auto& intent : new_textures) {
+                Diligent::TextureDesc TexDesc;
+                TexDesc.Name = "DoDTexture";
+                TexDesc.Type = Diligent::RESOURCE_DIM_TEX_2D;
+                TexDesc.Width = intent.desc.width;
+                TexDesc.Height = intent.desc.height;
+                if (intent.desc.channels == 4) {
+                    TexDesc.Format = Diligent::TEX_FORMAT_RGBA8_UNORM;
+                } else if (intent.desc.channels == 1) {
+                    TexDesc.Format = Diligent::TEX_FORMAT_R8_UNORM;
+                } else {
+                    TexDesc.Format = Diligent::TEX_FORMAT_RGBA8_UNORM;
+                }
+                TexDesc.BindFlags = intent.desc.is_render_target ? Diligent::BIND_RENDER_TARGET : Diligent::BIND_SHADER_RESOURCE;
+
+                Diligent::TextureData SubResources;
+                Diligent::TextureSubResData Mips[1];
+                Mips[0].pData = intent.data;
+                Mips[0].Stride = intent.desc.width * intent.desc.channels;
+                SubResources.pSubResources = Mips;
+                SubResources.NumSubresources = 1;
+
+                Diligent::RefCntAutoPtr<Diligent::ITexture> pTexture;
+                m_pDevice->CreateTexture(TexDesc, intent.data ? &SubResources : nullptr, &pTexture);
+                m_textures.Insert(intent.handle.GetIndex(), intent.handle.GetGeneration(), std::move(pTexture));
+            }
+
+            for (const auto& intent : new_pipelines) {
+                Diligent::GraphicsPipelineStateCreateInfo PSOCreateInfo;
+
+                Diligent::ShaderCreateInfo ShaderCI;
+                ShaderCI.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_HLSL;
+                ShaderCI.Desc.UseCombinedTextureSamplers = true;
+
+                Diligent::RefCntAutoPtr<Diligent::IShader> pVS;
+                if (intent.desc.vs_source) {
+                    ShaderCI.Desc.ShaderType = Diligent::SHADER_TYPE_VERTEX;
+                    ShaderCI.Desc.Name = "DoD VS";
+                    ShaderCI.Source = intent.desc.vs_source;
+                    m_pDevice->CreateShader(ShaderCI, &pVS);
+                }
+
+                Diligent::RefCntAutoPtr<Diligent::IShader> pPS;
+                if (intent.desc.ps_source) {
+                    ShaderCI.Desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
+                    ShaderCI.Desc.Name = "DoD PS";
+                    ShaderCI.Source = intent.desc.ps_source;
+                    m_pDevice->CreateShader(ShaderCI, &pPS);
+                }
+
+                PSOCreateInfo.pVS = pVS;
+                PSOCreateInfo.pPS = pPS;
+                PSOCreateInfo.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
+                PSOCreateInfo.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
+
+                PSOCreateInfo.GraphicsPipeline.NumRenderTargets = 1;
+                PSOCreateInfo.GraphicsPipeline.RTVFormats[0] = m_pSwapChain->GetDesc().ColorBufferFormat;
+                PSOCreateInfo.GraphicsPipeline.DSVFormat = m_pSwapChain->GetDesc().DepthBufferFormat;
+
+                PSOCreateInfo.PSODesc.Name = "DoD PSO";
+                PSOCreateInfo.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
+
+                Diligent::RefCntAutoPtr<Diligent::IPipelineState> pPSO;
+                m_pDevice->CreatePipelineState(PSOCreateInfo, &pPSO);
+                if (pPSO) {
+                    m_pipelines.Insert(intent.handle.GetIndex(), intent.handle.GetGeneration(), std::move(pPSO));
+                }
+            }
+
+            for (const auto& intent : ready_deletions) {
+                m_buffers.Remove(intent.handle_id & 0xFFFFF, (intent.handle_id >> 20) & 0xFFF);
+                m_textures.Remove(intent.handle_id & 0xFFFFF, (intent.handle_id >> 20) & 0xFFF);
+                m_pipelines.Remove(intent.handle_id & 0xFFFFF, (intent.handle_id >> 20) & 0xFFF);
+            }
+
             int read_state;
-            float alpha;
             {
                 std::lock_guard<std::mutex> lock(m_engine->GetRenderSwapMutex());
                 read_state = m_engine->GetRenderReadState();
-                alpha = m_engine->GetInterpolationAlpha();
             }
 
             const auto& queue = m_renderQueues[read_state];
-
-            // Interpolation loop to prepare commands
-            for (size_t i = 0; i < queue.GetCount(); ++i) {
-                const auto& cmd = queue.GetCommands()[i];
-
-                engine::math::Vector3 pos_prev = cmd.previous_transform.block<3, 1>(0, 3);
-                engine::math::Vector3 pos_curr = cmd.transform.block<3, 1>(0, 3);
-                engine::math::Vector3 pos_interp = engine::math::Lerp(pos_prev, pos_curr, alpha);
-
-                engine::math::Quaternion rot_prev(cmd.previous_transform.block<3, 3>(0, 0));
-                engine::math::Quaternion rot_curr(cmd.transform.block<3, 3>(0, 0));
-                engine::math::Quaternion rot_interp = engine::math::Slerp(rot_prev, rot_curr, alpha);
-
-                engine::math::Matrix4 interpolated_matrix = engine::math::Matrix4::Identity();
-                interpolated_matrix.block<3, 3>(0, 0) = rot_interp.toRotationMatrix();
-                interpolated_matrix.block<3, 1>(0, 3) = pos_interp;
-
-                (void)interpolated_matrix; // stability mapping loop
-            }
 
             // Set Render Target and Clear Screen (Vulkan swap chain operations)
             auto* pRTV = m_pSwapChain->GetCurrentBackBufferRTV();
@@ -168,7 +249,40 @@ namespace engine::renderer {
                 m_pImmediateContext->ClearDepthStencil(pDSV, Diligent::CLEAR_DEPTH_FLAG, 1.0F, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
             }
 
+            // Draw loop processing Intent-Based Packets
+            for (size_t i = 0; i < queue.GetCount(); ++i) {
+                const auto& packet = queue.GetCommands()[i];
+
+                auto* pso = m_pipelines.Get(packet.pipeline.GetIndex(), packet.pipeline.GetGeneration());
+                if (!pso) continue;
+
+                m_pImmediateContext->SetPipelineState(pso);
+
+                // Bind SRB (Shader Resource Binding)
+                auto* srb = m_srbs.Get(packet.pipeline.GetIndex(), packet.pipeline.GetGeneration());
+                if (srb) m_pImmediateContext->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+                // Bind Vertex/Index Buffers
+                auto* vBuffer = m_buffers.Get(packet.vertex_buffer.GetIndex(), packet.vertex_buffer.GetGeneration());
+                if (vBuffer) {
+                    Diligent::IBuffer* pBuffs[] = {vBuffer};
+                    Diligent::Uint64 offsets[] = {0};
+                    m_pImmediateContext->SetVertexBuffers(0, 1, pBuffs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION, Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
+                }
+
+                auto* iBuffer = m_buffers.Get(packet.index_buffer.GetIndex(), packet.index_buffer.GetGeneration());
+                if (iBuffer) {
+                    m_pImmediateContext->SetIndexBuffer(iBuffer, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+                    Diligent::DrawIndexedAttribs DrawAttrs;
+                    DrawAttrs.NumIndices = packet.index_count;
+                    DrawAttrs.IndexType = Diligent::VT_UINT32;
+                    DrawAttrs.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+                    m_pImmediateContext->DrawIndexed(DrawAttrs);
+                }
+            }
+
             m_pSwapChain->Present();
+            m_frameCount++;
             std::this_thread::yield();
         }
     }

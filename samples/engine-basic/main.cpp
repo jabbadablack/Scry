@@ -8,6 +8,8 @@
 #include <chrono>
 #include <thread>
 
+namespace {
+
 struct MyMoveIntent {
     engine::ecs::Entity target;
     engine::math::Vector3 velocity;
@@ -54,7 +56,7 @@ public:
                 if (m_engine->GetInput() && m_engine->GetInput()->IsKeyHeld(GLFW_KEY_W)) {
                     auto view = m_engine->GetRegistry().View<engine::ecs::TransformComponent>();
                     for (auto ent : view) {
-                        m_moveQueue.Push({ent, {0.0f, 1.0f, 0.0f}}, m_engine->GetFrameArena(write_state));
+                        m_moveQueue.Push({.target=ent, .velocity={0.0F, 1.0F, 0.0F}}, m_engine->GetFrameArena(write_state));
                     }
                     ENGINE_LOG_INFO("Input has been taken");
                 }
@@ -78,6 +80,8 @@ private:
     engine::Engine* m_engine = nullptr;
     engine::IntentQueue<MyMoveIntent> m_moveQueue;
 };
+
+} // anonymous namespace
 
 int main() {
     engine::GlfwWindow window;
@@ -126,10 +130,10 @@ int main() {
     while (!engine.GetWindowManager().ShouldClose()) {
         auto time_now = Clock::now();
         std::chrono::duration<double> duration = time_now - time_start;
-        double dt = duration.count();
+        double delta_time = duration.count();
         time_start = time_now;
 
-        accumulator += dt;
+        accumulator += delta_time;
 
         while (accumulator >= target_dt) {
             engine.Tick();

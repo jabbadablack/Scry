@@ -71,7 +71,7 @@ namespace engine {
 
     // Processes exactly one frame iteration
     ENGINE_INLINE void Engine::Tick() {
-        ENGINE_ASSERT(m_writeState == 0 || m_writeState == 1, "Write state index out of range");
+        ENGINE_ASSERT(m_writeState >= 0 && m_writeState < 2, "Write state index out of range");
         ENGINE_ASSERT(!m_modules.empty(), "Engine::Tick called with no registered modules");
 
         m_resourceManager.Update();
@@ -120,7 +120,7 @@ namespace engine {
     }
 
     // Shutdown Engine and clean up resources
-    ENGINE_INLINE void Engine::Shutdown() {
+    ENGINE_INLINE void Engine::Shutdown()  {
         ENGINE_ASSERT(m_writeState == 0 || m_writeState == 1, "Write state corrupted at shutdown");
         ENGINE_ASSERT(m_renderReadState == 0 || m_renderReadState == 1, "Render read state corrupted at shutdown");
 

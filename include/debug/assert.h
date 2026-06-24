@@ -28,7 +28,7 @@
                 std::cerr << "[ENGINE ASSERTION FAILED] File: " << __FILE__ \
                           << ", Line: " << __LINE__ \
                           << "\nExpression: " << #condition \
-                          << "\nMessage: " << (message) << std::endl; \
+                          << "\nMessage: " << (message) << "\n"; \
                 ENGINE_DEBUG_BREAK(); \
             } \
         } while (0)

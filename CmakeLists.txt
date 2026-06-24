@@ -1,310 +1,172 @@
 cmake_minimum_required(VERSION 3.19)
-project(SCRY VERSION 1.0.0 LANGUAGES C CXX)
+project(SCRY C CXX)
+
+# Default to Release to prevent multi-GB Debug binaries
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
+endif()
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
-# Require C++20 and C11
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_STANDARD_REQUIRED ON)
-
-if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
-endif()
-
-# Configure output directories
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
-
-# Build options
-option(SCRY_BUILD_TESTS "Build unit tests" ON)
-option(SCRY_BUILD_EXAMPLES "Build example sandbox" ON)
-
 include(FetchContent)
 
-# ─── Global settings ─────────────────────────────────────────────────────────
-set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
-set(CMAKE_SKIP_INSTALL_RULES ON CACHE BOOL "" FORCE)
-set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    glfw
+    GIT_REPOSITORY https://github.com/glfw/glfw.git
+    GIT_TAG master
+    SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/_deps/glfw-src
+)
+
+FetchContent_Declare(
+    taskflow
+    GIT_REPOSITORY https://github.com/taskflow/taskflow.git
+    GIT_TAG master
+    SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/_deps/taskflow-src
+)
+
+FetchContent_Declare(
+    doctest
+    GIT_REPOSITORY https://github.com/doctest/doctest.git
+    GIT_TAG v2.4.11
+    SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/_deps/doctest-src
+)
+
+FetchContent_Declare(
+    eigen
+    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+    GIT_TAG 3.4.0
+    SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/_deps/eigen-src
+)
+
+FetchContent_Declare(
+    entt
+    GIT_REPOSITORY https://github.com/skypjack/entt.git
+    GIT_TAG v3.13.0
+    SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/_deps/entt-src
+)
+
+FetchContent_Declare(
+    stb
+    GIT_REPOSITORY https://github.com/nothings/stb.git
+    GIT_TAG master
+    SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/_deps/stb-src
+)
+
+FetchContent_Declare(
+    assimp
+    GIT_REPOSITORY https://github.com/assimp/assimp.git
+    GIT_TAG v5.3.1
+    SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/_deps/assimp-src
+)
+
+# Speed up Assimp compilation and disable warnings as errors for newer compilers
+set(ASSIMP_BUILD_ASSIMP_TOOLS OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(ASSIMP_INSTALL OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(ASSIMP_NO_EXPORT ON CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_ZLIB ON CACHE BOOL "" FORCE)
+set(ASSIMP_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
 
 # GLFW
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 
-# Flecs
-set(FLECS_STATIC OFF CACHE BOOL "" FORCE)
-set(FLECS_SHARED ON CACHE BOOL "" FORCE)
-set(FLECS_TESTS OFF CACHE BOOL "" FORCE)
-set(FLECS_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(FLECS_CUSTOM_BUILD ON CACHE BOOL "" FORCE)
-set(FLECS_MODULE OFF CACHE BOOL "" FORCE)
-set(FLECS_CPP OFF CACHE BOOL "" FORCE)
-set(FLECS_JSON OFF CACHE BOOL "" FORCE)
-set(FLECS_REST OFF CACHE BOOL "" FORCE)
-set(FLECS_STATS OFF CACHE BOOL "" FORCE)
-set(FLECS_METRICS OFF CACHE BOOL "" FORCE)
-set(FLECS_META OFF CACHE BOOL "" FORCE)
-set(FLECS_UNITS OFF CACHE BOOL "" FORCE)
-set(FLECS_DOC OFF CACHE BOOL "" FORCE)
-set(FLECS_TIMER OFF CACHE BOOL "" FORCE)
-set(FLECS_APP OFF CACHE BOOL "" FORCE)
-set(FLECS_LOG ON CACHE BOOL "" FORCE)
-set(FLECS_SYSTEM ON CACHE BOOL "" FORCE)
-set(FLECS_PIPELINE ON CACHE BOOL "" FORCE)
+# TASKFLOW
+set(TF_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(TF_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 
-# Catch2
-set(CATCH_BUILD_TESTING OFF CACHE BOOL "" FORCE)
-set(CATCH_INSTALL_HELPERS OFF CACHE BOOL "" FORCE)
-
-# Assimp (GLTF + OBJ + FBX only; no export, no tools, no tests)
-set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT OFF CACHE BOOL "" FORCE)
-set(ASSIMP_BUILD_GLTF_IMPORTER           ON  CACHE BOOL "" FORCE)
-set(ASSIMP_BUILD_OBJ_IMPORTER            ON  CACHE BOOL "" FORCE)
-set(ASSIMP_BUILD_FBX_IMPORTER            ON  CACHE BOOL "" FORCE)
-set(ASSIMP_BUILD_ASSIMP_TOOLS            OFF CACHE BOOL "" FORCE)
-set(ASSIMP_BUILD_TESTS                   OFF CACHE BOOL "" FORCE)
-set(ASSIMP_INSTALL                       OFF CACHE BOOL "" FORCE)
-set(ASSIMP_BUILD_SAMPLES                 OFF CACHE BOOL "" FORCE)
-set(ASSIMP_NO_EXPORT                     ON  CACHE BOOL "" FORCE)
-
-# DiligentCore — Vulkan only, static (no shared DLL = no export.map MinGW issue)
-set(DILIGENT_NO_DIRECT3D11  ON  CACHE BOOL "" FORCE)
-set(DILIGENT_NO_DIRECT3D12  ON  CACHE BOOL "" FORCE)
-set(DILIGENT_NO_OPENGL      ON  CACHE BOOL "" FORCE)
-set(DILIGENT_NO_METAL       ON  CACHE BOOL "" FORCE)
-set(DILIGENT_NO_ARCHIVER    ON  CACHE BOOL "" FORCE)
-set(DILIGENT_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
-set(DILIGENT_BUILD_SAMPLES  OFF CACHE BOOL "" FORCE)
-set(DILIGENT_INSTALL_CORE   OFF CACHE BOOL "" FORCE)
-set(DILIGENT_VK_SHARED      OFF CACHE BOOL "" FORCE)
-
-# ─── FetchContent Declarations ───────────────────────────────────────────────
-
-FetchContent_Declare(glfw
-    GIT_REPOSITORY https://github.com/glfw/glfw.git
-    GIT_TAG        3.4
+FetchContent_MakeAvailable(
+    glfw
+    taskflow
+    doctest
+    entt
+    assimp
 )
 
-FetchContent_Declare(DiligentCore
-    GIT_REPOSITORY https://github.com/DiligentGraphics/DiligentCore.git
-    GIT_TAG        master
-)
-
-FetchContent_Declare(flecs
-    GIT_REPOSITORY https://github.com/SanderMertens/flecs.git
-    GIT_TAG        master
-)
-
-FetchContent_Declare(yyjson
-    GIT_REPOSITORY https://github.com/ibireme/yyjson.git
-    GIT_TAG        master
-)
-
-FetchContent_Declare(Catch2
-    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-    GIT_TAG        v3.4.0
-)
-
-FetchContent_Declare(cglm
-    GIT_REPOSITORY https://github.com/recp/cglm.git
-    GIT_TAG        master
-)
-
-FetchContent_Declare(assimp
-    GIT_REPOSITORY https://github.com/assimp/assimp.git
-    GIT_TAG        v5.3.1
-)
-
-FetchContent_Declare(stb
-    GIT_REPOSITORY https://github.com/nothings/stb.git
-    GIT_TAG        master
-)
-
-FetchContent_Declare(meshoptimizer
-    GIT_REPOSITORY https://github.com/zeux/meshoptimizer.git
-    GIT_TAG        v0.21
-)
-
-# Suppress third-party C++20 deprecation noise before fetching deps
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated -Wno-return-type -Wno-unknown-pragmas")
+# GCC emits a false-positive -Warray-bounds in Assimp's X3DGeoHelper when
+# vector::back() is inlined and the optimizer's range analysis goes wrong.
+if(TARGET assimp AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(assimp PRIVATE -Wno-array-bounds)
 endif()
 
-# DiligentCore first — it pulls in its own nested FetchContent (glslang, SPIRV-Cross, etc.)
-FetchContent_MakeAvailable(DiligentCore)
-
-# MinGW fix: DiligentCore's VK shared DLL linker uses --version-script=export.map
-# with a RELATIVE path, but ninja runs the linker from ${CMAKE_BINARY_DIR}.
-# DiligentCore writes export.map to its own build subdir; copy it to the root.
-if(MINGW)
-    set(_diligent_vk_export_map
-        "${diligentcore_BINARY_DIR}/Graphics/GraphicsEngineVulkan/export.map")
-    if(EXISTS "${_diligent_vk_export_map}")
-        configure_file("${_diligent_vk_export_map}" "${CMAKE_BINARY_DIR}/export.map" COPYONLY)
-    else()
-        file(WRITE "${CMAKE_BINARY_DIR}/export.map"
-            "{ global: *GetEngineFactoryVk*; local: *; };\n")
-    endif()
+# Manually populate header-only Eigen and stb dependencies to prevent configuration conflicts
+FetchContent_GetProperties(eigen)
+if(NOT eigen_POPULATED)
+    FetchContent_Populate(eigen)
 endif()
 
-FetchContent_MakeAvailable(glfw assimp stb meshoptimizer flecs yyjson Catch2 cglm)
-
-if(MSVC)
-    set(SCRY_COMMON_FLAGS /W4 /WX)
-    set(SCRY_C_FLAGS ${SCRY_COMMON_FLAGS})
-    set(SCRY_CXX_FLAGS ${SCRY_COMMON_FLAGS})
-else()
-    set(SCRY_COMMON_FLAGS -Wall -Wextra -Wpedantic -Wno-tautological-compare -Wno-attributes)
-    set(SCRY_C_FLAGS ${SCRY_COMMON_FLAGS})
-    set(SCRY_CXX_FLAGS ${SCRY_COMMON_FLAGS} -Wno-deprecated-enum-enum-conversion -Wno-deprecated-copy -Wno-deprecated-declarations -Wno-template-body -Wno-gnu-anonymous-struct -Wno-nested-anon-types)
+FetchContent_GetProperties(stb)
+if(NOT stb_POPULATED)
+    FetchContent_Populate(stb)
 endif()
 
-include(cmake/EngineHelpers.cmake)
+add_library(${PROJECT_NAME} INTERFACE)
+add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
+add_library(ENGINE ALIAS ${PROJECT_NAME})
 
-# ─── Engine Library ──────────────────────────────────────────────────────────
-
-file(GLOB_RECURSE SCRY_SRC_C   CONFIGURE_DEPENDS "src/*.c"   "src/systems/*.c")
-file(GLOB_RECURSE SCRY_SRC_CPP CONFIGURE_DEPENDS "src/*.cpp" "src/renderer/*.cpp")
-file(GLOB_RECURSE SCRY_INC     CONFIGURE_DEPENDS "include/*.h")
-
-add_library(scry SHARED ${SCRY_SRC_C} ${SCRY_SRC_CPP} ${SCRY_INC})
-target_compile_options(scry PRIVATE 
-    $<$<COMPILE_LANGUAGE:C>:${SCRY_C_FLAGS}>
-    $<$<COMPILE_LANGUAGE:CXX>:${SCRY_CXX_FLAGS}>
+target_include_directories(${PROJECT_NAME}
+    INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${eigen_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${stb_SOURCE_DIR}>
 )
 
-if(MSVC)
-    target_compile_options(scry PRIVATE /O2 /fp:fast /arch:AVX2)
-else()
-    target_compile_options(scry PRIVATE -O3 -ffast-math -mavx2)
-endif()
-
-target_include_directories(scry PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
-    "${cglm_SOURCE_DIR}/include"
-)
-
-# DiligentCore root — SYSTEM suppresses -Wpedantic warnings from their headers
-target_include_directories(scry SYSTEM PRIVATE
-    "${diligentcore_SOURCE_DIR}"
+target_link_libraries(${PROJECT_NAME}
+    INTERFACE
+        glfw
+        Taskflow
+        EnTT::EnTT
+        assimp
 )
 
 if(WIN32)
-    target_compile_definitions(scry PRIVATE PLATFORM_WIN32=1 ENGINE_EXPORT)
-elseif(UNIX AND NOT APPLE)
-    target_compile_definitions(scry PRIVATE PLATFORM_LINUX=1 ENGINE_EXPORT)
-elseif(APPLE)
-    target_compile_definitions(scry PRIVATE PLATFORM_MACOS=1 ENGINE_EXPORT)
-endif()
-
-target_link_libraries(scry
-    PUBLIC
-        flecs
-        glfw
-        yyjson
-        cglm
-    PRIVATE
-        Diligent-GraphicsEngineVk-static
-)
-
-# ─── Tests ───────────────────────────────────────────────────────────────────
-
-if(SCRY_BUILD_TESTS)
-    add_subdirectory(tests)
-
-    set_target_properties(scry_tests PROPERTIES EXCLUDE_FROM_ALL TRUE)
-
-    if(CMAKE_CONFIGURATION_TYPES)
-        foreach(cfg ${CMAKE_CONFIGURATION_TYPES})
-            if(cfg STREQUAL "Debug")
-                string(TOUPPER ${cfg} cfg_upper)
-                set_target_properties(scry_tests PROPERTIES EXCLUDE_FROM_ALL_${cfg_upper} FALSE)
-            endif()
-        endforeach()
-    endif()
-
-    add_custom_target(run_tests
-        COMMAND $<TARGET_FILE:scry_tests> --reporter compact
-        DEPENDS scry_tests
-        WORKING_DIRECTORY "$<TARGET_FILE_DIR:scry_tests>"
-        COMMENT "Running Scry test suite"
-        VERBATIM
+    target_link_libraries(${PROJECT_NAME}
+        INTERFACE
+            winmm
     )
-
-    set_target_properties(run_tests PROPERTIES EXCLUDE_FROM_ALL TRUE)
-    if(CMAKE_CONFIGURATION_TYPES)
-        foreach(cfg ${CMAKE_CONFIGURATION_TYPES})
-            if(cfg STREQUAL "Debug")
-                string(TOUPPER ${cfg} cfg_upper)
-                set_target_properties(run_tests PROPERTIES EXCLUDE_FROM_ALL_${cfg_upper} FALSE)
-            endif()
-        endforeach()
-    endif()
 endif()
 
-# ─── Example sandbox project ──────────────────────────────────────────────────
-if(SCRY_BUILD_EXAMPLES)
-    add_subdirectory(examples/sandbox)
+# --- Dead Code Elimination (DCE) & Optimization ---
+# Forces the compiler to isolate functions/data, allowing the linker to garbage-collect unused code.
+if(MSVC)
+    # /Gy: Enable function-level linking (puts each function in its own COMDAT)
+    # /Gw: Optimize global data (puts data in individual COMDATs)
+    target_compile_options(${PROJECT_NAME} INTERFACE /Gy /Gw)
+    
+    # /OPT:REF: Eliminate unreferenced functions/data
+    # /OPT:ICF: Fold identical COMDAT sections
+    target_link_options(${PROJECT_NAME} INTERFACE /OPT:REF /OPT:ICF)
+else()
+    # -ffunction-sections & -fdata-sections: Isolate functions and data into distinct sections
+    target_compile_options(${PROJECT_NAME} INTERFACE -ffunction-sections -fdata-sections)
+    
+    # -Wl,--gc-sections: Instruct the linker to aggressively drop unreferenced sections
+    target_link_options(${PROJECT_NAME} INTERFACE -Wl,--gc-sections)
 endif()
 
-# ─── Asset cooker tool ────────────────────────────────────────────────────────
-
-add_executable(scry_cooker tools/cooker.cpp)
-
-target_compile_features(scry_cooker PRIVATE cxx_std_17)
-
-target_include_directories(scry_cooker PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    "${stb_SOURCE_DIR}"
-    "${assimp_SOURCE_DIR}/include"
-    "${assimp_BINARY_DIR}/include"
-    "${meshoptimizer_SOURCE_DIR}/src"
+file(GLOB_RECURSE SCRY_HEADERS 
+    CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/*.inl"
 )
 
-target_link_libraries(scry_cooker PRIVATE assimp::assimp meshoptimizer)
-
-# ─── Shader copy ─────────────────────────────────────────────────────────────
-# DiligentCore compiles HLSL at runtime; just copy mesh.hlsl to the output tree.
-
-set(SHADER_DIR_SRC "${CMAKE_CURRENT_SOURCE_DIR}/assets/raw/shaders")
-set(SHADER_DIR_DST "${CMAKE_BINARY_DIR}/bin/assets/raw/shaders")
-
-file(MAKE_DIRECTORY "${SHADER_DIR_DST}")
-
-add_custom_command(
-    OUTPUT  "${SHADER_DIR_DST}/mesh.hlsl"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${SHADER_DIR_SRC}/mesh.hlsl" "${SHADER_DIR_DST}/mesh.hlsl"
-    DEPENDS "${SHADER_DIR_SRC}/mesh.hlsl"
-    COMMENT "Copying mesh.hlsl to output"
+target_sources(${PROJECT_NAME} INTERFACE
+    FILE_SET HEADERS
+    BASE_DIRS include
+    FILES ${SCRY_HEADERS}
 )
 
-add_custom_command(
-    OUTPUT  "${SHADER_DIR_DST}/cull.hlsl"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${SHADER_DIR_SRC}/cull.hlsl" "${SHADER_DIR_DST}/cull.hlsl"
-    DEPENDS "${SHADER_DIR_SRC}/cull.hlsl"
-    COMMENT "Copying cull.hlsl to output"
-)
+add_subdirectory(modules/glfw)
+add_subdirectory(modules/renderer)
+add_subdirectory(modules/imgui)
+add_subdirectory(modules/profiler)
+add_subdirectory(tests)
+add_subdirectory(samples/engine-basic)
 
-add_custom_target(copy_shaders
-    DEPENDS
-        "${SHADER_DIR_DST}/mesh.hlsl"
-        "${SHADER_DIR_DST}/cull.hlsl"
-)
-
-# ─── cook_assets custom target ───────────────────────────────────────────────
-add_custom_target(cook_assets
-    COMMAND $<TARGET_FILE:scry_cooker>
-            "${CMAKE_CURRENT_SOURCE_DIR}/assets/raw"
-            "${CMAKE_BINARY_DIR}/bin/assets/cooked"
-    DEPENDS scry_cooker copy_shaders
-    COMMENT "Cooking raw assets into cooked binary blobs"
-    VERBATIM
-)
-
-add_dependencies(scry cook_assets)

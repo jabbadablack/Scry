@@ -1,0 +1,26 @@
+---
+Checks: >
+  -*,
+  bugprone-*,
+  performance-*,
+  modernize-*,
+  readability-*,
+  portability-*,
+  misc-*,
+  -modernize-use-trailing-return-type,
+  -modernize-avoid-c-arrays,
+  -cppcoreguidelines-owning-memory,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -readability-magic-numbers
+
+WarningsAsErrors: 'performance-*,bugprone-*'
+
+CheckOptions:
+  - key:             performance-inefficient-vector-operation.EnableCXX11FixList
+    value:           'true'
+  - key:             performance-move-const-arg.CheckTriviallyCopyableMove
+    value:           'false'
+  - key:             modernize-pass-by-value.IncludeStyle
+    value:           'llvm'
+...

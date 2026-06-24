@@ -31,8 +31,18 @@ TEST_CASE("ChainedArena Core Functionality") {
         REQUIRE(ptr3 != nullptr);
         REQUIRE(reinterpret_cast<uintptr_t>(ptr3) % 16 == 0);
 
+        std::byte* ptr4 = arena.Allocate(64, 32);
+        REQUIRE(ptr4 != nullptr);
+        REQUIRE(reinterpret_cast<uintptr_t>(ptr4) % 32 == 0);
+
+        std::byte* ptr5 = arena.Allocate(128, 64);
+        REQUIRE(ptr5 != nullptr);
+        REQUIRE(reinterpret_cast<uintptr_t>(ptr5) % 64 == 0);
+
         REQUIRE(ptr2 > ptr1);
         REQUIRE(ptr3 > ptr2);
+        REQUIRE(ptr4 > ptr3);
+        REQUIRE(ptr5 > ptr4);
     }
 
     SUBCASE("Arena chaining on overflow") {

@@ -40,21 +40,23 @@ namespace engine {
         ENGINE_ASSERT(size > 0, "ChainedArena: allocation size must be greater than zero");
         ENGINE_ASSERT(alignment > 0, "ChainedArena: alignment must be greater than zero");
         ENGINE_ASSERT((alignment & (alignment - 1)) == 0, "ChainedArena: alignment must be a power of two");
-        ENGINE_ASSERT(alignment <= alignof(std::max_align_t), "ChainedArena: alignment exceeds max_align_t");
 
         while (true) {
             Block* cur      = m_current.load(std::memory_order_acquire);
             size_t expected = cur->offset.load(std::memory_order_relaxed);
 
             while (true) {
-                size_t aligned = (expected + alignment - 1) & ~(alignment - 1);
-                size_t end     = aligned + size;
+                uintptr_t data_addr      = reinterpret_cast<uintptr_t>(cur->data);
+                uintptr_t expected_addr = data_addr + expected;
+                uintptr_t aligned_addr  = (expected_addr + alignment - 1) & ~(alignment - 1);
+                size_t    aligned_offset = aligned_addr - data_addr;
+                size_t    end            = aligned_offset + size;
 
                 if (end > cur->capacity) break;
 
                 if (cur->offset.compare_exchange_weak(expected, end,
                         std::memory_order_release, std::memory_order_relaxed)) {
-                    return cur->data + aligned;
+                    return cur->data + aligned_offset;
                 }
                 // expected updated by CAS; retry alignment calc
             }

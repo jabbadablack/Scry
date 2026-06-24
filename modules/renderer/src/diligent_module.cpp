@@ -1,5 +1,6 @@
 #include "renderer/diligent_module.hpp"
 #include "diligent_allocator.hpp"
+#include <cstddef>
 #include <engine.hpp>
 #include <OS/IWindow.hpp>
 #include <ecs/components.hpp>
@@ -152,7 +153,7 @@ namespace engine::renderer {
                 BuffData.DataSize = intent.desc.size;
 
                 Diligent::RefCntAutoPtr<Diligent::IBuffer> pBuffer;
-                m_pDevice->CreateBuffer(BuffDesc, intent.data ? &BuffData : nullptr, &pBuffer);
+                m_pDevice->CreateBuffer(BuffDesc, (intent.data != nullptr) ? &BuffData : nullptr, &pBuffer);
                 m_buffers.Insert(intent.handle.GetIndex(), intent.handle.GetGeneration(), std::move(pBuffer));
             }
 
@@ -174,12 +175,12 @@ namespace engine::renderer {
                 Diligent::TextureData SubResources;
                 Diligent::TextureSubResData Mips[1];
                 Mips[0].pData = intent.data;
-                Mips[0].Stride = intent.desc.width * intent.desc.channels;
+                Mips[0].Stride = static_cast<Diligent::Uint64>(intent.desc.width) * intent.desc.channels;
                 SubResources.pSubResources = Mips;
                 SubResources.NumSubresources = 1;
 
                 Diligent::RefCntAutoPtr<Diligent::ITexture> pTexture;
-                m_pDevice->CreateTexture(TexDesc, intent.data ? &SubResources : nullptr, &pTexture);
+                m_pDevice->CreateTexture(TexDesc, (intent.data != nullptr) ? &SubResources : nullptr, &pTexture);
                 m_textures.Insert(intent.handle.GetIndex(), intent.handle.GetGeneration(), std::move(pTexture));
             }
 
@@ -191,7 +192,7 @@ namespace engine::renderer {
                 ShaderCI.Desc.UseCombinedTextureSamplers = true;
 
                 Diligent::RefCntAutoPtr<Diligent::IShader> pVS;
-                if (intent.desc.vs_source) {
+                if (intent.desc.vs_source != nullptr) {
                     ShaderCI.Desc.ShaderType = Diligent::SHADER_TYPE_VERTEX;
                     ShaderCI.Desc.Name = "DoD VS";
                     ShaderCI.Source = intent.desc.vs_source;
@@ -199,7 +200,7 @@ namespace engine::renderer {
                 }
 
                 Diligent::RefCntAutoPtr<Diligent::IShader> pPS;
-                if (intent.desc.ps_source) {
+                if (intent.desc.ps_source != nullptr) {
                     ShaderCI.Desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
                     ShaderCI.Desc.Name = "DoD PS";
                     ShaderCI.Source = intent.desc.ps_source;
@@ -254,24 +255,26 @@ namespace engine::renderer {
                 const auto& packet = queue.GetCommands()[i];
 
                 auto* pso = m_pipelines.Get(packet.pipeline.GetIndex(), packet.pipeline.GetGeneration());
-                if (!pso) continue;
+                if (pso == nullptr) { continue;
+}
 
                 m_pImmediateContext->SetPipelineState(pso);
 
                 // Bind SRB (Shader Resource Binding)
                 auto* srb = m_srbs.Get(packet.pipeline.GetIndex(), packet.pipeline.GetGeneration());
-                if (srb) m_pImmediateContext->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+                if (srb != nullptr) { m_pImmediateContext->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+}
 
                 // Bind Vertex/Index Buffers
                 auto* vBuffer = m_buffers.Get(packet.vertex_buffer.GetIndex(), packet.vertex_buffer.GetGeneration());
-                if (vBuffer) {
+                if (vBuffer != nullptr) {
                     Diligent::IBuffer* pBuffs[] = {vBuffer};
                     Diligent::Uint64 offsets[] = {0};
                     m_pImmediateContext->SetVertexBuffers(0, 1, pBuffs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION, Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
                 }
 
                 auto* iBuffer = m_buffers.Get(packet.index_buffer.GetIndex(), packet.index_buffer.GetGeneration());
-                if (iBuffer) {
+                if (iBuffer != nullptr) {
                     m_pImmediateContext->SetIndexBuffer(iBuffer, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
                     Diligent::DrawIndexedAttribs DrawAttrs;
                     DrawAttrs.NumIndices = packet.index_count;

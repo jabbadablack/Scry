@@ -257,14 +257,16 @@ void DiligentModule::RenderThreadLoop() {
                 pImGui->NewFrame(m_pSwapChain->GetDesc().Width, m_pSwapChain->GetDesc().Height,
                                  m_pSwapChain->GetDesc().PreTransform);
 
-                if (ImGui::Begin("Engine Profiler")) {
+                if (ImGui::Begin("SCRY Engine Tools")) {
+                    ImGui::Text("Renderer: Vulkan (Diligent)");
                     ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
-                    ImGui::Text("Delta Time: %.4f ms", m_engine->GetTime().GetDeltaTime() * 1000.0);
+                    ImGui::Text("Frame Time: %.4f ms", m_engine->GetTime().GetDeltaTime() * 1000.0);
                     ImGui::Separator();
-                    ImGui::Text("Memory: %zu MB", engine::TrackedHeap::GetCurrentUsage() / (1024 * 1024));
-                    ImGui::Text("Peak Memory: %zu MB", engine::TrackedHeap::GetPeakUsage() / (1024 * 1024));
-                    ImGui::Separator();
-                    ImGui::Text("DAG Nodes: %zu", m_engine->GetTaskflow().num_tasks());
+                    ImGui::Text("Memory Usage: %zu MB", engine::TrackedHeap::GetCurrentUsage() / (1024 * 1024));
+
+                    if (ImGui::Button("Connect Tracy Server")) {
+                        ENGINE_LOG_INFO("To view deep profiling, launch 'tracy-profiler' and connect to 127.0.0.1");
+                    }
                 }
                 ImGui::End();
 

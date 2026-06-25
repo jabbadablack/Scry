@@ -28,7 +28,14 @@ public:
 
     void BuildGraph(tf::Taskflow& taskflow) override {}
 
-    void RegisterReflection() override {}
+    void RegisterReflection() override {
+        using CurrentType = CameraIntent;
+        ENGINE_REFLECT_CLASS(CameraIntent)
+            .ENGINE_REFLECT_FIELD(target)
+            .ENGINE_REFLECT_FIELD(translationDelta)
+            .ENGINE_REFLECT_FIELD(yawDelta)
+            .ENGINE_REFLECT_FIELD(pitchDelta);
+    }
 
     void CompileFrameGraph(engine::FrameDAG& dag) override {
         const int* p_write = dag.p_write_state;
@@ -154,6 +161,18 @@ int main() {
 
     if (!engine.Initialize(800, 600, "SCRY")) {
         return -1;
+    }
+
+    ENGINE_LOG_INFO("Serializing Assets into data.pak...");
+    const std::string assets_physical = engine.GetVFS().GetMountPath("res://");
+    if (assets_physical.empty()) {
+        ENGINE_LOG_ERROR("res:// not mounted — cannot build data.pak");
+    } else if (!engine.GetVFS().PackDirectory("res://", assets_physical, "data.pak")) {
+        ENGINE_LOG_ERROR("PackDirectory failed — check that the assets folder exists");
+    } else if (engine.GetVFS().MountPak("data.pak")) {
+        ENGINE_LOG_INFO("Successfully mounted data.pak into VFS Memory");
+    } else {
+        ENGINE_LOG_ERROR("Failed to mount data.pak");
     }
 
     GenerateGridMesh(engine);

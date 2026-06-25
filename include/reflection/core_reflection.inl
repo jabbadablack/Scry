@@ -1,6 +1,7 @@
 #ifndef ENGINE_REFLECTION_CORE_REFLECTION_INL
 #define ENGINE_REFLECTION_CORE_REFLECTION_INL
 
+#include "builder.hpp"
 #include "../debug/logger.hpp"
 #include "../ecs/components.hpp"
 #include "../ecs/ecs_types.hpp"
@@ -127,53 +128,76 @@ ENGINE_INLINE void RegisterCoreReflection() {
         .data<&Sphere::center>(Hash("center")).prop(Hash("name"), "center")
         .data<&Sphere::radius>(Hash("radius")).prop(Hash("name"), "radius");
 
-    // ── 3. GRAPHICS ENUMS ────────────────────────────────────────────────
-    Meta<PrimitiveTopology>().type(Hash("PrimitiveTopology")).prop(Hash("name"), "PrimitiveTopology")
-        .data<PrimitiveTopology::TriangleList>(Hash("TriangleList")).prop(Hash("name"), "TriangleList")
-        .data<PrimitiveTopology::LineList>(Hash("LineList")).prop(Hash("name"), "LineList");
+    // ── 3. GRAPHICS ENUMS (Automated) ──────────────────────────────────────
+    {
+        using CurrentType = PrimitiveTopology;
+        ENGINE_REFLECT_CLASS(PrimitiveTopology)
+            .ENGINE_REFLECT_ENUM(TriangleList)
+            .ENGINE_REFLECT_ENUM(LineList);
+    }
+    {
+        using CurrentType = BufferUsage;
+        ENGINE_REFLECT_CLASS(BufferUsage)
+            .ENGINE_REFLECT_ENUM(Static)
+            .ENGINE_REFLECT_ENUM(Dynamic);
+    }
+    {
+        using CurrentType = RenderPass;
+        ENGINE_REFLECT_CLASS(RenderPass)
+            .ENGINE_REFLECT_ENUM(Opaque)
+            .ENGINE_REFLECT_ENUM(Transparent)
+            .ENGINE_REFLECT_ENUM(ZPrePass);
+    }
 
-    Meta<BufferUsage>().type(Hash("BufferUsage")).prop(Hash("name"), "BufferUsage")
-        .data<BufferUsage::Static>(Hash("Static")).prop(Hash("name"), "Static")
-        .data<BufferUsage::Dynamic>(Hash("Dynamic")).prop(Hash("name"), "Dynamic");
-
-    Meta<RenderPass>().type(Hash("RenderPass")).prop(Hash("name"), "RenderPass")
-        .data<RenderPass::Opaque>(Hash("Opaque")).prop(Hash("name"), "Opaque")
-        .data<RenderPass::Transparent>(Hash("Transparent")).prop(Hash("name"), "Transparent")
-        .data<RenderPass::ZPrePass>(Hash("ZPrePass")).prop(Hash("name"), "ZPrePass");
-
-    // ── 4. ECS COMPONENTS ────────────────────────────────────────────────
-    Meta<TransformComponent>().type(Hash("TransformComponent")).prop(Hash("name"), "TransformComponent")
-        .data<&TransformComponent::matrix>(Hash("matrix")).prop(Hash("name"), "matrix")
-        .data<&TransformComponent::previous_matrix>(Hash("previous_matrix")).prop(Hash("name"), "previous_matrix");
-
-    Meta<RenderComponent>().type(Hash("RenderComponent")).prop(Hash("name"), "RenderComponent")
-        .data<&RenderComponent::mesh_id>(Hash("mesh_id")).prop(Hash("name"), "mesh_id")
-        .data<&RenderComponent::texture_id>(Hash("texture_id")).prop(Hash("name"), "texture_id")
-        .data<&RenderComponent::topology>(Hash("topology")).prop(Hash("name"), "topology");
-
-    Meta<TagComponent>().type(Hash("TagComponent")).prop(Hash("name"), "TagComponent")
-        .data<&TagComponent::tag>(Hash("tag")).prop(Hash("name"), "tag");
-
-    Meta<HierarchyComponent>().type(Hash("HierarchyComponent")).prop(Hash("name"), "HierarchyComponent")
-        .data<&HierarchyComponent::parent>(Hash("parent")).prop(Hash("name"), "parent")
-        .data<&HierarchyComponent::first_child>(Hash("first_child")).prop(Hash("name"), "first_child")
-        .data<&HierarchyComponent::prev_sibling>(Hash("prev_sibling")).prop(Hash("name"), "prev_sibling")
-        .data<&HierarchyComponent::next_sibling>(Hash("next_sibling")).prop(Hash("name"), "next_sibling");
-
-    Meta<CameraComponent>().type(Hash("CameraComponent")).prop(Hash("name"), "CameraComponent")
-        .data<&CameraComponent::fov>(Hash("fov")).prop(Hash("name"), "fov")
-        .data<&CameraComponent::near_plane>(Hash("near_plane")).prop(Hash("name"), "near_plane")
-        .data<&CameraComponent::far_plane>(Hash("far_plane")).prop(Hash("name"), "far_plane")
-        .data<&CameraComponent::is_active>(Hash("is_active")).prop(Hash("name"), "is_active");
-
-    Meta<EnvironmentComponent>().type(Hash("EnvironmentComponent")).prop(Hash("name"), "EnvironmentComponent")
-        .data<&EnvironmentComponent::bounds>(Hash("bounds")).prop(Hash("name"), "bounds")
-        .data<&EnvironmentComponent::gravity>(Hash("gravity")).prop(Hash("name"), "gravity")
-        .data<&EnvironmentComponent::ambient_color>(Hash("ambient_color")).prop(Hash("name"), "ambient_color")
-        .data<&EnvironmentComponent::fog_density>(Hash("fog_density")).prop(Hash("name"), "fog_density");
-
-    Meta<EditorComponent>().type(Hash("EditorComponent")).prop(Hash("name"), "EditorComponent")
-        .data<&EditorComponent::show_overlay>(Hash("show_overlay")).prop(Hash("name"), "show_overlay");
+    // ── 4. ECS COMPONENTS (Automated) ──────────────────────────────────────
+    {
+        using CurrentType = TransformComponent;
+        ENGINE_REFLECT_CLASS(TransformComponent)
+            .ENGINE_REFLECT_FIELD(matrix)
+            .ENGINE_REFLECT_FIELD(previous_matrix);
+    }
+    {
+        using CurrentType = RenderComponent;
+        ENGINE_REFLECT_CLASS(RenderComponent)
+            .ENGINE_REFLECT_FIELD(mesh_id)
+            .ENGINE_REFLECT_FIELD(texture_id)
+            .ENGINE_REFLECT_FIELD(topology);
+    }
+    {
+        using CurrentType = TagComponent;
+        ENGINE_REFLECT_CLASS(TagComponent)
+            .ENGINE_REFLECT_FIELD(tag);
+    }
+    {
+        using CurrentType = HierarchyComponent;
+        ENGINE_REFLECT_CLASS(HierarchyComponent)
+            .ENGINE_REFLECT_FIELD(parent)
+            .ENGINE_REFLECT_FIELD(first_child)
+            .ENGINE_REFLECT_FIELD(prev_sibling)
+            .ENGINE_REFLECT_FIELD(next_sibling);
+    }
+    {
+        using CurrentType = CameraComponent;
+        ENGINE_REFLECT_CLASS(CameraComponent)
+            .ENGINE_REFLECT_FIELD(fov)
+            .ENGINE_REFLECT_FIELD(near_plane)
+            .ENGINE_REFLECT_FIELD(far_plane)
+            .ENGINE_REFLECT_FIELD(is_active)
+            .ENGINE_REFLECT_FIELD(view_proj);
+    }
+    {
+        using CurrentType = EnvironmentComponent;
+        ENGINE_REFLECT_CLASS(EnvironmentComponent)
+            .ENGINE_REFLECT_FIELD(bounds)
+            .ENGINE_REFLECT_FIELD(gravity)
+            .ENGINE_REFLECT_FIELD(ambient_color)
+            .ENGINE_REFLECT_FIELD(fog_density);
+    }
+    {
+        using CurrentType = EditorComponent;
+        ENGINE_REFLECT_CLASS(EditorComponent)
+            .ENGINE_REFLECT_FIELD(show_overlay);
+    }
 
     ENGINE_LOG_INFO("Core Engine Reflection Registered");
 }

@@ -18,6 +18,7 @@
 #include "time/ITime.hpp"
 #include "engine.hpp"
 #include "reflection/core_reflection.hpp"
+#include "reflection/builder.hpp"
 #include "module/module.hpp"
 #include "module/system_builder.hpp"
 #include "ecs/ecs_types.hpp"

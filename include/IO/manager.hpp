@@ -5,6 +5,7 @@
 #include "vfs.hpp"
 #include "threading/job_system.hpp"
 #include "../ecs/ecs_types.hpp"
+#include "../ecs/ecs_allocator.hpp"
 #include <entt/entt.hpp>
 #include <future>
 #include <vector>
@@ -27,24 +28,24 @@ namespace engine::io {
 
     class ResourceManager {
     public:
-        // TextureLoader functor supporting path loading and Custom Loader redirection
+        // TextureLoader functor supporting VFS buffer loading and Custom Loader redirection
         struct TextureLoader {
             using result_type = std::shared_ptr<Texture>;
-            
-            [[nodiscard]] ENGINE_INLINE result_type operator()(const char* path) const;
-            
+
+            [[nodiscard]] ENGINE_INLINE result_type operator()(const std::vector<std::byte, engine::ecs::EcsAllocator<std::byte>>& buffer) const;
+
             template <typename Loader>
             [[nodiscard]] ENGINE_INLINE result_type operator()(const Loader& loader) const {
                 return loader();
             }
         };
 
-        // MeshLoader functor supporting path loading and Custom Loader redirection
+        // MeshLoader functor supporting VFS buffer loading and Custom Loader redirection
         struct MeshLoader {
             using result_type = std::shared_ptr<Mesh>;
-            
-            [[nodiscard]] ENGINE_INLINE result_type operator()(const char* path) const;
-            
+
+            [[nodiscard]] ENGINE_INLINE result_type operator()(const std::vector<std::byte, engine::ecs::EcsAllocator<std::byte>>& buffer, const char* extension) const;
+
             template <typename Loader>
             [[nodiscard]] ENGINE_INLINE result_type operator()(const Loader& loader) const {
                 return loader();

@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <shared_mutex>
 #include "../OS/types.h"
+#include "../debug/assert.h"
 
 namespace engine {
 

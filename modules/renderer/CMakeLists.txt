@@ -50,6 +50,10 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(DiligentCore DiligentTools DiligentFX)
 
+if(TARGET Diligent-Imgui)
+    target_link_libraries(Diligent-Imgui PUBLIC imgui)
+endif()
+
 # Define DiligentTools interface target to wrap individual DiligentTools static libraries
 add_library(DiligentTools INTERFACE)
 target_link_libraries(DiligentTools INTERFACE
@@ -84,7 +88,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     endforeach()
 endif()
 
-add_library(renderer STATIC src/diligent_module.cpp)
+add_library(renderer STATIC src/diligent_module.cpp src/diligent_thread.cpp)
 
 target_include_directories(renderer PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -103,6 +107,7 @@ target_link_libraries(renderer PUBLIC
     Diligent-GraphicsEngineVk-static
     DiligentTools
     DiligentFX
+    Diligent-Imgui
 )
 
 # Exclude shared variants from the build to avoid MinGW linker map script errors

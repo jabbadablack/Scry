@@ -1,9 +1,9 @@
+#include <GLFW/glfw3.h>
+#include <IO/vfs.hpp>
+#include <OS/glfw/glfw_input.hpp>
+#include <OS/glfw/glfw_window.hpp>
 #include <doctest/doctest.h>
 #include <engine.hpp>
-#include <OS/glfw/glfw_window.hpp>
-#include <OS/glfw/glfw_input.hpp>
-#include <IO/vfs.hpp>
-#include <GLFW/glfw3.h>
 
 class MockModule : public engine::IModule {
 public:
@@ -36,9 +36,7 @@ public:
         }
     }
 
-    const char* GetName() const override {
-        return "MockModule";
-    }
+    const char* GetName() const override { return "MockModule"; }
 };
 
 TEST_CASE("Engine Module Lifecycle Integration") {
@@ -82,42 +80,42 @@ TEST_CASE("Engine Module Lifecycle Integration") {
 
 TEST_CASE("Intent Queue Operations") {
     engine::ChainedArena arena(64 * 1024);
-    
+
     struct MockIntent {
         int x;
         float y;
     };
-    
+
     engine::IntentQueue<MockIntent> queue;
     queue.Initialize(arena, 100);
-    
+
     // Test initial state
     auto begin_it = queue.begin();
     auto end_it = queue.end();
     REQUIRE(begin_it == end_it);
-    
+
     // Test push
-    MockIntent intent1{.x=42, .y=3.14F};
+    MockIntent intent1{.x = 42, .y = 3.14F};
     auto handle1 = queue.Push(intent1, arena);
-    
+
     REQUIRE(handle1 != nullptr);
     REQUIRE(handle1->data != nullptr);
     REQUIRE(handle1->data->x == 42);
     REQUIRE(handle1->data->y == doctest::Approx(3.14f));
     REQUIRE(handle1->state == engine::IntentState::Pending);
-    
+
     // Test count after push
     begin_it = queue.begin();
     end_it = queue.end();
     REQUIRE(end_it - begin_it == 1);
     REQUIRE(begin_it[0].data->x == 42);
-    
+
     // Test multiple pushes
-    MockIntent intent2{.x=100, .y=1.23F};
+    MockIntent intent2{.x = 100, .y = 1.23F};
     auto handle2 = queue.Push(intent2, arena);
     REQUIRE(handle2 != nullptr);
     REQUIRE(handle2->data->x == 100);
-    
+
     begin_it = queue.begin();
     end_it = queue.end();
     REQUIRE(end_it - begin_it == 2);
@@ -128,24 +126,22 @@ class DynamicMockModule : public engine::IModule {
 public:
     bool compile_called = false;
 
-    bool Initialize(engine::Engine&  /*engine*/) override {
-        return true;
-    }
+    bool Initialize(engine::Engine& /*engine*/) override { return true; }
 
     void BuildGraph(tf::Taskflow& taskflow) override {}
 
     void CompileFrameGraph(engine::FrameDAG& dag) override {
         compile_called = true;
-        dag.taskflow.emplace([]() {
-            // Mock dynamic frame task
-        }).name("DynamicMockTask");
+        dag.taskflow
+            .emplace([]() {
+                // Mock dynamic frame task
+            })
+            .name("DynamicMockTask");
     }
 
     void Shutdown() override {}
 
-    const char* GetName() const override {
-        return "DynamicMockModule";
-    }
+    const char* GetName() const override { return "DynamicMockModule"; }
 };
 
 TEST_CASE("Dynamic Module Frame Graph Compilation") {
@@ -167,12 +163,14 @@ TEST_CASE("Dynamic Module Frame Graph Compilation") {
 
     // Let's run a single simulation iteration of the frame compiler
     engine.GetTaskflow().clear();
-    tf::Task phase_intent = engine.GetTaskflow().emplace([](){});
-    tf::Task phase_reactor = engine.GetTaskflow().emplace([](){});
-    tf::Task phase_extract = engine.GetTaskflow().emplace([](){});
-    engine::FrameDAG dag{engine.GetTaskflow(), phase_intent, phase_reactor, phase_extract, engine.GetWriteState(), engine.GetWriteState()};
+    tf::Task phase_intent = engine.GetTaskflow().emplace([]() {});
+    tf::Task phase_reactor = engine.GetTaskflow().emplace([]() {});
+    tf::Task phase_extract = engine.GetTaskflow().emplace([]() {});
+    int w_state = engine.GetWriteState();
+    int r_state = engine.GetRenderReadState();
+    engine::FrameDAG dag{engine.GetTaskflow(), phase_intent, phase_reactor, phase_extract, &w_state, &r_state};
     mock.CompileFrameGraph(dag);
-    
+
     REQUIRE(mock.compile_called == true);
     REQUIRE(engine.GetTaskflow().empty() == false);
 
@@ -193,5 +191,3 @@ TEST_CASE("Virtual File System Resolution") {
     result = vfs.Resolve("invalid://file.txt", out_path);
     REQUIRE(result == false);
 }
-
-

@@ -7,7 +7,7 @@
 - [ ] implement physics module.
 - [ ] implement audio module.
 - [x] find a way to use memory without preallocating a massive amount of memory all at once.
-- [ ] multithreaded rendering, shaders, and instancing.
+- [x] multithreaded rendering, shaders, and instancing.
 - [ ]  complete imgui implementation with multithreading and tracy (this will be hard).
 - [ ] work on modulation system.
 - [ ] simplify API.

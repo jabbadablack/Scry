@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 3.19)
 project(SCRY C CXX)
 
-# Default to Release to prevent multi-GB Debug binaries
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
 endif()
@@ -9,98 +8,43 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
-
 include(FetchContent)
 
-FetchContent_Declare(
-    glfw
-    GIT_REPOSITORY https://github.com/glfw/glfw.git
-    GIT_TAG master
-    SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/_deps/glfw-src
-)
+# Fetch Core Dependencies
+FetchContent_Declare(glfw GIT_REPOSITORY https://github.com/glfw/glfw.git GIT_TAG master)
+FetchContent_Declare(taskflow GIT_REPOSITORY https://github.com/taskflow/taskflow.git GIT_TAG master)
+FetchContent_Declare(doctest GIT_REPOSITORY https://github.com/doctest/doctest.git GIT_TAG v2.4.11)
+FetchContent_Declare(eigen GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git GIT_TAG 3.4.0)
+FetchContent_Declare(entt GIT_REPOSITORY https://github.com/skypjack/entt.git GIT_TAG v3.13.0)
+FetchContent_Declare(stb GIT_REPOSITORY https://github.com/nothings/stb.git GIT_TAG master)
+FetchContent_Declare(assimp GIT_REPOSITORY https://github.com/assimp/assimp.git GIT_TAG v5.3.1)
 
-FetchContent_Declare(
-    taskflow
-    GIT_REPOSITORY https://github.com/taskflow/taskflow.git
-    GIT_TAG master
-    SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/_deps/taskflow-src
-)
+# Fetch ImGui & Tracy into Core
+FetchContent_Declare(imgui GIT_REPOSITORY https://github.com/ocornut/imgui.git GIT_TAG docking)
+FetchContent_Declare(tracy GIT_REPOSITORY https://github.com/wolfpld/tracy.git GIT_TAG master)
 
-FetchContent_Declare(
-    doctest
-    GIT_REPOSITORY https://github.com/doctest/doctest.git
-    GIT_TAG v2.4.11
-    SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/_deps/doctest-src
-)
-
-FetchContent_Declare(
-    eigen
-    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-    GIT_TAG 3.4.0
-    SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/_deps/eigen-src
-)
-
-FetchContent_Declare(
-    entt
-    GIT_REPOSITORY https://github.com/skypjack/entt.git
-    GIT_TAG v3.13.0
-    SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/_deps/entt-src
-)
-
-FetchContent_Declare(
-    stb
-    GIT_REPOSITORY https://github.com/nothings/stb.git
-    GIT_TAG master
-    SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/_deps/stb-src
-)
-
-FetchContent_Declare(
-    assimp
-    GIT_REPOSITORY https://github.com/assimp/assimp.git
-    GIT_TAG v5.3.1
-    SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/_deps/assimp-src
-)
-
-# Speed up Assimp compilation and disable warnings as errors for newer compilers
+# Dependency Configs
 set(ASSIMP_BUILD_ASSIMP_TOOLS OFF CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(ASSIMP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(ASSIMP_INSTALL OFF CACHE BOOL "" FORCE)
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-set(ASSIMP_NO_EXPORT ON CACHE BOOL "" FORCE)
-set(ASSIMP_BUILD_ZLIB ON CACHE BOOL "" FORCE)
-set(ASSIMP_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
-
-# GLFW
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(TRACY_ENABLE ON CACHE BOOL "" FORCE)
+set(TRACY_ON_DEMAND ON CACHE BOOL "" FORCE)
 
-# TASKFLOW
-set(TF_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(TF_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(glfw taskflow doctest entt assimp tracy)
 
-FetchContent_MakeAvailable(
-    glfw
-    taskflow
-    doctest
-    entt
-    assimp
-)
-
-# GCC emits a false-positive -Warray-bounds in Assimp's X3DGeoHelper when
-# vector::back() is inlined and the optimizer's range analysis goes wrong.
-if(TARGET assimp AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    target_compile_options(assimp PRIVATE -Wno-array-bounds)
+# ImGui setup
+FetchContent_GetProperties(imgui)
+if(NOT imgui_POPULATED)
+    FetchContent_Populate(imgui)
 endif()
+file(WRITE ${imgui_SOURCE_DIR}/CMakeLists.txt "cmake_minimum_required(VERSION 3.19)\nproject(imgui CXX)\nadd_library(imgui STATIC imgui.cpp imgui_demo.cpp imgui_draw.cpp imgui_tables.cpp imgui_widgets.cpp backends/imgui_impl_glfw.cpp)\ntarget_include_directories(imgui PUBLIC \${CMAKE_CURRENT_SOURCE_DIR} \${CMAKE_CURRENT_SOURCE_DIR}/backends)\ntarget_link_libraries(imgui PUBLIC glfw)\nadd_library(imgui::imgui ALIAS imgui)\n")
+add_subdirectory(${imgui_SOURCE_DIR} ${imgui_BINARY_DIR})
 
-# Manually populate header-only Eigen and stb dependencies to prevent configuration conflicts
+# Header-only setups
 FetchContent_GetProperties(eigen)
 if(NOT eigen_POPULATED)
     FetchContent_Populate(eigen)
 endif()
-
 FetchContent_GetProperties(stb)
 if(NOT stb_POPULATED)
     FetchContent_Populate(stb)
@@ -109,65 +53,31 @@ endif()
 add_library(${PROJECT_NAME} INTERFACE)
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 
-target_include_directories(${PROJECT_NAME}
-    INTERFACE
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${eigen_SOURCE_DIR}>
-        $<BUILD_INTERFACE:${stb_SOURCE_DIR}>
+target_include_directories(${PROJECT_NAME} INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${eigen_SOURCE_DIR}>
+    $<BUILD_INTERFACE:${stb_SOURCE_DIR}>
 )
 
-target_link_libraries(${PROJECT_NAME}
-    INTERFACE
-        glfw
-        Taskflow
-        EnTT::EnTT
-        assimp
-)
-
+target_link_libraries(${PROJECT_NAME} INTERFACE glfw Taskflow EnTT::EnTT assimp imgui::imgui TracyClient)
 if(WIN32)
-    target_link_libraries(${PROJECT_NAME}
-        INTERFACE
-            winmm
-    )
+    target_link_libraries(${PROJECT_NAME} INTERFACE winmm)
 endif()
 
+# POTATO PC / EXTREME RAM REDUCTION
 if(MSVC)
-    target_compile_options(${PROJECT_NAME} INTERFACE $<$<NOT:$<CONFIG:Debug>>:/GR->)
-else()
-    target_compile_options(${PROJECT_NAME} INTERFACE $<$<NOT:$<CONFIG:Debug>>:-fno-rtti>)
-endif()
-
-target_compile_definitions(${PROJECT_NAME} INTERFACE
-    ENTT_PACKED_PAGE=128
-    ENTT_SPARSE_PAGE=128
-)
-
-if(MSVC)
-    target_compile_options(${PROJECT_NAME} INTERFACE /Gy /Gw)
-    
+    target_compile_options(${PROJECT_NAME} INTERFACE $<$<NOT:$<CONFIG:Debug>>:/GR-> /Gy /Gw)
     target_link_options(${PROJECT_NAME} INTERFACE /OPT:REF /OPT:ICF)
 else()
-    target_compile_options(${PROJECT_NAME} INTERFACE -ffunction-sections -fdata-sections)
-    
+    target_compile_options(${PROJECT_NAME} INTERFACE $<$<NOT:$<CONFIG:Debug>>:-fno-rtti> -ffunction-sections -fdata-sections)
     target_link_options(${PROJECT_NAME} INTERFACE -Wl,--gc-sections)
 endif()
 
-file(GLOB_RECURSE SCRY_HEADERS 
-    CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h"
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/*.inl"
-)
+target_compile_definitions(${PROJECT_NAME} INTERFACE ENTT_PACKED_PAGE=128 ENTT_SPARSE_PAGE=128)
 
-target_sources(${PROJECT_NAME} INTERFACE
-    FILE_SET HEADERS
-    BASE_DIRS include
-    FILES ${SCRY_HEADERS}
-)
+file(GLOB_RECURSE SCRY_HEADERS CONFIGURE_DEPENDS "include/*.h" "include/*.hpp" "include/*.inl")
+target_sources(${PROJECT_NAME} INTERFACE FILE_SET HEADERS BASE_DIRS include FILES ${SCRY_HEADERS})
 
 add_subdirectory(modules/renderer)
-add_subdirectory(modules/imgui)
-add_subdirectory(modules/profiler)
 add_subdirectory(tests)
 add_subdirectory(samples/engine-basic)
-

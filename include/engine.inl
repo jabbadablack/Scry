@@ -1,252 +1,238 @@
 #ifndef ENGINE_CORE_ENGINE_INL
 #define ENGINE_CORE_ENGINE_INL
 
-#include "engine.hpp"
-#include "debug/logger.hpp"
-#include "OS/glfw/glfw_window.hpp"
 #include "OS/glfw/glfw_input.hpp"
+#include "OS/glfw/glfw_window.hpp"
+#include "debug/logger.hpp"
+#include "engine.hpp"
 
 namespace engine {
 
-    // Constructor
-    ENGINE_INLINE Engine::Engine()
-        : m_input(nullptr)
-        , m_jobSystem()
-        , m_vfs()
-        , m_resourceManager(m_jobSystem, m_vfs)
-        , m_registry()
-        , m_taskflow()
-        , m_modules()
-        , m_frameArenas{ChainedArena(64 * 1024), ChainedArena(64 * 1024)}
-    {
-        static struct TrackedHeapLeakSentinel {
-            ~TrackedHeapLeakSentinel() noexcept {
-                engine::TrackedHeap::AssertNoLeaks();
-            }
-        } s_sentinel;
+// Constructor
+ENGINE_INLINE Engine::Engine()
+    : m_input(nullptr), m_jobSystem(), m_vfs(), m_resourceManager(m_jobSystem, m_vfs), m_registry(), m_taskflow(),
+      m_modules(), m_frameArenas{ChainedArena(64 * 1024), ChainedArena(64 * 1024)} {
+    static struct TrackedHeapLeakSentinel {
+        ~TrackedHeapLeakSentinel() noexcept { engine::TrackedHeap::AssertNoLeaks(); }
+    } s_sentinel;
+}
+
+// Destructor: calls Shutdown()
+ENGINE_INLINE Engine::~Engine() {
+    Shutdown();
+}
+
+// Initialize all registered modules with given input interface
+ENGINE_INLINE bool Engine::Initialize(IInput* input) {
+    ENGINE_ASSERT(m_writeState == 0, "Engine double-initialized: write state is dirty");
+    ENGINE_ASSERT(m_renderReadState == 1, "Engine double-initialized: render read state is dirty");
+
+    bool mounted = m_vfs.AutoMount("res://", "assets");
+    ENGINE_ASSERT(mounted, "VFS failed to mount 'res://' — 'assets' folder not found");
+    if (!mounted) {
+        ENGINE_LOG_ERROR("Engine::Initialize — VFS could not locate 'assets' folder");
+        return false;
     }
 
-    // Destructor: calls Shutdown()
-    ENGINE_INLINE Engine::~Engine() {
-        Shutdown();
+    m_input = input;
+    ENGINE_LOG_INFO("Engine initializing");
+
+    ENGINE_LOG_INFO("Engine: Registering module reflection types");
+    for (auto& module : m_modules) {
+        module->RegisterReflection();
     }
 
-    // Initialize all registered modules with given input interface
-    ENGINE_INLINE bool Engine::Initialize(IInput* input) {
-        ENGINE_ASSERT(m_writeState == 0, "Engine double-initialized: write state is dirty");
-        ENGINE_ASSERT(m_renderReadState == 1, "Engine double-initialized: render read state is dirty");
-
-        bool mounted = m_vfs.AutoMount("res://", "assets");
-        ENGINE_ASSERT(mounted, "VFS failed to mount 'res://' — 'assets' folder not found");
-        if (!mounted) {
-            ENGINE_LOG_ERROR("Engine::Initialize — VFS could not locate 'assets' folder");
+    for (auto& module : m_modules) {
+        ENGINE_ASSERT(module != nullptr, "Null module registered in Engine");
+        ENGINE_ASSERT(module->GetName() != nullptr, "Module returned null name");
+        ENGINE_LOG_INFO("Initializing module: " + std::string(module->GetName()));
+        if (!module->Initialize(*this)) {
+            ENGINE_LOG_ERROR("Module initialization failed: " + std::string(module->GetName()));
             return false;
         }
+        ENGINE_LOG_INFO("Module initialized: " + std::string(module->GetName()));
+    }
 
-        m_input = input;
-        ENGINE_LOG_INFO("Engine initializing");
+    for (auto& module : m_modules) {
+        module->BuildGraph(m_taskflow);
+    }
 
-        ENGINE_LOG_INFO("Engine: Registering module reflection types");
-        for (auto& module : m_modules) {
-            module->RegisterReflection();
+    ENGINE_LOG_INFO("Engine initialized");
+    return true;
+}
+
+ENGINE_INLINE bool Engine::Initialize(int width, int height, const char* title) {
+    auto window = std::make_unique<GlfwWindow>();
+    window->Initialize();
+    window->CreateWindow(width, height, title);
+
+    auto input = std::make_unique<GlfwInput>();
+    input->Initialize(window->GetRawWindow());
+
+    m_windowManager.SetMainWindow(window.get());
+
+    m_defaultWindow = std::move(window);
+    m_defaultInput = std::move(input);
+
+    return Initialize(m_defaultInput.get());
+}
+
+ENGINE_INLINE void Engine::Run() {
+    ENGINE_ASSERT(!m_modules.empty(), "Engine::Run called with no registered modules");
+    ENGINE_LOG_INFO("Engine run loop started");
+
+    m_ITime.Initialize();
+    double accumulator = 0.0;
+    const double target_dt = m_ITime.GetFixedDeltaTime();
+
+    while (!m_windowManager.ShouldClose()) {
+        m_ITime.Update();
+        accumulator += m_ITime.GetDeltaTime();
+
+        while (accumulator >= target_dt) {
+            Tick();
+            accumulator -= target_dt;
         }
 
-        for (auto& module : m_modules) {
-            ENGINE_ASSERT(module != nullptr, "Null module registered in Engine");
-            ENGINE_ASSERT(module->GetName() != nullptr, "Module returned null name");
-            ENGINE_LOG_INFO("Initializing module: " + std::string(module->GetName()));
-            if (!module->Initialize(*this)) {
-                ENGINE_LOG_ERROR("Module initialization failed: " + std::string(module->GetName()));
-                return false;
-            }
-            ENGINE_LOG_INFO("Module initialized: " + std::string(module->GetName()));
-        }
-
-        for (auto& module : m_modules) {
-            module->BuildGraph(m_taskflow);
-        }
-
-        ENGINE_LOG_INFO("Engine initialized");
-        return true;
+        SetInterpolationAlpha(accumulator / target_dt);
+        m_windowManager.PollAllEvents();
+        engine::ITime::Sleep(1);
     }
 
-    ENGINE_INLINE bool Engine::Initialize(int width, int height, const char* title) {
-        auto window = std::make_unique<GlfwWindow>();
-        window->Initialize();
-        window->CreateWindow(width, height, title);
+    ENGINE_LOG_INFO("Engine run loop exited");
+}
 
-        auto input = std::make_unique<GlfwInput>();
-        input->Initialize(window->GetRawWindow());
+ENGINE_INLINE void Engine::Tick() {
+    m_resourceManager.Update();
 
-        m_windowManager.SetMainWindow(window.get());
+    m_writeState = 1 - m_writeState;
+    m_frameArenas[m_writeState].Clear();
 
-        m_defaultWindow = std::move(window);
-        m_defaultInput = std::move(input);
-
-        return Initialize(m_defaultInput.get());
+    if (m_input != nullptr && (m_input->IsKeyPressed(engine::Key::F11) || m_input->IsKeyPressed(engine::Key::P))) {
+        ToggleProfiler();
+        ENGINE_LOG_INFO(std::string("[INPUT] ToggleProfiler pressed. Profiler active: ") + (IsProfilerActive() ? "YES" : "NO"));
     }
 
-    ENGINE_INLINE void Engine::Run() {
-        ENGINE_ASSERT(!m_modules.empty(), "Engine::Run called with no registered modules");
-        ENGINE_LOG_INFO("Engine run loop started");
+    // Execute the Instanced/Cached DAG
+    m_jobSystem.GetExecutor().run(m_taskflow).wait();
 
-        m_ITime.Initialize();
-        double accumulator = 0.0;
-        const double target_dt = m_ITime.GetFixedDeltaTime();
+    if (m_input != nullptr) {
+        m_input->Update();
+    }
+}
 
-        while (!m_windowManager.ShouldClose()) {
-            m_ITime.Update();
-            accumulator += m_ITime.GetDeltaTime();
+// Sets interpolation alpha and updates read/write double buffer sync states
+ENGINE_INLINE void Engine::SetInterpolationAlpha(double alpha) {
+    ENGINE_ASSERT(alpha >= 0.0, "Interpolation alpha must be >= 0.0");
+    ENGINE_ASSERT(alpha <= 1.0, "Interpolation alpha must be <= 1.0");
 
-            while (accumulator >= target_dt) {
-                Tick();
-                accumulator -= target_dt;
-            }
+    std::lock_guard<std::mutex> lock(m_renderSwapMutex);
+    m_renderReadState = m_writeState;
+    m_interpolationAlpha = alpha;
+}
 
-            SetInterpolationAlpha(accumulator / target_dt);
-            m_windowManager.PollAllEvents();
-            engine::ITime::Sleep(1);
-        }
+// Execute Intent Frame to generate intents
+ENGINE_INLINE void Engine::ExecuteIntentFrame() {
+    // Hook for intent-generation systems
+}
 
-        ENGINE_LOG_INFO("Engine run loop exited");
+// Shutdown Engine and clean up resources
+ENGINE_INLINE void Engine::Shutdown() {
+    ENGINE_ASSERT(m_writeState == 0 || m_writeState == 1, "Write state corrupted at shutdown");
+    ENGINE_ASSERT(m_renderReadState == 0 || m_renderReadState == 1, "Render read state corrupted at shutdown");
+
+    ENGINE_LOG_INFO("Engine shutting down");
+
+    for (auto it = m_modules.rbegin(); it != m_modules.rend(); ++it) {
+        ENGINE_ASSERT(*it != nullptr, "Null module encountered during shutdown");
+        ENGINE_LOG_INFO("Shutting down module: " + std::string((*it)->GetName()));
+        (*it)->Shutdown();
+        ENGINE_LOG_INFO("Module shut down: " + std::string((*it)->GetName()));
+    }
+    m_modules.clear();
+
+    ENGINE_LOG_INFO("Engine shutdown complete");
+    engine::debug::AsyncLogger::Get().Shutdown();
+}
+
+ENGINE_INLINE void Engine::RebuildExecutionGraph() {
+    ENGINE_ASSERT(!m_modules.empty(), "RebuildExecutionGraph called with no modules");
+    m_taskflow.clear();
+
+    for (auto& module : m_modules) {
+        module->BuildGraph(m_taskflow);
     }
 
-    // Processes exactly one frame iteration
-    ENGINE_INLINE void Engine::Tick() {
-        ENGINE_ASSERT(m_writeState >= 0 && m_writeState < 2, "Write state index out of range");
-        ENGINE_ASSERT(!m_modules.empty(), "Engine::Tick called with no registered modules");
+    tf::Task phase_intent = m_taskflow.emplace([]() {}).name("BARRIER_Intent");
+    tf::Task phase_reactor = m_taskflow.emplace([]() {}).name("BARRIER_Reactor");
+    tf::Task phase_extract = m_taskflow.emplace([]() {}).name("BARRIER_Extract");
 
-        m_resourceManager.Update();
+    phase_intent.precede(phase_reactor);
+    phase_reactor.precede(phase_extract);
 
-        m_writeState = 1 - m_writeState;
-        m_frameArenas[m_writeState].Clear();
+    FrameDAG dag{m_taskflow, phase_intent, phase_reactor, phase_extract, &m_writeState, &m_renderReadState};
 
-        m_taskflow.clear();
-
-        // Create absolute synchronization barriers
-        tf::Task phase_intent = m_taskflow.emplace([](){}).name("BARRIER_Intent");
-        tf::Task phase_reactor = m_taskflow.emplace([](){}).name("BARRIER_Reactor");
-        tf::Task phase_extract = m_taskflow.emplace([](){}).name("BARRIER_Extract");
-
-        // Enforce ISR architectural order
-        phase_intent.precede(phase_reactor);
-        phase_reactor.precede(phase_extract);
-
-        FrameDAG dag{m_taskflow, phase_intent, phase_reactor, phase_extract, m_writeState, m_renderReadState};
-
-        for (auto& module : m_modules) {
-            module->CompileFrameGraph(dag);
-        }
-
-        // 3. Execute the DAG
-        m_jobSystem.GetExecutor().run(m_taskflow).wait();
-
-        if (m_input != nullptr) {
-            m_input->Update();
-        }
+    for (auto& module : m_modules) {
+        module->CompileFrameGraph(dag);
     }
+}
 
-    // Sets interpolation alpha and updates read/write double buffer sync states
-    ENGINE_INLINE void Engine::SetInterpolationAlpha(double alpha) {
-        ENGINE_ASSERT(alpha >= 0.0, "Interpolation alpha must be >= 0.0");
-        ENGINE_ASSERT(alpha <= 1.0, "Interpolation alpha must be <= 1.0");
+// Register module template implementation
+template <typename T, typename... Args>
+ENGINE_INLINE T& Engine::RegisterModule(Args&&... args) {
+    auto module = std::make_unique<T>(std::forward<Args>(args)...);
+    ENGINE_ASSERT(module != nullptr, "Failed to allocate module");
+    ENGINE_ASSERT(module->GetName() != nullptr, "Registered module returned null name");
 
-        std::lock_guard<std::mutex> lock(m_renderSwapMutex);
-        m_renderReadState = m_writeState;
-        m_interpolationAlpha = alpha;
-    }
+    T& ref = *module;
+    m_modules.push_back(std::move(module));
+    return ref;
+}
 
-    // Execute Intent Frame to generate intents
-    ENGINE_INLINE void Engine::ExecuteIntentFrame() {
-        // Hook for intent-generation systems
-    }
+// Resource Manager accessors
+ENGINE_INLINE engine::io::ResourceManager& Engine::GetResourceManager() noexcept {
+    return m_resourceManager;
+}
 
-    // Shutdown Engine and clean up resources
-    ENGINE_INLINE void Engine::Shutdown()  {
-        ENGINE_ASSERT(m_writeState == 0 || m_writeState == 1, "Write state corrupted at shutdown");
-        ENGINE_ASSERT(m_renderReadState == 0 || m_renderReadState == 1, "Render read state corrupted at shutdown");
+ENGINE_INLINE const engine::io::ResourceManager& Engine::GetResourceManager() const noexcept {
+    return m_resourceManager;
+}
 
-        ENGINE_LOG_INFO("Engine shutting down");
+// Job System accessors
+ENGINE_INLINE engine::io::JobSystem& Engine::GetJobSystem() noexcept {
+    return m_jobSystem;
+}
 
-        for (auto it = m_modules.rbegin(); it != m_modules.rend(); ++it) {
-            ENGINE_ASSERT(*it != nullptr, "Null module encountered during shutdown");
-            ENGINE_LOG_INFO("Shutting down module: " + std::string((*it)->GetName()));
-            (*it)->Shutdown();
-            ENGINE_LOG_INFO("Module shut down: " + std::string((*it)->GetName()));
-        }
-        m_modules.clear();
+// VFS accessors
+ENGINE_INLINE engine::VirtualFileSystem& Engine::GetVFS() noexcept {
+    return m_vfs;
+}
 
-        ENGINE_LOG_INFO("Engine shutdown complete");
-        engine::debug::AsyncLogger::Get().Shutdown();
-    }
+// ChainedArena accessors
+ENGINE_INLINE engine::ChainedArena& Engine::GetFrameArena() noexcept {
+    return m_frameArenas[m_writeState];
+}
 
-    // Rebuild the multithreaded frame execution taskflow graph
-    ENGINE_INLINE void Engine::RebuildExecutionGraph() {
-        ENGINE_ASSERT(!m_modules.empty(), "RebuildExecutionGraph called with no registered modules");
-        ENGINE_ASSERT(m_writeState == 0 || m_writeState == 1, "Write state out of range at graph rebuild");
+// Taskflow accessor
+ENGINE_INLINE tf::Taskflow& Engine::GetTaskflow() noexcept {
+    return m_taskflow;
+}
 
-        m_taskflow.clear();
-        for (auto& module : m_modules) {
-            module->BuildGraph(m_taskflow);
-        }
-    }
+// Registry accessors
+ENGINE_INLINE ecs::Registry& Engine::GetRegistry() noexcept {
+    return m_registry;
+}
 
-    // Register module template implementation
-    template <typename T, typename... Args>
-    ENGINE_INLINE T& Engine::RegisterModule(Args&&... args) {
-        auto module = std::make_unique<T>(std::forward<Args>(args)...);
-        ENGINE_ASSERT(module != nullptr, "Failed to allocate module");
-        ENGINE_ASSERT(module->GetName() != nullptr, "Registered module returned null name");
+ENGINE_INLINE const ecs::Registry& Engine::GetRegistry() const noexcept {
+    return m_registry;
+}
 
-        T& ref = *module;
-        m_modules.push_back(std::move(module));
-        return ref;
-    }
-
-    // Resource Manager accessors
-    ENGINE_INLINE engine::io::ResourceManager& Engine::GetResourceManager() noexcept {
-        return m_resourceManager;
-    }
-
-    ENGINE_INLINE const engine::io::ResourceManager& Engine::GetResourceManager() const noexcept {
-        return m_resourceManager;
-    }
-
-    // Job System accessors
-    ENGINE_INLINE engine::io::JobSystem& Engine::GetJobSystem() noexcept {
-        return m_jobSystem;
-    }
-
-    // VFS accessors
-    ENGINE_INLINE engine::VirtualFileSystem& Engine::GetVFS() noexcept {
-        return m_vfs;
-    }
-
-    // ChainedArena accessors
-    ENGINE_INLINE engine::ChainedArena& Engine::GetFrameArena() noexcept {
-        return m_frameArenas[m_writeState];
-  }
-
-    // Taskflow accessor
-    ENGINE_INLINE tf::Taskflow& Engine::GetTaskflow() noexcept {
-        return m_taskflow;
-    }
-
-    // Registry accessors
-    ENGINE_INLINE ecs::Registry& Engine::GetRegistry() noexcept {
-        return m_registry;
-    }
-
-    ENGINE_INLINE const ecs::Registry& Engine::GetRegistry() const noexcept {
-        return m_registry;
-    }
-
-    // ChainedArena by index accessor
-    ENGINE_INLINE engine::ChainedArena& Engine::GetFrameArena(int idx) noexcept {
-        ENGINE_ASSERT(idx >= 0, "Frame arena index must be non-negative");
-        ENGINE_ASSERT(idx < 2, "Frame arena index out of bounds (max 1)");
-        return m_frameArenas[idx];
-    }
+// ChainedArena by index accessor
+ENGINE_INLINE engine::ChainedArena& Engine::GetFrameArena(int idx) noexcept {
+    ENGINE_ASSERT(idx >= 0, "Frame arena index must be non-negative");
+    ENGINE_ASSERT(idx < 2, "Frame arena index out of bounds (max 1)");
+    return m_frameArenas[idx];
+}
 
 } // namespace engine
 

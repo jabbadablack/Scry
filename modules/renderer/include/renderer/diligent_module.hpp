@@ -87,6 +87,7 @@ namespace engine::renderer {
             u32 indexCount = 0;
         };
         engine::graphics::PipelineHandle m_defaultPipeline;
+        engine::graphics::PipelineHandle m_linePipeline;
         std::unordered_map<uint32_t, GPUMesh> m_gpuMeshes;
         std::unordered_map<uint32_t, engine::graphics::TextureHandle> m_gpuTextures;
     };

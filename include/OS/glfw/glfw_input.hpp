@@ -30,7 +30,17 @@ namespace engine {
         void GetMousePosition(f64& out_x, f64& out_y) const override;
         void GetMouseDelta(f64& out_dx, f64& out_dy) const override;
 
+        void SetCursorVisible(bool visible) override;
+        [[nodiscard]] bool IsCursorVisible() const override;
+        void SetCursorConfined(bool confined) override;
+        [[nodiscard]] bool IsCursorConfined() const override;
+
     private:
+        GLFWwindow* m_window = nullptr;
+        bool m_cursorVisible = true;
+        bool m_cursorConfined = false;
+        void ApplyCursorState();
+
         std::bitset<348> m_keys;
         std::bitset<348> m_keysPrevious;
 

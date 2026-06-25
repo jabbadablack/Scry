@@ -188,6 +188,8 @@ namespace engine {
     void GlfwInput::Initialize(GLFWwindow* window) {
         ENGINE_ASSERT(window != nullptr, "GlfwInput::Initialize called with a null GLFW window");
 
+        m_window = window;
+
         glfwSetWindowUserPointer(window, this);
         glfwSetKeyCallback(window, KeyCallback);
         glfwSetMouseButtonCallback(window, MouseButtonCallback);
@@ -197,6 +199,8 @@ namespace engine {
         glfwGetCursorPos(window, &xpos, &ypos);
         m_mouseX = xpos;
         m_mouseY = ypos;
+
+        ApplyCursorState();
 
         ENGINE_LOG_INFO("GlfwInput: input initialized");
     }
@@ -286,6 +290,7 @@ namespace engine {
             } else if (action == GLFW_RELEASE) {
                 input->m_mouse.reset(button);
             }
+            input->ApplyCursorState();
         }
     }
 
@@ -298,6 +303,48 @@ namespace engine {
         input->m_mouseDeltaY = ypos - input->m_mouseY;
         input->m_mouseX = xpos;
         input->m_mouseY = ypos;
+    }
+
+    void GlfwInput::SetCursorVisible(bool visible) {
+        m_cursorVisible = visible;
+        ApplyCursorState();
+    }
+
+    bool GlfwInput::IsCursorVisible() const {
+        return m_cursorVisible;
+    }
+
+    void GlfwInput::SetCursorConfined(bool confined) {
+        m_cursorConfined = confined;
+        ApplyCursorState();
+    }
+
+    bool GlfwInput::IsCursorConfined() const {
+        return m_cursorConfined;
+    }
+
+    void GlfwInput::ApplyCursorState() {
+        if (!m_window) return;
+
+        bool rightHeld = m_mouse.test(static_cast<size_t>(MouseButton::Right));
+
+        if (rightHeld) {
+            glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        } else {
+            if (m_cursorVisible) {
+                if (m_cursorConfined) {
+#ifdef GLFW_CURSOR_CAPTURED
+                    glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_CAPTURED);
+#else
+                    glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+#endif
+                } else {
+                    glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                }
+            } else {
+                glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            }
+        }
     }
 
 } // namespace engine

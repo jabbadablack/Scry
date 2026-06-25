@@ -65,9 +65,15 @@ namespace engine::graphics {
         bool   is_depth_stencil = false;
     };
 
+    enum class PrimitiveTopology : u8 {
+        TriangleList = 0,
+        LineList     = 1
+    };
+
     struct PipelineDesc {
-        const char* vs_source = nullptr;
-        const char* ps_source = nullptr;
+        const char*       vs_source = nullptr;
+        const char*       ps_source = nullptr;
+        PrimitiveTopology topology  = PrimitiveTopology::TriangleList;
     };
 
 } // namespace engine::graphics

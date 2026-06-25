@@ -18,6 +18,11 @@ namespace engine {
         [[nodiscard]] virtual bool IsMouseButtonReleased(MouseButton button) const = 0;
         virtual void GetMousePosition(f64& out_x, f64& out_y) const = 0;
         virtual void GetMouseDelta(f64& out_dx, f64& out_dy) const = 0;
+
+        virtual void SetCursorVisible(bool visible) = 0;
+        [[nodiscard]] virtual bool IsCursorVisible() const = 0;
+        virtual void SetCursorConfined(bool confined) = 0;
+        [[nodiscard]] virtual bool IsCursorConfined() const = 0;
     };
 
 } // namespace engine

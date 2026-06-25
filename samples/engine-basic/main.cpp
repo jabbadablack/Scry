@@ -31,6 +31,15 @@ public:
                 auto* input = m_engine->GetInput();
                 if (!input) { return;}
 
+                if (input->IsKeyPressed(engine::Key::V)) {
+                    input->SetCursorVisible(!input->IsCursorVisible());
+                    ENGINE_LOG_INFO(std::string("Cursor visibility toggled to: ") + (input->IsCursorVisible() ? "visible" : "hidden"));
+                }
+                if (input->IsKeyPressed(engine::Key::C)) {
+                    input->SetCursorConfined(!input->IsCursorConfined());
+                    ENGINE_LOG_INFO(std::string("Cursor confinement toggled to: ") + (input->IsCursorConfined() ? "confined" : "unconfined"));
+                }
+
                 engine::math::Vector3 moveDelta = engine::math::Vector3::Zero();
                 if (input->IsKeyHeld(engine::Key::W)) moveDelta.z() += 1.0F;
                 if (input->IsKeyHeld(engine::Key::S)) moveDelta.z() -= 1.0F;
@@ -57,7 +66,7 @@ public:
                     static engine::f32 yaw   = 0.0F;
                     static engine::f32 pitch = 0.0F;
                     yaw += static_cast<engine::f32>(intent.yawDelta) * 0.005F;
-                    pitch += static_cast<engine::f32>(intent.pitchDelta) * 0.005F;
+                    pitch -= static_cast<engine::f32>(intent.pitchDelta) * 0.005F;
                     pitch = engine::math::Clamp(pitch, -1.5F, 1.5F);
 
                     engine::math::Vector3 forward(
@@ -91,12 +100,23 @@ private:
 
 void GenerateGridMesh(engine::Engine& engine) {
     auto grid = std::make_shared<engine::io::Mesh>();
-    // Simple 4-vertex quad scaled up
-    grid->vertices.push_back({ { -50.0F, 0.0F, 50.0F }, { 0, 1, 0 }, { 0.0F, 0.0F } });
-    grid->vertices.push_back({ { 50.0F, 0.0F, 50.0F }, { 0, 1, 0 }, { 10.0F, 0.0F } });
-    grid->vertices.push_back({ { 50.0F, 0.0F, -50.0F }, { 0, 1, 0 }, { 10.0F, 10.0F } });
-    grid->vertices.push_back({ { -50.0F, 0.0F, -50.0F }, { 0, 1, 0 }, { 0.0F, 10.0F } });
-    grid->indices = { 0, 1, 2, 2, 3, 0 };
+    float size = 50.0F;
+    float step = 2.0F;
+    uint32_t index = 0;
+
+    for (float i = -size; i <= size; i += step) {
+        // Line parallel to Z axis (fixed X)
+        grid->vertices.push_back({ { i, 0.0F, -size }, { 0, 1, 0 }, { 0.0F, 0.0F } });
+        grid->vertices.push_back({ { i, 0.0F, size }, { 0, 1, 0 }, { 0.0F, 0.0F } });
+        grid->indices.push_back(index++);
+        grid->indices.push_back(index++);
+
+        // Line parallel to X axis (fixed Z)
+        grid->vertices.push_back({ { -size, 0.0F, i }, { 0, 1, 0 }, { 0.0F, 0.0F } });
+        grid->vertices.push_back({ { size, 0.0F, i }, { 0, 1, 0 }, { 0.0F, 0.0F } });
+        grid->indices.push_back(index++);
+        grid->indices.push_back(index++);
+    }
 
     engine.GetResourceManager().GetRawMeshes().load<engine::io::DirectLoader<engine::io::Mesh>>(engine::StringHash{"GridMesh"}, engine::io::DirectLoader<engine::io::Mesh>{ grid });
 }
@@ -124,6 +144,7 @@ int main() {
     reg.AddComponent<engine::ecs::TransformComponent>(gridEnt);
     auto& gridRender   = reg.AddComponent<engine::ecs::RenderComponent>(gridEnt);
     gridRender.mesh_id = engine::StringHash{"GridMesh"};
+    gridRender.topology = engine::graphics::PrimitiveTopology::LineList;
 
     auto& gridHier  = reg.AddComponent<engine::ecs::HierarchyComponent>(gridEnt);
     gridHier.parent = levelEnt;

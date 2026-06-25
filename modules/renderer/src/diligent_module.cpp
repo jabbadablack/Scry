@@ -143,7 +143,15 @@ namespace engine::renderer {
         engine::graphics::PipelineDesc pipeDesc;
         pipeDesc.vs_source = engine::graphics::shaders::UberPBR_VS;
         pipeDesc.ps_source = engine::graphics::shaders::UberPBR_PS;
+        pipeDesc.topology  = engine::graphics::PrimitiveTopology::TriangleList;
         m_defaultPipeline = engine.GetIGraphics().CreatePipeline(pipeDesc);
+
+        // Initialize Line Pipeline PSO
+        engine::graphics::PipelineDesc linePipeDesc;
+        linePipeDesc.vs_source = engine::graphics::shaders::UberPBR_VS;
+        linePipeDesc.ps_source = engine::graphics::shaders::UberPBR_PS;
+        linePipeDesc.topology  = engine::graphics::PrimitiveTopology::LineList;
+        m_linePipeline = engine.GetIGraphics().CreatePipeline(linePipeDesc);
 
         m_running.store(true, std::memory_order_release);
         m_renderThread = std::thread(&DiligentModule::RenderThreadLoop, this);
@@ -203,7 +211,7 @@ namespace engine::renderer {
 
                     engine::graphics::RenderPacket packet;
                     packet.transform = trans.matrix;
-                    packet.pipeline = m_defaultPipeline;
+                    packet.pipeline = (render.topology == engine::graphics::PrimitiveTopology::LineList) ? m_linePipeline : m_defaultPipeline;
 
                     // Mesh Buffers
                     engine::graphics::BufferHandle vertexBuffer{};
@@ -425,6 +433,15 @@ namespace engine::renderer {
                 PSOCreateInfo.pVS = pVS;
                 PSOCreateInfo.pPS = pPS;
                 PSOCreateInfo.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
+
+                switch (intent.desc.topology) {
+                    case engine::graphics::PrimitiveTopology::TriangleList:
+                        PSOCreateInfo.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+                        break;
+                    case engine::graphics::PrimitiveTopology::LineList:
+                        PSOCreateInfo.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_LINE_LIST;
+                        break;
+                }
 
                 // Define standard Vertex and Instance input layout to match the shader attributes
                 static const Diligent::LayoutElement LayoutElems[] = {

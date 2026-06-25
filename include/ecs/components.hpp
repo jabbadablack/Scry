@@ -6,6 +6,8 @@
 #include <entt/entt.hpp>
 
 
+#include "../graphics/graphics_types.hpp"
+
 namespace engine::ecs {
 
     struct TransformComponent {
@@ -16,6 +18,7 @@ namespace engine::ecs {
     struct RenderComponent {
         engine::StringHash mesh_id;
         engine::StringHash texture_id;
+        engine::graphics::PrimitiveTopology topology = engine::graphics::PrimitiveTopology::TriangleList;
     };
 
     struct TagComponent {

@@ -77,7 +77,18 @@ namespace engine::renderer {
         Diligent::RefCntAutoPtr<Diligent::IPipelineResourceSignature> m_globalSignature;
         Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding>     m_globalSRB;
         Diligent::RefCntAutoPtr<Diligent::IBuffer>                    m_pushConstants;
-        Diligent::RefCntAutoPtr<Diligent::ITexture>                   m_dummyTexture;
+        Diligent::RefCntAutoPtr<Diligent::IBuffer>                    m_cameraConstants;
+        Diligent::RefCntAutoPtr<Diligent::ITexture>                   m_defaultTexture;
+        Diligent::RefCntAutoPtr<Diligent::IBuffer>                    m_defaultInstanceBuffer;
+
+        struct GPUMesh {
+            engine::graphics::BufferHandle vertexBuffer;
+            engine::graphics::BufferHandle indexBuffer;
+            u32 indexCount = 0;
+        };
+        engine::graphics::PipelineHandle m_defaultPipeline;
+        std::unordered_map<uint32_t, GPUMesh> m_gpuMeshes;
+        std::unordered_map<uint32_t, engine::graphics::TextureHandle> m_gpuTextures;
     };
 
 } // namespace engine::renderer

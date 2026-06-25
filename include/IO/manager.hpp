@@ -75,6 +75,7 @@ namespace engine::io {
         // Retrieval APIs
         [[nodiscard]] ENGINE_INLINE entt::resource<Texture> GetTexture(const engine::StringHash& id);
         [[nodiscard]] ENGINE_INLINE entt::resource<Mesh> GetMesh(const engine::StringHash& id);
+        [[nodiscard]] ENGINE_INLINE entt::resource_cache<Mesh, MeshLoader>& GetRawMeshes() { return m_meshes; }
 
     private:
         engine::io::JobSystem& m_jobSystem;

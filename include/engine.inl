@@ -121,10 +121,6 @@ namespace engine {
         m_writeState = 1 - m_writeState;
         m_frameArenas[m_writeState].Clear();
 
-        if (m_input != nullptr) {
-            m_input->Update();
-        }
-
         m_taskflow.clear();
 
         // Create absolute synchronization barriers
@@ -144,6 +140,10 @@ namespace engine {
 
         // 3. Execute the DAG
         m_jobSystem.GetExecutor().run(m_taskflow).wait();
+
+        if (m_input != nullptr) {
+            m_input->Update();
+        }
     }
 
     // Sets interpolation alpha and updates read/write double buffer sync states

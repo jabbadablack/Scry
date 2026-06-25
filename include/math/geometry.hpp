@@ -38,6 +38,9 @@ namespace engine::math {
     [[nodiscard]] ENGINE_INLINE bool Intersect(const Sphere& a, const Sphere& b);
     [[nodiscard]] ENGINE_INLINE bool Intersect(const Ray& ray, const AABB& aabb, f32& out_t);
 
+    [[nodiscard]] ENGINE_INLINE Matrix4 PerspectiveFovLH(f32 fov, f32 aspect, f32 zNear, f32 zFar);
+    [[nodiscard]] ENGINE_INLINE Matrix4 LookAtLH(const Vector3& eye, const Vector3& target, const Vector3& up);
+
 } // namespace engine::math
 
 

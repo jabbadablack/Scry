@@ -18,6 +18,12 @@ namespace engine {
         RightShift = 344, RightControl = 345, RightAlt = 346
     };
 
+    enum class MouseButton : i16 {
+        Left = 0,
+        Right = 1,
+        Middle = 2
+    };
+
 } // namespace engine
 
 #endif // ENGINE_OS_KEYS_HPP

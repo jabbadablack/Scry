@@ -55,6 +55,28 @@ namespace engine::math {
         return true;
     }
 
+    ENGINE_INLINE Matrix4 PerspectiveFovLH(f32 fov, f32 aspect, f32 zNear, f32 zFar) {
+        Matrix4 m = Matrix4::Zero();
+        f32 tanHalfFov = engine::math::Tan(fov * 0.5F);
+        m(0, 0) = 1.0F / (aspect * tanHalfFov);
+        m(1, 1) = 1.0F / tanHalfFov;
+        m(2, 2) = zFar / (zFar - zNear);
+        m(3, 2) = -(zFar * zNear) / (zFar - zNear);
+        m(2, 3) = 1.0F;
+        return m;
+    }
+
+    ENGINE_INLINE Matrix4 LookAtLH(const Vector3& eye, const Vector3& target, const Vector3& up) {
+        Vector3 zAxis = (target - eye).normalized();
+        Vector3 xAxis = up.cross(zAxis).normalized();
+        Vector3 yAxis = zAxis.cross(xAxis);
+        Matrix4 m = Matrix4::Identity();
+        m(0, 0) = xAxis.x(); m(1, 0) = xAxis.y(); m(2, 0) = xAxis.z(); m(3, 0) = -xAxis.dot(eye);
+        m(0, 1) = yAxis.x(); m(1, 1) = yAxis.y(); m(2, 1) = yAxis.z(); m(3, 1) = -yAxis.dot(eye);
+        m(0, 2) = zAxis.x(); m(1, 2) = zAxis.y(); m(2, 2) = zAxis.z(); m(3, 2) = -zAxis.dot(eye);
+        return m;
+    }
+
 } // namespace engine::math
 
 #endif // ENGINE_MATH_GEOMETRY_INL

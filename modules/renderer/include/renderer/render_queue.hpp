@@ -25,11 +25,14 @@ namespace engine::renderer {
 
         [[nodiscard]] ENGINE_INLINE const engine::graphics::RenderPacket* GetCommands() const noexcept;
         [[nodiscard]] ENGINE_INLINE size_t GetCount() const noexcept;
+        ENGINE_INLINE void SetCameraViewProj(const engine::math::Matrix4& vp) noexcept;
+        [[nodiscard]] ENGINE_INLINE const engine::math::Matrix4& GetCameraViewProj() const noexcept;
 
     private:
         engine::graphics::RenderPacket* m_commands = nullptr;
         size_t m_count = 0;
         size_t m_capacity = 0;
+        engine::math::Matrix4 m_cameraViewProj = engine::math::Matrix4::Identity();
     };
 
 } // namespace engine::renderer

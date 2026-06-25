@@ -190,6 +190,13 @@ namespace engine {
 
         glfwSetWindowUserPointer(window, this);
         glfwSetKeyCallback(window, KeyCallback);
+        glfwSetMouseButtonCallback(window, MouseButtonCallback);
+        glfwSetCursorPosCallback(window, CursorPosCallback);
+
+        double xpos = 0, ypos = 0;
+        glfwGetCursorPos(window, &xpos, &ypos);
+        m_mouseX = xpos;
+        m_mouseY = ypos;
 
         ENGINE_LOG_INFO("GlfwInput: input initialized");
     }
@@ -199,6 +206,9 @@ namespace engine {
         ENGINE_ASSERT(m_keysPrevious.size() == 348, "GlfwInput: previous key bitset size invariant broken");
 
         m_keysPrevious = m_keys;
+        m_mousePrevious = m_mouse;
+        m_mouseDeltaX = 0.0;
+        m_mouseDeltaY = 0.0;
     }
 
     bool GlfwInput::IsKeyPressed(Key key) const {
@@ -222,6 +232,34 @@ namespace engine {
         return !m_keys.test(k) && m_keysPrevious.test(k);
     }
 
+    bool GlfwInput::IsMouseButtonPressed(MouseButton button) const {
+        i32 b = static_cast<i32>(button);
+        ENGINE_ASSERT(b >= 0 && b < 8, "Mouse button index out of range");
+        return m_mouse.test(b) && !m_mousePrevious.test(b);
+    }
+
+    bool GlfwInput::IsMouseButtonHeld(MouseButton button) const {
+        i32 b = static_cast<i32>(button);
+        ENGINE_ASSERT(b >= 0 && b < 8, "Mouse button index out of range");
+        return m_mouse.test(b);
+    }
+
+    bool GlfwInput::IsMouseButtonReleased(MouseButton button) const {
+        i32 b = static_cast<i32>(button);
+        ENGINE_ASSERT(b >= 0 && b < 8, "Mouse button index out of range");
+        return !m_mouse.test(b) && m_mousePrevious.test(b);
+    }
+
+    void GlfwInput::GetMousePosition(f64& out_x, f64& out_y) const {
+        out_x = m_mouseX;
+        out_y = m_mouseY;
+    }
+
+    void GlfwInput::GetMouseDelta(f64& out_dx, f64& out_dy) const {
+        out_dx = m_mouseDeltaX;
+        out_dy = m_mouseDeltaY;
+    }
+
     void GlfwInput::KeyCallback(GLFWwindow* window, int key, int  /*scancode*/, int action, int  /*mods*/) {
         ENGINE_ASSERT(window != nullptr, "GlfwInput::KeyCallback received a null window pointer");
 
@@ -235,6 +273,31 @@ namespace engine {
                 input->m_keys.reset(key);
             }
         }
+    }
+
+    void GlfwInput::MouseButtonCallback(GLFWwindow* window, int button, int action, int  /*mods*/) {
+        ENGINE_ASSERT(window != nullptr, "GlfwInput::MouseButtonCallback received a null window pointer");
+        auto* input = static_cast<GlfwInput*>(glfwGetWindowUserPointer(window));
+        ENGINE_ASSERT(input != nullptr, "GlfwInput::MouseButtonCallback: window user pointer is null");
+
+        if (button >= 0 && button < 8) {
+            if (action == GLFW_PRESS) {
+                input->m_mouse.set(button);
+            } else if (action == GLFW_RELEASE) {
+                input->m_mouse.reset(button);
+            }
+        }
+    }
+
+    void GlfwInput::CursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
+        ENGINE_ASSERT(window != nullptr, "GlfwInput::CursorPosCallback received a null window pointer");
+        auto* input = static_cast<GlfwInput*>(glfwGetWindowUserPointer(window));
+        ENGINE_ASSERT(input != nullptr, "GlfwInput::CursorPosCallback: window user pointer is null");
+
+        input->m_mouseDeltaX = xpos - input->m_mouseX;
+        input->m_mouseDeltaY = ypos - input->m_mouseY;
+        input->m_mouseX = xpos;
+        input->m_mouseY = ypos;
     }
 
 } // namespace engine

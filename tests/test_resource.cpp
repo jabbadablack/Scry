@@ -2,6 +2,7 @@
 #include <memory/tracked_heap.hpp>
 #include <OS/glfw/glfw_window.hpp>
 #include <IO/manager.hpp>
+#include <filesystem>
 
 // Mock loader that allocates tracked memory directly to prevent disk operations in CI tests
 struct MockTextureLoader {
@@ -78,14 +79,26 @@ TEST_CASE("ResourceManager Asynchronous Pipeline") {
     engine::GlfwWindow platform;
     REQUIRE(platform.Initialize() == true);
 
+    // Create a temporary minimal OBJ file for testing real Assimp parsing
+    {
+        std::FILE* f = std::fopen("test_mesh_file.obj", "w");
+        if (f) {
+            std::fputs("v 0.0 0.0 0.0\n", f);
+            std::fputs("f 1 1 1\n", f);
+            std::fclose(f);
+        }
+    }
+
     {
         engine::io::JobSystem jobSystem;
         engine::VirtualFileSystem vfs;
+        vfs.Mount("res", "."); // Mount current directory to res://
+        
         engine::io::ResourceManager manager(jobSystem, vfs);
         auto mesh_id = entt::hashed_string{"test_async_mesh"};
 
-        // Submit asynchronous load task using the mock prefix to bypass filesystem
-        manager.SetMesh(mesh_id, "mock://test_mesh_file.obj");
+        // Submit asynchronous load task using the real VFS path
+        manager.SetMesh(mesh_id, "res://test_mesh_file.obj");
 
         // Wait for all Taskflow background threads to complete
         jobSystem.GetExecutor().wait_for_all();
@@ -104,6 +117,10 @@ TEST_CASE("ResourceManager Asynchronous Pipeline") {
         REQUIRE(mesh->vertices.size() == 1);
         REQUIRE(mesh->indices.size() == 3);
     }
+
+    // Clean up the temporary OBJ file
+    std::error_code ec;
+    std::filesystem::remove("test_mesh_file.obj", ec);
 
     platform.Shutdown();
 }

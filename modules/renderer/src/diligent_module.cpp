@@ -7,6 +7,7 @@
 #include <math/interpolation.hpp>
 #include <debug/logger.hpp>
 #include <debug/assert.h>
+#include <graphics/standard_shaders.hpp>
 
 extern "C" {
     extern void* vkGetPhysicalDeviceFeatures2;
@@ -62,13 +63,15 @@ namespace engine::renderer {
         // Configure Global Bindless Setup
         Diligent::PipelineResourceDesc Resources[] = {
             { Diligent::SHADER_TYPE_VERTEX | Diligent::SHADER_TYPE_PIXEL, "PushConstants", 1, Diligent::SHADER_RESOURCE_TYPE_CONSTANT_BUFFER, Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC },
-            { Diligent::SHADER_TYPE_PIXEL, "g_Textures", 1024, Diligent::SHADER_RESOURCE_TYPE_TEXTURE_SRV, Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE }
+            { Diligent::SHADER_TYPE_VERTEX | Diligent::SHADER_TYPE_PIXEL, "CameraConstants", 1, Diligent::SHADER_RESOURCE_TYPE_CONSTANT_BUFFER, Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC },
+            { Diligent::SHADER_TYPE_PIXEL, "g_Textures", 1024, Diligent::SHADER_RESOURCE_TYPE_TEXTURE_SRV, Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+            { Diligent::SHADER_TYPE_PIXEL, "g_Textures_sampler", 1, Diligent::SHADER_RESOURCE_TYPE_SAMPLER, Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE }
         };
 
         Diligent::PipelineResourceSignatureDesc PRSDesc;
         PRSDesc.Name         = "Global Bindless Signature";
         PRSDesc.Resources    = Resources;
-        PRSDesc.NumResources = 2;
+        PRSDesc.NumResources = 4;
         PRSDesc.BindingIndex = 0;
 
         m_pDevice->CreatePipelineResourceSignature(PRSDesc, &m_globalSignature);
@@ -88,27 +91,59 @@ namespace engine::renderer {
 
         m_globalSRB->GetVariableByName(Diligent::SHADER_TYPE_VERTEX, "PushConstants")->Set(m_pushConstants);
 
-        // Initialize a 1x1 dummy texture to fill the array and prevent Vulkan partially-bound validation crashes
-        Diligent::TextureDesc DummyDesc;
-        DummyDesc.Name      = "Bindless Dummy Texture";
-        DummyDesc.Type      = Diligent::RESOURCE_DIM_TEX_2D;
-        DummyDesc.Width     = 1;
-        DummyDesc.Height    = 1;
-        DummyDesc.Format    = Diligent::TEX_FORMAT_RGBA8_UNORM;
-        DummyDesc.BindFlags = Diligent::BIND_SHADER_RESOURCE;
+        Diligent::BufferDesc CamDesc;
+        CamDesc.Name           = "CameraConstants CB";
+        CamDesc.Size           = sizeof(engine::math::Matrix4);
+        CamDesc.Usage          = Diligent::USAGE_DYNAMIC;
+        CamDesc.BindFlags      = Diligent::BIND_UNIFORM_BUFFER;
+        CamDesc.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
+        m_pDevice->CreateBuffer(CamDesc, nullptr, &m_cameraConstants);
+        ENGINE_ASSERT(m_cameraConstants != nullptr, "Failed to create CameraConstants buffer");
 
-        engine::u32 DummyPixel = 0xFFFFFFFF; // White pixel
-        Diligent::TextureSubResData Mips[1] = { { &DummyPixel, 4 } };
+        m_globalSRB->GetVariableByName(Diligent::SHADER_TYPE_VERTEX, "CameraConstants")->Set(m_cameraConstants);
+
+        // Bind default sampler to the shader resource binding
+        Diligent::RefCntAutoPtr<Diligent::ISampler> pSampler;
+        Diligent::SamplerDesc SamDesc;
+        m_pDevice->CreateSampler(SamDesc, &pSampler);
+        m_globalSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "g_Textures_sampler")->Set(pSampler);
+
+        // Initialize a 1x1 default texture to fill the array and prevent Vulkan partially-bound validation crashes
+        Diligent::TextureDesc DefaultDesc;
+        DefaultDesc.Name      = "Bindless Default Texture";
+        DefaultDesc.Type      = Diligent::RESOURCE_DIM_TEX_2D;
+        DefaultDesc.Width     = 1;
+        DefaultDesc.Height    = 1;
+        DefaultDesc.Format    = Diligent::TEX_FORMAT_RGBA8_UNORM;
+        DefaultDesc.BindFlags = Diligent::BIND_SHADER_RESOURCE;
+
+        engine::u32 DefaultPixel = 0xFFFFFFFF; // White pixel
+        Diligent::TextureSubResData Mips[1] = { { &DefaultPixel, 4 } };
         Diligent::TextureData InitData(Mips, 1);
-        m_pDevice->CreateTexture(DummyDesc, &InitData, &m_dummyTexture);
-        ENGINE_ASSERT(m_dummyTexture != nullptr, "Failed to create Dummy Texture");
+        m_pDevice->CreateTexture(DefaultDesc, &InitData, &m_defaultTexture);
+        ENGINE_ASSERT(m_defaultTexture != nullptr, "Failed to create Default Texture");
 
-        auto* pDummySRV = m_dummyTexture->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
-        Diligent::IDeviceObject* pDummyObject = pDummySRV;
+        auto* pDefaultSRV = m_defaultTexture->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+        Diligent::IDeviceObject* pDefaultObject = pDefaultSRV;
         auto* pTexVar   = m_globalSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "g_Textures");
         for (engine::u32 i = 0; i < 1024; ++i) {
-            pTexVar->SetArray(&pDummyObject, i, 1);
+            pTexVar->SetArray(&pDefaultObject, i, 1);
         }
+
+        // Create Default Instance Buffer to satisfy Vulkan/Diligent binding when instancing is not used
+        Diligent::BufferDesc InstDesc;
+        InstDesc.Name           = "Default Instance Buffer";
+        InstDesc.Size           = 256;
+        InstDesc.Usage          = Diligent::USAGE_DEFAULT;
+        InstDesc.BindFlags      = Diligent::BIND_VERTEX_BUFFER;
+        m_pDevice->CreateBuffer(InstDesc, nullptr, &m_defaultInstanceBuffer);
+        ENGINE_ASSERT(m_defaultInstanceBuffer != nullptr, "Failed to create Default Instance Buffer");
+
+        // Initialize Default Pipeline PSO
+        engine::graphics::PipelineDesc pipeDesc;
+        pipeDesc.vs_source = engine::graphics::shaders::UberPBR_VS;
+        pipeDesc.ps_source = engine::graphics::shaders::UberPBR_PS;
+        m_defaultPipeline = engine.GetIGraphics().CreatePipeline(pipeDesc);
 
         m_running.store(true, std::memory_order_release);
         m_renderThread = std::thread(&DiligentModule::RenderThreadLoop, this);
@@ -134,19 +169,116 @@ namespace engine::renderer {
 
         tf::Task extract_task = dag.taskflow.emplace([this, write_state]() {
             auto& registry = m_engine->GetRegistry();
-            auto view = registry.View<engine::ecs::TransformComponent, engine::ecs::RenderComponent>();
-            for (auto ent : view) {
-                const auto& trans = registry.GetComponent<engine::ecs::TransformComponent>(ent);
 
-                engine::graphics::RenderPacket packet;
-                packet.transform = trans.matrix;
-                packet.pipeline = {};
-                packet.vertex_buffer = {};
-                packet.index_buffer = {};
-                packet.texture = {};
-                packet.index_count = 0;
+            // 1. Extract Camera
+            engine::math::Matrix4 viewProj = engine::math::Matrix4::Identity();
+            auto camView = registry.View<engine::ecs::CameraComponent>();
+            for (auto ent : camView) {
+                const auto& cam = registry.GetComponent<engine::ecs::CameraComponent>(ent);
+                if (cam.is_active) {
+                    viewProj = cam.view_proj;
+                    break;
+                }
+            }
+            m_renderQueues[write_state].SetCameraViewProj(viewProj);
 
-                m_renderQueues[write_state].Push(packet);
+            // 2. DAG Hierarchy Traversal (Only extract if inside a Level)
+            std::vector<engine::ecs::Entity> stack;
+            auto tagView = registry.View<engine::ecs::TagComponent>();
+            for (auto ent : tagView) {
+                if (registry.GetComponent<engine::ecs::TagComponent>(ent).tag == engine::ecs::Hash("Level")) {
+                    stack.push_back(ent);
+                }
+            }
+
+            auto& resourceMgr = m_engine->GetResourceManager();
+
+            while (!stack.empty()) {
+                auto curr = stack.back();
+                stack.pop_back();
+
+                if (registry.HasComponent<engine::ecs::RenderComponent>(curr) && registry.HasComponent<engine::ecs::TransformComponent>(curr)) {
+                    const auto& trans = registry.GetComponent<engine::ecs::TransformComponent>(curr);
+                    const auto& render = registry.GetComponent<engine::ecs::RenderComponent>(curr);
+
+                    engine::graphics::RenderPacket packet;
+                    packet.transform = trans.matrix;
+                    packet.pipeline = m_defaultPipeline;
+
+                    // Mesh Buffers
+                    engine::graphics::BufferHandle vertexBuffer{};
+                    engine::graphics::BufferHandle indexBuffer{};
+                    uint32_t indexCount = 0;
+
+                    if (resourceMgr.IsMeshLoaded(render.mesh_id)) {
+                        auto it = m_gpuMeshes.find(render.mesh_id.value());
+                        if (it != m_gpuMeshes.end()) {
+                            vertexBuffer = it->second.vertexBuffer;
+                            indexBuffer = it->second.indexBuffer;
+                            indexCount = it->second.indexCount;
+                        } else {
+                            auto mesh_res = resourceMgr.GetMesh(render.mesh_id);
+                            if (mesh_res) {
+                                engine::graphics::BufferDesc vertexDesc;
+                                vertexDesc.size = static_cast<uint32_t>(mesh_res->vertices.size() * sizeof(engine::io::Vertex));
+                                vertexDesc.bind = engine::graphics::BufferBind::Vertex;
+                                vertexDesc.usage = engine::graphics::BufferUsage::Static;
+                                vertexBuffer = m_engine->GetIGraphics().CreateBuffer(vertexDesc, mesh_res->vertices.data());
+
+                                engine::graphics::BufferDesc indexDesc;
+                                indexDesc.size = static_cast<uint32_t>(mesh_res->indices.size() * sizeof(uint32_t));
+                                indexDesc.bind = engine::graphics::BufferBind::Index;
+                                indexDesc.usage = engine::graphics::BufferUsage::Static;
+                                indexBuffer = m_engine->GetIGraphics().CreateBuffer(indexDesc, mesh_res->indices.data());
+
+                                indexCount = static_cast<uint32_t>(mesh_res->indices.size());
+
+                                m_gpuMeshes[render.mesh_id.value()] = {vertexBuffer, indexBuffer, indexCount};
+                            }
+                        }
+                    }
+
+                    packet.vertex_buffer = vertexBuffer;
+                    packet.index_buffer = indexBuffer;
+                    packet.index_count = indexCount;
+
+                    // Texture Handle
+                    engine::graphics::TextureHandle textureHandle{};
+                    if (render.texture_id.value() != 0 && resourceMgr.IsTextureLoaded(render.texture_id)) {
+                        auto it = m_gpuTextures.find(render.texture_id.value());
+                        if (it != m_gpuTextures.end()) {
+                            textureHandle = it->second;
+                        } else {
+                            auto tex_res = resourceMgr.GetTexture(render.texture_id);
+                            if (tex_res) {
+                                engine::graphics::TextureDesc texDesc;
+                                texDesc.width = tex_res->width;
+                                texDesc.height = tex_res->height;
+                                texDesc.format = (tex_res->channels == 8) ? engine::graphics::Format::RGBA16_FLOAT : engine::graphics::Format::RGBA8_UNORM;
+                                texDesc.is_render_target = false;
+                                texDesc.is_depth_stencil = false;
+                                textureHandle = m_engine->GetIGraphics().CreateTexture(texDesc, tex_res->data.get());
+
+                                m_gpuTextures[render.texture_id.value()] = textureHandle;
+                            }
+                        }
+                    }
+                    packet.texture = textureHandle;
+
+                    m_renderQueues[write_state].Push(packet);
+                }
+
+                if (registry.HasComponent<engine::ecs::HierarchyComponent>(curr)) {
+                    auto child = registry.GetComponent<engine::ecs::HierarchyComponent>(curr).first_child;
+                    while (registry.GetRawRegistry().valid(child)) {
+                        stack.push_back(child);
+                        if (registry.HasComponent<engine::ecs::HierarchyComponent>(child)) {
+                            child = registry.GetComponent<engine::ecs::HierarchyComponent>(child).next_sibling;
+                        } else {
+                            break;
+                        }
+                    }
+                }
             }
         }).name("DiligentExtract");
 
@@ -167,7 +299,9 @@ namespace engine::renderer {
 
         ENGINE_ASSERT(!m_renderThread.joinable(), "DiligentModule: render thread failed to join at shutdown");
 
-        m_dummyTexture.Release();
+        m_defaultTexture.Release();
+        m_defaultInstanceBuffer.Release();
+        m_cameraConstants.Release();
         m_pushConstants.Release();
         m_globalSRB.Release();
         m_globalSignature.Release();
@@ -291,7 +425,28 @@ namespace engine::renderer {
                 PSOCreateInfo.pVS = pVS;
                 PSOCreateInfo.pPS = pPS;
                 PSOCreateInfo.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
-                PSOCreateInfo.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
+
+                // Define standard Vertex and Instance input layout to match the shader attributes
+                static const Diligent::LayoutElement LayoutElems[] = {
+                    // Vertex layout (slot 0)
+                    Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false, 0, sizeof(engine::io::Vertex), Diligent::INPUT_ELEMENT_FREQUENCY_PER_VERTEX},
+                    Diligent::LayoutElement{1, 0, 3, Diligent::VT_FLOAT32, false, 12, sizeof(engine::io::Vertex), Diligent::INPUT_ELEMENT_FREQUENCY_PER_VERTEX},
+                    Diligent::LayoutElement{2, 0, 2, Diligent::VT_FLOAT32, false, 24, sizeof(engine::io::Vertex), Diligent::INPUT_ELEMENT_FREQUENCY_PER_VERTEX},
+
+                    // Hardware Instancing layout (slot 1)
+                    Diligent::LayoutElement{3, 1, 4, Diligent::VT_FLOAT32, false, 0, 68, Diligent::INPUT_ELEMENT_FREQUENCY_PER_INSTANCE},
+                    Diligent::LayoutElement{4, 1, 4, Diligent::VT_FLOAT32, false, 16, 68, Diligent::INPUT_ELEMENT_FREQUENCY_PER_INSTANCE},
+                    Diligent::LayoutElement{5, 1, 4, Diligent::VT_FLOAT32, false, 32, 68, Diligent::INPUT_ELEMENT_FREQUENCY_PER_INSTANCE},
+                    Diligent::LayoutElement{6, 1, 4, Diligent::VT_FLOAT32, false, 48, 68, Diligent::INPUT_ELEMENT_FREQUENCY_PER_INSTANCE},
+                    Diligent::LayoutElement{7, 1, 1, Diligent::VT_UINT32, false, 64, 68, Diligent::INPUT_ELEMENT_FREQUENCY_PER_INSTANCE}
+                };
+                PSOCreateInfo.GraphicsPipeline.InputLayout.LayoutElements = LayoutElems;
+                PSOCreateInfo.GraphicsPipeline.InputLayout.NumElements    = 8;
+
+                // Enable Depth Buffer and Depth Testing
+                PSOCreateInfo.GraphicsPipeline.DepthStencilDesc.DepthEnable = true;
+                PSOCreateInfo.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = true;
+                PSOCreateInfo.GraphicsPipeline.DepthStencilDesc.DepthFunc = Diligent::COMPARISON_FUNC_LESS_EQUAL;
 
                 PSOCreateInfo.GraphicsPipeline.NumRenderTargets = 1;
                 PSOCreateInfo.GraphicsPipeline.RTVFormats[0] = m_pSwapChain->GetDesc().ColorBufferFormat;
@@ -312,9 +467,9 @@ namespace engine::renderer {
 
             for (const auto& intent : ready_deletions) {
                 m_buffers.Remove(intent.handle_id & 0xFFFFF, (intent.handle_id >> 20) & 0xFFF);
-                auto* pDummySRV = m_dummyTexture->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
-                Diligent::IDeviceObject* pDummyObject = pDummySRV;
-                m_globalSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "g_Textures")->SetArray(&pDummyObject, intent.handle_id & 0xFFFFF, 1);
+                auto* pDefaultSRV = m_defaultTexture->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+                Diligent::IDeviceObject* pDefaultObject = pDefaultSRV;
+                m_globalSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "g_Textures")->SetArray(&pDefaultObject, intent.handle_id & 0xFFFFF, 1);
                 m_textures.Remove(intent.handle_id & 0xFFFFF, (intent.handle_id >> 20) & 0xFFF);
                 m_pipelines.Remove(intent.handle_id & 0xFFFFF, (intent.handle_id >> 20) & 0xFFF);
             }
@@ -329,6 +484,14 @@ namespace engine::renderer {
 
             // We must cast away constness locally to sort the lockless double-buffer queue before reading
             const_cast<engine::renderer::RenderQueue&>(queue).Sort();
+
+            // Map camera constants
+            void* cameraData = nullptr;
+            m_pImmediateContext->MapBuffer(m_cameraConstants, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, cameraData);
+            if (cameraData != nullptr) {
+                *static_cast<engine::math::Matrix4*>(cameraData) = queue.GetCameraViewProj();
+                m_pImmediateContext->UnmapBuffer(m_cameraConstants, Diligent::MAP_WRITE);
+            }
 
             auto* pMainRTV = m_pSwapChain->GetCurrentBackBufferRTV();
             auto* pMainDSV = m_pSwapChain->GetDepthBufferDSV();
@@ -395,6 +558,9 @@ namespace engine::renderer {
                 auto* instBuffer = m_buffers.Get(packet.instance_buffer.GetIndex(), packet.instance_buffer.GetGeneration());
                 if (instBuffer != nullptr) {
                     pBuffs[1]   = instBuffer;
+                    num_buffers = 2;
+                } else {
+                    pBuffs[1]   = m_defaultInstanceBuffer;
                     num_buffers = 2;
                 }
                 m_pImmediateContext->SetVertexBuffers(0, num_buffers, pBuffs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION, Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);

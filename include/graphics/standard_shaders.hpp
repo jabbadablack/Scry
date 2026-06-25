@@ -4,10 +4,16 @@
 namespace engine::graphics::shaders {
 
     inline const char* UberPBR_VS = R"(
+cbuffer CameraConstants {
+    float4x4 g_ViewProj;
+};
+
 cbuffer PushConstants {
     float4x4 g_Transform;
     uint     g_TextureIndex;
-    float3   g_Pad;
+    float    g_Pad0;
+    float    g_Pad1;
+    float    g_Pad2;
 };
 
 struct VSInput {
@@ -35,8 +41,8 @@ void main(in VSInput VSIn, out PSInput PSIn, uint InstanceID : SV_InstanceID) {
 
     float4 worldPos = mul(float4(VSIn.Pos, 1.0), finalTransform);
     
-    // Basic projection (In a real engine, pass ViewProj via another constant buffer)
-    PSIn.Pos      = worldPos; 
+    // Multiply World Position by View-Projection Matrix
+    PSIn.Pos      = mul(worldPos, g_ViewProj); 
     PSIn.WorldPos = worldPos.xyz;
     PSIn.Normal   = normalize(mul(VSIn.Normal, (float3x3)finalTransform));
     PSIn.UV       = VSIn.UV;
@@ -62,7 +68,7 @@ struct PSOutput {
 
 void main(in PSInput PSIn, out PSOutput PSOut) {
     // Bindless texture lookup
-    float4 albedo = g_Textures[NonUniformResourceIndex(PSIn.TexIndex)].Sample(g_Textures_sampler, PSIn.UV);
+    float4 albedo = g_Textures[PSIn.TexIndex].Sample(g_Textures_sampler, PSIn.UV);
     
     // Simple Directional Lighting (Uber Base)
     float3 lightDir = normalize(float3(0.5, -1.0, 0.5));

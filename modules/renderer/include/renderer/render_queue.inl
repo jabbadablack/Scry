@@ -50,6 +50,14 @@ namespace engine::renderer {
         }
     }
 
+    ENGINE_INLINE void RenderQueue::SetCameraViewProj(const engine::math::Matrix4& vp) noexcept {
+        m_cameraViewProj = vp;
+    }
+
+    ENGINE_INLINE const engine::math::Matrix4& RenderQueue::GetCameraViewProj() const noexcept {
+        return m_cameraViewProj;
+    }
+
 } // namespace engine::renderer
 
 

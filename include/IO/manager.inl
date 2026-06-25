@@ -16,40 +16,16 @@ namespace engine::io {
     ResourceManager::TextureLoader::operator()(const char* path) const {
         ENGINE_ASSERT(path != nullptr, "Texture resource path cannot be null!");
 
-        // Mock path interceptor for testing/CI pipelines
-        if (std::string_view(path).rfind("mock://", 0) == 0) {
-            auto texture = std::make_shared<Texture>();
-            texture->width = 16;
-            texture->height = 16;
-            texture->channels = 4;
-            
-            size_t size = 16 * 16 * 4;
-            void* raw_mem = engine::TrackedHeap::Allocate(size, 16);
-            texture->data = std::unique_ptr<std::byte[], void(*)(std::byte*)>(
-                reinterpret_cast<std::byte*>(raw_mem),
-                [](std::byte* p) {
-                    if (p != nullptr) {
-                        struct Header {
-                            size_t size;
-                            size_t alignment;
-                            void* original_ptr;
-                        };
-                        Header* header = reinterpret_cast<Header*>(reinterpret_cast<uintptr_t>(p) - sizeof(Header));
-                        size_t size = header->size;
-                        engine::TrackedHeap::Deallocate(p, size);
-                    }
-                }
-            );
-            return texture;
-        }
-
         int width = 0;
         int height = 0;
         int channels = 0;
 
         // Load image using stb_image
         stbi_uc* pixels = stbi_load(path, &width, &height, &channels, 0);
-        ENGINE_ASSERT(pixels != nullptr, "Failed to load texture file!");
+        if (pixels == nullptr) {
+            ENGINE_ASSERT(false, "Failed to load texture file!");
+            return nullptr;
+        }
 
         auto texture = std::make_shared<Texture>();
         texture->width = width;
@@ -76,27 +52,14 @@ namespace engine::io {
     ResourceManager::MeshLoader::operator()(const char* path) const {
         ENGINE_ASSERT(path != nullptr, "Mesh resource path cannot be null!");
 
-        // Mock path interceptor for testing/CI pipelines
-        if (std::string_view(path).rfind("mock://", 0) == 0) {
-            auto mesh = std::make_shared<Mesh>();
-            Vertex vertex;
-            vertex.position.setZero();
-            vertex.normal.setZero();
-            vertex.uv.setZero();
-            
-            mesh->vertices.push_back(vertex);
-            mesh->indices.push_back(0);
-            mesh->indices.push_back(0);
-            mesh->indices.push_back(0);
-            return mesh;
-        }
-
         Assimp::Importer importer;
         const aiScene* scene = importer.ReadFile(path, 
             aiProcess_Triangulate | aiProcess_JoinIdenticalVertices | aiProcess_GenSmoothNormals);
         
-        ENGINE_ASSERT(scene != nullptr, "Failed to parse mesh file via Assimp!");
-        ENGINE_ASSERT(scene->mNumMeshes > 0, "Parsed mesh file contains zero meshes!");
+        if (scene == nullptr || scene->mNumMeshes == 0) {
+            ENGINE_ASSERT(false, "Failed to parse mesh file via Assimp!");
+            return nullptr;
+        }
 
         auto mesh = std::make_shared<Mesh>();
         const aiMesh* ai_mesh = scene->mMeshes[0];

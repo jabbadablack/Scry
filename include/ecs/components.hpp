@@ -7,6 +7,7 @@
 
 
 #include "../graphics/graphics_types.hpp"
+#include "../math/geometry.hpp"
 
 namespace engine::ecs {
 
@@ -38,6 +39,13 @@ namespace engine::ecs {
         f32 far_plane  = 1000.0F;
         bool is_active = true;
         engine::math::Matrix4 view_proj = engine::math::Matrix4::Identity();
+    };
+
+    struct EnvironmentComponent {
+        engine::math::AABB    bounds        = { engine::math::Vector3(-10000.0F, -10000.0F, -10000.0F), engine::math::Vector3(10000.0F, 10000.0F, 10000.0F) };
+        engine::math::Vector3 gravity       = engine::math::Vector3(0.0F, -9.81F, 0.0F);
+        engine::math::Vector4 ambient_color = engine::math::Vector4(0.1F, 0.1F, 0.1F, 1.0F);
+        f32                   fog_density   = 0.01F;
     };
 
 } // namespace engine::ecs

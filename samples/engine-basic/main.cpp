@@ -22,6 +22,15 @@ public:
 
     void BuildGraph(tf::Taskflow& taskflow) override {}
 
+    void RegisterReflection() override {
+        engine::ecs::Meta<engine::ecs::EnvironmentComponent>()
+            .type(engine::ecs::Hash("EnvironmentComponent"))
+            .data<&engine::ecs::EnvironmentComponent::bounds>(engine::ecs::Hash("bounds"))
+            .data<&engine::ecs::EnvironmentComponent::gravity>(engine::ecs::Hash("gravity"))
+            .data<&engine::ecs::EnvironmentComponent::ambient_color>(engine::ecs::Hash("ambient_color"))
+            .data<&engine::ecs::EnvironmentComponent::fog_density>(engine::ecs::Hash("fog_density"));
+    }
+
     void CompileFrameGraph(engine::FrameDAG& dag) override {
         int write_state = dag.write_state;
         m_camQueue.Initialize(m_engine->GetFrameArena(write_state), 10);
@@ -138,6 +147,7 @@ int main() {
     auto levelEnt = reg.CreateEntity();
     reg.AddComponent<engine::ecs::TagComponent>(levelEnt).tag = engine::StringHash{"Level"};
     reg.AddComponent<engine::ecs::HierarchyComponent>(levelEnt);
+    reg.AddComponent<engine::ecs::EnvironmentComponent>(levelEnt);
 
     // 2. Create Grid (Child of Level)
     auto gridEnt = reg.CreateEntity();

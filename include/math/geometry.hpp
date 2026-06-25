@@ -2,6 +2,7 @@
 #define ENGINE_MATH_GEOMETRY_HPP
 
 #include "algebra.hpp"
+#include "trigonometry.hpp"
 
 
 namespace engine::math {

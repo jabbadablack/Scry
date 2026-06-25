@@ -352,7 +352,8 @@ namespace engine::renderer {
                 } else if (intent.desc.bind == engine::graphics::BufferBind::Indirect) {
                     BuffDesc.BindFlags = Diligent::BIND_INDIRECT_DRAW_ARGS;
                 }
-                BuffDesc.Usage = (intent.desc.usage == engine::graphics::BufferUsage::Static) ? Diligent::USAGE_IMMUTABLE : Diligent::USAGE_DYNAMIC;
+                BuffDesc.Usage          = (intent.desc.usage == engine::graphics::BufferUsage::Static) ? Diligent::USAGE_IMMUTABLE : Diligent::USAGE_DYNAMIC;
+                BuffDesc.CPUAccessFlags = (BuffDesc.Usage == Diligent::USAGE_DYNAMIC) ? Diligent::CPU_ACCESS_WRITE : Diligent::CPU_ACCESS_NONE;
 
                 Diligent::BufferData BuffData;
                 BuffData.pData = intent.data;
@@ -369,6 +370,8 @@ namespace engine::renderer {
                 TexDesc.Type = Diligent::RESOURCE_DIM_TEX_2D;
                 TexDesc.Width = intent.desc.width;
                 TexDesc.Height = intent.desc.height;
+                TexDesc.Usage          = Diligent::USAGE_IMMUTABLE;
+                TexDesc.CPUAccessFlags = Diligent::CPU_ACCESS_NONE;
                 switch (intent.desc.format) {
                     case engine::graphics::Format::RGBA8_UNORM:
                         TexDesc.Format = Diligent::TEX_FORMAT_RGBA8_UNORM;

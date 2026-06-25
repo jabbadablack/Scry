@@ -43,11 +43,26 @@ namespace engine::graphics {
         BufferBind  bind  = BufferBind::Vertex;
     };
 
+    enum class RenderPass : u8 {
+        Shadow      = 0,
+        ZPrePass    = 1,
+        Opaque      = 2, // G-Buffer or Forward
+        Transparent = 3,
+        PostProcess = 4
+    };
+
+    enum class Format : u8 {
+        RGBA8_UNORM,
+        RGBA16_FLOAT, // For HDR Post-Processing
+        D32_FLOAT     // For Z-PrePass and Shadows
+    };
+
     struct TextureDesc {
-        u32  width            = 0;
-        u32  height           = 0;
-        u32  channels         = 4;
-        bool is_render_target = false;
+        u32    width            = 0;
+        u32    height           = 0;
+        Format format           = Format::RGBA8_UNORM;
+        bool   is_render_target = false;
+        bool   is_depth_stencil = false;
     };
 
     struct PipelineDesc {

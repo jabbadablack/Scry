@@ -7,16 +7,19 @@
 namespace engine::graphics {
 
     struct RenderPacket {
+        u64                   sort_key = 0;
+        RenderPass            pass     = RenderPass::Opaque;
+
         PipelineHandle        pipeline;
         BufferHandle          vertex_buffer;
         BufferHandle          index_buffer;
-        BufferHandle          instance_buffer; // New: Bound to slot 1
-        BufferHandle          indirect_buffer; // New: Contains DrawIndexedIndirectAttribs
+        BufferHandle          instance_buffer;
+        BufferHandle          indirect_buffer;
         u32                   indirect_offset = 0;
 
         TextureHandle         texture;
-        engine::math::Matrix4 transform;       // Fallback for non-instanced
-        u32                   index_count = 0; // Fallback for non-indirect
+        engine::math::Matrix4 transform;
+        u32                   index_count = 0;
     };
 
 } // namespace engine::graphics

@@ -227,19 +227,31 @@ namespace engine::renderer {
                 TexDesc.Type = Diligent::RESOURCE_DIM_TEX_2D;
                 TexDesc.Width = intent.desc.width;
                 TexDesc.Height = intent.desc.height;
-                if (intent.desc.channels == 4) {
-                    TexDesc.Format = Diligent::TEX_FORMAT_RGBA8_UNORM;
-                } else if (intent.desc.channels == 1) {
-                    TexDesc.Format = Diligent::TEX_FORMAT_R8_UNORM;
-                } else {
-                    TexDesc.Format = Diligent::TEX_FORMAT_RGBA8_UNORM;
+                switch (intent.desc.format) {
+                    case engine::graphics::Format::RGBA8_UNORM:
+                        TexDesc.Format = Diligent::TEX_FORMAT_RGBA8_UNORM;
+                        break;
+                    case engine::graphics::Format::RGBA16_FLOAT:
+                        TexDesc.Format = Diligent::TEX_FORMAT_RGBA16_FLOAT;
+                        break;
+                    case engine::graphics::Format::D32_FLOAT:
+                        TexDesc.Format = Diligent::TEX_FORMAT_D32_FLOAT;
+                        break;
                 }
-                TexDesc.BindFlags = intent.desc.is_render_target ? Diligent::BIND_RENDER_TARGET : Diligent::BIND_SHADER_RESOURCE;
+
+                if (intent.desc.is_render_target) {
+                    TexDesc.BindFlags = Diligent::BIND_RENDER_TARGET | Diligent::BIND_SHADER_RESOURCE;
+                } else if (intent.desc.is_depth_stencil) {
+                    TexDesc.BindFlags = Diligent::BIND_DEPTH_STENCIL | Diligent::BIND_SHADER_RESOURCE;
+                } else {
+                    TexDesc.BindFlags = Diligent::BIND_SHADER_RESOURCE;
+                }
 
                 Diligent::TextureData SubResources;
                 Diligent::TextureSubResData Mips[1];
                 Mips[0].pData = intent.data;
-                Mips[0].Stride = static_cast<Diligent::Uint64>(intent.desc.width) * intent.desc.channels;
+                engine::u32 bytes_per_pixel = (intent.desc.format == engine::graphics::Format::RGBA16_FLOAT) ? 8 : 4;
+                Mips[0].Stride = static_cast<Diligent::Uint64>(intent.desc.width) * bytes_per_pixel;
                 SubResources.pSubResources = Mips;
                 SubResources.NumSubresources = 1;
 
@@ -315,86 +327,99 @@ namespace engine::renderer {
 
             const auto& queue = m_renderQueues[read_state];
 
-            // Set Render Target and Clear Screen (Vulkan swap chain operations)
-            auto* pRTV = m_pSwapChain->GetCurrentBackBufferRTV();
-            auto* pDSV = m_pSwapChain->GetDepthBufferDSV();
-            if ((pRTV != nullptr) && (pDSV != nullptr)) {
-                m_pImmediateContext->SetRenderTargets(1, &pRTV, pDSV, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-                const float ClearColor[] = { 0.15F, 0.15F, 0.15F, 1.0F };
-                m_pImmediateContext->ClearRenderTarget(pRTV, ClearColor, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-                m_pImmediateContext->ClearDepthStencil(pDSV, Diligent::CLEAR_DEPTH_FLAG, 1.0F, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-            }
+            // We must cast away constness locally to sort the lockless double-buffer queue before reading
+            const_cast<engine::renderer::RenderQueue&>(queue).Sort();
 
-            // Commit the Global SRB exactly ONCE per frame
-            m_pImmediateContext->CommitShaderResources(m_globalSRB, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+            auto* pMainRTV = m_pSwapChain->GetCurrentBackBufferRTV();
+            auto* pMainDSV = m_pSwapChain->GetDepthBufferDSV();
+            const float ClearColor[] = { 0.15F, 0.15F, 0.15F, 1.0F };
 
-            // Draw loop processing Intent-Based Packets
-            for (size_t i = 0; i < queue.GetCount(); ++i) {
-                const auto& packet = queue.GetCommands()[i];
+            if (pMainRTV && pMainDSV) {
+                // 1. Z-PREPASS
+                // Render ONLY to the depth buffer to prime early-Z culling
+                m_pImmediateContext->SetRenderTargets(0, nullptr, pMainDSV, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+                m_pImmediateContext->ClearDepthStencil(pMainDSV, Diligent::CLEAR_DEPTH_FLAG, 1.0F, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
-                auto* pso = m_pipelines.Get(packet.pipeline.GetIndex(), packet.pipeline.GetGeneration());
-                if (pso == nullptr) {
-                    continue;
-                }
+                m_pImmediateContext->CommitShaderResources(m_globalSRB, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+                DispatchPackets(queue, engine::graphics::RenderPass::ZPrePass);
 
-                m_pImmediateContext->SetPipelineState(pso);
+                // 2. OPAQUE (G-BUFFER / FORWARD)
+                // Re-bind the color target, keeping the primed depth buffer
+                m_pImmediateContext->SetRenderTargets(1, &pMainRTV, pMainDSV, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+                m_pImmediateContext->ClearRenderTarget(pMainRTV, ClearColor, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+                DispatchPackets(queue, engine::graphics::RenderPass::Opaque);
 
-                // Simulate Vulkan Push Constants via fast-mapped dynamic upload heap
-                void* mappedData = nullptr;
-                m_pImmediateContext->MapBuffer(m_pushConstants, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mappedData);
-                if (mappedData != nullptr) {
-                    auto* pc          = static_cast<PushConstants*>(mappedData);
-                    pc->transform     = packet.transform;
-                    pc->texture_index = packet.texture.IsValid() ? packet.texture.GetIndex() : 0;
-                    m_pImmediateContext->UnmapBuffer(m_pushConstants, Diligent::MAP_WRITE);
-                }
+                // 3. TRANSPARENT
+                DispatchPackets(queue, engine::graphics::RenderPass::Transparent);
 
-                // 1. Bind Vertex and Instance Buffers
-                Diligent::IBuffer* pBuffs[2]  = { nullptr, nullptr };
-                Diligent::Uint64   offsets[2] = { 0, 0 };
-                engine::u32        num_buffers = 0;
-
-                auto* vBuffer = m_buffers.Get(packet.vertex_buffer.GetIndex(), packet.vertex_buffer.GetGeneration());
-                if (vBuffer != nullptr) {
-                    pBuffs[0]   = vBuffer;
-                    num_buffers = 1;
-
-                    auto* instBuffer = m_buffers.Get(packet.instance_buffer.GetIndex(), packet.instance_buffer.GetGeneration());
-                    if (instBuffer != nullptr) {
-                        pBuffs[1]   = instBuffer;
-                        num_buffers = 2;
-                    }
-
-                    m_pImmediateContext->SetVertexBuffers(0, num_buffers, pBuffs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION, Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
-                }
-
-                // 2. Bind Index Buffer
-                auto* iBuffer = m_buffers.Get(packet.index_buffer.GetIndex(), packet.index_buffer.GetGeneration());
-                if (iBuffer != nullptr) {
-                    m_pImmediateContext->SetIndexBuffer(iBuffer, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-
-                    // 3. Dispatch Draw Call (Indirect vs Direct)
-                    auto* indirectBuffer = m_buffers.Get(packet.indirect_buffer.GetIndex(), packet.indirect_buffer.GetGeneration());
-                    if (indirectBuffer != nullptr) {
-                        Diligent::DrawIndexedIndirectAttribs DrawAttrs;
-                        DrawAttrs.pAttribsBuffer = indirectBuffer;
-                        DrawAttrs.DrawArgsOffset = packet.indirect_offset;
-                        DrawAttrs.IndexType      = Diligent::VT_UINT32;
-                        DrawAttrs.Flags          = Diligent::DRAW_FLAG_VERIFY_ALL;
-                        m_pImmediateContext->DrawIndexedIndirect(DrawAttrs);
-                    } else {
-                        Diligent::DrawIndexedAttribs DrawAttrs;
-                        DrawAttrs.NumIndices = packet.index_count;
-                        DrawAttrs.IndexType  = Diligent::VT_UINT32;
-                        DrawAttrs.Flags      = Diligent::DRAW_FLAG_VERIFY_ALL;
-                        m_pImmediateContext->DrawIndexed(DrawAttrs);
-                    }
-                }
+                // 4. POST-PROCESS
+                // (When you implement offscreen HDR buffers, you will bind the Swapchain RTV here
+                // and draw a fullscreen quad reading from your offscreen HDR texture).
+                DispatchPackets(queue, engine::graphics::RenderPass::PostProcess);
             }
 
             m_pSwapChain->Present();
             m_frameCount++;
             std::this_thread::yield();
+        }
+    }
+
+    void DiligentModule::DispatchPackets(const engine::renderer::RenderQueue& queue, engine::graphics::RenderPass targetPass) {
+        for (size_t i = 0; i < queue.GetCount(); ++i) {
+            const auto& packet = queue.GetCommands()[i];
+            if (packet.pass != targetPass) continue; // Queue is sorted, but we loop for safety
+
+            auto* pso = m_pipelines.Get(packet.pipeline.GetIndex(), packet.pipeline.GetGeneration());
+            if (pso == nullptr) continue;
+
+            m_pImmediateContext->SetPipelineState(pso);
+
+            void* mappedData = nullptr;
+            m_pImmediateContext->MapBuffer(m_pushConstants, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD, mappedData);
+            if (mappedData != nullptr) {
+                auto* pc          = static_cast<PushConstants*>(mappedData);
+                pc->transform     = packet.transform;
+                pc->texture_index = packet.texture.IsValid() ? packet.texture.GetIndex() : 0;
+                m_pImmediateContext->UnmapBuffer(m_pushConstants, Diligent::MAP_WRITE);
+            }
+
+            Diligent::IBuffer* pBuffs[2]  = { nullptr, nullptr };
+            Diligent::Uint64   offsets[2] = { 0, 0 };
+            engine::u32        num_buffers = 0;
+
+            auto* vBuffer = m_buffers.Get(packet.vertex_buffer.GetIndex(), packet.vertex_buffer.GetGeneration());
+            if (vBuffer != nullptr) {
+                pBuffs[0]   = vBuffer;
+                num_buffers = 1;
+
+                auto* instBuffer = m_buffers.Get(packet.instance_buffer.GetIndex(), packet.instance_buffer.GetGeneration());
+                if (instBuffer != nullptr) {
+                    pBuffs[1]   = instBuffer;
+                    num_buffers = 2;
+                }
+                m_pImmediateContext->SetVertexBuffers(0, num_buffers, pBuffs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION, Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
+            }
+
+            auto* iBuffer = m_buffers.Get(packet.index_buffer.GetIndex(), packet.index_buffer.GetGeneration());
+            if (iBuffer != nullptr) {
+                m_pImmediateContext->SetIndexBuffer(iBuffer, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+                auto* indirectBuffer = m_buffers.Get(packet.indirect_buffer.GetIndex(), packet.indirect_buffer.GetGeneration());
+                if (indirectBuffer != nullptr) {
+                    Diligent::DrawIndexedIndirectAttribs DrawAttrs;
+                    DrawAttrs.pAttribsBuffer = indirectBuffer;
+                    DrawAttrs.DrawArgsOffset = packet.indirect_offset;
+                    DrawAttrs.IndexType      = Diligent::VT_UINT32;
+                    DrawAttrs.Flags          = Diligent::DRAW_FLAG_VERIFY_ALL;
+                    m_pImmediateContext->DrawIndexedIndirect(DrawAttrs);
+                } else {
+                    Diligent::DrawIndexedAttribs DrawAttrs;
+                    DrawAttrs.NumIndices = packet.index_count;
+                    DrawAttrs.IndexType  = Diligent::VT_UINT32;
+                    DrawAttrs.Flags      = Diligent::DRAW_FLAG_VERIFY_ALL;
+                    m_pImmediateContext->DrawIndexed(DrawAttrs);
+                }
+            }
         }
     }
 

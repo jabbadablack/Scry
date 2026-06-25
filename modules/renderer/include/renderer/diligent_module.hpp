@@ -51,6 +51,7 @@ namespace engine::renderer {
 
     private:
         void RenderThreadLoop();
+        void DispatchPackets(const engine::renderer::RenderQueue& queue, engine::graphics::RenderPass targetPass);
 
         // Diligent Engine pointers
         Diligent::RefCntAutoPtr<Diligent::IRenderDevice> m_pDevice;

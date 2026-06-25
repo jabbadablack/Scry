@@ -21,6 +21,7 @@ namespace engine::renderer {
 
         ENGINE_INLINE void Initialize(engine::ChainedArena& arena, size_t max_commands);
         ENGINE_INLINE void Push(const engine::graphics::RenderPacket& cmd);
+        ENGINE_INLINE void Sort();
 
         [[nodiscard]] ENGINE_INLINE const engine::graphics::RenderPacket* GetCommands() const noexcept;
         [[nodiscard]] ENGINE_INLINE size_t GetCount() const noexcept;

@@ -2,6 +2,7 @@
 #define ENGINE_RENDERER_RENDER_QUEUE_INL
 
 #include "render_queue.hpp"
+#include <algorithm>
 #include <debug/assert.h>
 
 
@@ -36,6 +37,17 @@ namespace engine::renderer {
         ENGINE_ASSERT(m_capacity > 0, "RenderQueue has buffer but zero capacity — initialization bug");
         ENGINE_ASSERT(m_count <= m_capacity, "RenderQueue count exceeds capacity — memory corruption");
         return m_count;
+    }
+
+    ENGINE_INLINE void RenderQueue::Sort() {
+        if (m_count > 1) {
+            std::stable_sort(m_commands, m_commands + m_count, 
+                [](const engine::graphics::RenderPacket& a, const engine::graphics::RenderPacket& b) {
+                    // Primary sort by Pass, Secondary sort by Key (Material/Depth)
+                    if (a.pass != b.pass) return a.pass < b.pass;
+                    return a.sort_key < b.sort_key;
+                });
+        }
     }
 
 } // namespace engine::renderer

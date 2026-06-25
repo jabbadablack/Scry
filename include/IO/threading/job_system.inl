@@ -1,10 +1,13 @@
 #ifndef ENGINE_IO_THREADING_JOB_SYSTEM_INL
 #define ENGINE_IO_THREADING_JOB_SYSTEM_INL
 
+#include <algorithm>
+#include <thread>
 
 namespace engine::io {
 
-    ENGINE_INLINE JobSystem::JobSystem() {
+    ENGINE_INLINE JobSystem::JobSystem()
+        : m_executor(static_cast<size_t>(std::max(2u, std::thread::hardware_concurrency() - 1))) {
         ENGINE_ASSERT(m_executor.num_workers() > 0, "JobSystem executor initialized with zero worker threads");
     }
 

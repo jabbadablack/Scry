@@ -11,7 +11,7 @@
 
 namespace engine {
 
-    template <typename T, size_t ElementsPerBlock = 1024>
+    template <typename T, size_t ElementsPerBlock = 256>
     class BlockPool {
     public:
         ENGINE_INLINE  BlockPool() = default;

@@ -45,8 +45,13 @@ namespace engine::renderer {
             ENGINE_LOG_ERROR("DiligentModule: failed to retrieve EngineFactoryVk");
             return false;
         }
+        pFactoryVk->SetMemoryAllocator(custom_allocator);
 
         Diligent::EngineVkCreateInfo EngineCI{};
+
+        EngineCI.DynamicHeapSize     = 2 * 1024 * 1024; // 2MB total dynamic heap
+        EngineCI.DynamicHeapPageSize = 256 * 1024;      // 256KB page sizes
+
         pFactoryVk->CreateDeviceAndContextsVk(EngineCI, &m_pDevice, &m_pImmediateContext);
         if (!m_pDevice) {
             ENGINE_LOG_ERROR("DiligentModule: failed to create Vulkan device and context");

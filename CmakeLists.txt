@@ -131,21 +131,24 @@ if(WIN32)
     )
 endif()
 
-# --- Dead Code Elimination (DCE) & Optimization ---
-# Forces the compiler to isolate functions/data, allowing the linker to garbage-collect unused code.
 if(MSVC)
-    # /Gy: Enable function-level linking (puts each function in its own COMDAT)
-    # /Gw: Optimize global data (puts data in individual COMDATs)
+    target_compile_options(${PROJECT_NAME} INTERFACE $<$<NOT:$<CONFIG:Debug>>:/GR->)
+else()
+    target_compile_options(${PROJECT_NAME} INTERFACE $<$<NOT:$<CONFIG:Debug>>:-fno-rtti>)
+endif()
+
+target_compile_definitions(${PROJECT_NAME} INTERFACE
+    ENTT_PACKED_PAGE=128
+    ENTT_SPARSE_PAGE=128
+)
+
+if(MSVC)
     target_compile_options(${PROJECT_NAME} INTERFACE /Gy /Gw)
     
-    # /OPT:REF: Eliminate unreferenced functions/data
-    # /OPT:ICF: Fold identical COMDAT sections
     target_link_options(${PROJECT_NAME} INTERFACE /OPT:REF /OPT:ICF)
 else()
-    # -ffunction-sections & -fdata-sections: Isolate functions and data into distinct sections
     target_compile_options(${PROJECT_NAME} INTERFACE -ffunction-sections -fdata-sections)
     
-    # -Wl,--gc-sections: Instruct the linker to aggressively drop unreferenced sections
     target_link_options(${PROJECT_NAME} INTERFACE -Wl,--gc-sections)
 endif()
 

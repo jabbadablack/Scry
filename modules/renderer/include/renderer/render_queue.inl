@@ -58,6 +58,14 @@ namespace engine::renderer {
         return m_cameraViewProj;
     }
 
+    ENGINE_INLINE void RenderQueue::SetDrawEditor(bool draw) noexcept {
+        m_drawEditor = draw;
+    }
+
+    ENGINE_INLINE bool RenderQueue::ShouldDrawEditor() const noexcept {
+        return m_drawEditor;
+    }
+
 } // namespace engine::renderer
 
 

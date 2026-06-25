@@ -111,11 +111,6 @@ ENGINE_INLINE void Engine::Tick() {
     m_writeState = 1 - m_writeState;
     m_frameArenas[m_writeState].Clear();
 
-    if (m_input != nullptr && (m_input->IsKeyPressed(engine::Key::F11) || m_input->IsKeyPressed(engine::Key::P))) {
-        ToggleProfiler();
-        ENGINE_LOG_INFO(std::string("[INPUT] ToggleProfiler pressed. Profiler active: ") + (IsProfilerActive() ? "YES" : "NO"));
-    }
-
     // Execute the Instanced/Cached DAG
     m_jobSystem.GetExecutor().run(m_taskflow).wait();
 

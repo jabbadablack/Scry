@@ -73,9 +73,6 @@ public:
         return static_cast<float>(m_interpolationAlpha);
     }
 
-    [[nodiscard]] ENGINE_INLINE bool IsProfilerActive() const noexcept { return m_showProfiler; }
-    ENGINE_INLINE void ToggleProfiler() noexcept { m_showProfiler = !m_showProfiler; }
-
 private:
     engine::WindowManager m_windowManager;
     IInput* m_input = nullptr;
@@ -93,7 +90,6 @@ private:
     int m_renderReadState = 1;
     std::mutex m_renderSwapMutex;
     double m_interpolationAlpha = 0.0;
-    bool m_showProfiler = false;
 
     std::unique_ptr<IWindow> m_defaultWindow;
     std::unique_ptr<IInput> m_defaultInput;

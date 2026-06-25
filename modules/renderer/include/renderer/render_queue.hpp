@@ -28,11 +28,15 @@ namespace engine::renderer {
         ENGINE_INLINE void SetCameraViewProj(const engine::math::Matrix4& vp) noexcept;
         [[nodiscard]] ENGINE_INLINE const engine::math::Matrix4& GetCameraViewProj() const noexcept;
 
+        ENGINE_INLINE void SetDrawEditor(bool draw) noexcept;
+        [[nodiscard]] ENGINE_INLINE bool ShouldDrawEditor() const noexcept;
+
     private:
         engine::graphics::RenderPacket* m_commands = nullptr;
         size_t m_count = 0;
         size_t m_capacity = 0;
         engine::math::Matrix4 m_cameraViewProj = engine::math::Matrix4::Identity();
+        bool m_drawEditor = false;
     };
 
 } // namespace engine::renderer

@@ -81,7 +81,7 @@ bool DiligentModule::Initialize(engine::Engine& engine) {
     m_pImGui = pImGui;
     m_imguiContext = ImGui::GetCurrentContext();
 
-    ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_ViewportsEnable;
     ImGui_ImplGlfw_InitForOther(glfwWindow, true);
 
     // Configure Global Bindless Setup
@@ -329,6 +329,14 @@ void DiligentModule::CompileFrameGraph(FrameDAG& dag) {
                         }
                     }
                 }
+
+                bool drawEditor = false;
+                auto editorView = registry.View<engine::ecs::EditorComponent>();
+                for (auto ent : editorView) {
+                    drawEditor = registry.GetComponent<engine::ecs::EditorComponent>(ent).show_overlay;
+                    break;
+                }
+                m_renderQueues[write_state].SetDrawEditor(drawEditor);
             })
             .name("DiligentExtract");
 

@@ -249,31 +249,38 @@ void DiligentModule::RenderThreadLoop() {
             // and draw a fullscreen quad reading from your offscreen HDR texture).
             DispatchPackets(queue, engine::graphics::RenderPass::PostProcess);
 
-            if (m_engine->IsProfilerActive() && m_pImGui != nullptr) {
+            if (m_pImGui != nullptr) {
                 std::lock_guard<std::mutex> lock(m_imguiMutex);
 
                 auto* pImGui = static_cast<Diligent::ImGuiImplDiligent*>(m_pImGui);
                 ImGui_ImplGlfw_NewFrame();
-                pImGui->NewFrame(m_pSwapChain->GetDesc().Width, m_pSwapChain->GetDesc().Height,
-                                 m_pSwapChain->GetDesc().PreTransform);
+                pImGui->NewFrame(m_pSwapChain->GetDesc().Width, m_pSwapChain->GetDesc().Height, m_pSwapChain->GetDesc().PreTransform);
 
-                if (ImGui::Begin("SCRY Engine Tools")) {
-                    ImGui::Text("Renderer: Vulkan (Diligent)");
-                    ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
-                    ImGui::Text("Frame Time: %.4f ms", m_engine->GetTime().GetDeltaTime() * 1000.0);
-                    ImGui::Separator();
-                    ImGui::Text("Memory Usage: %zu MB", engine::TrackedHeap::GetCurrentUsage() / (1024 * 1024));
+                if (queue.ShouldDrawEditor()) {
+                    ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
+                    if (ImGui::Begin("SCRY Engine Tools")) {
+                        ImGui::Text("Renderer: Vulkan (Diligent)");
+                        ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+                        ImGui::Text("Frame Time: %.4f ms", m_engine->GetTime().GetDeltaTime() * 1000.0);
+                        ImGui::Separator();
+                        ImGui::Text("Memory Usage: %zu MB", engine::TrackedHeap::GetCurrentUsage() / (1024 * 1024));
 
-                    if (ImGui::Button("Connect Tracy Server")) {
-                        ENGINE_LOG_INFO("To view deep profiling, launch 'tracy-profiler' and connect to 127.0.0.1");
+                        if (ImGui::Button("Connect Tracy Server")) {
+                            ENGINE_LOG_INFO("To view deep profiling, launch 'tracy-profiler' and connect to 127.0.0.1");
+                        }
                     }
+                    ImGui::End();
                 }
-                ImGui::End();
 
-                // Explicitly bind the backbuffer RTV and DSV for ImGui rendering
-                m_pImmediateContext->SetRenderTargets(1, &pMainRTV, pMainDSV,
-                                                       Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+                ImGui::Render();
+                m_pImmediateContext->SetRenderTargets(1, &pMainRTV, pMainDSV, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
                 pImGui->Render(m_pImmediateContext);
+
+                // CRITICAL FIX: This allows ImGui to destroy orphaned swapchains when the editor is toggled off!
+                if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+                    ImGui::UpdatePlatformWindows();
+                    ImGui::RenderPlatformWindowsDefault();
+                }
             }
         }
 

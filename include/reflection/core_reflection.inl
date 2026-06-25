@@ -66,6 +66,10 @@ ENGINE_INLINE void RegisterCoreReflection() {
         .data<&EnvironmentComponent::ambient_color>(Hash("ambient_color"))
         .data<&EnvironmentComponent::fog_density>(Hash("fog_density"));
 
+    Meta<EditorComponent>()
+        .type(Hash("EditorComponent"))
+        .data<&EditorComponent::show_overlay>(Hash("show_overlay"));
+
     ENGINE_LOG_INFO("Core Engine Reflection Registered");
 }
 

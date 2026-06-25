@@ -1,5 +1,7 @@
 #include "renderer/diligent_module.hpp"
+#ifdef ENGINE_ENABLE_IMGUI
 #include "Imgui/interface/ImGuiImplDiligent.hpp"
+#endif
 #include "diligent_allocator.hpp"
 #include <GLFW/glfw3.h>
 #include <OS/IWindow.hpp>
@@ -35,8 +37,6 @@ bool DiligentModule::Initialize(engine::Engine& engine) {
 
     auto* mainWindow = engine.GetWindowManager().GetMainWindow();
     engine::NativeHandles handles = mainWindow->GetNativeHandles();
-    auto* glfwWindow = static_cast<GlfwWindow*>(mainWindow)->GetRawWindow();
-
     Diligent::NativeWindow Window;
 #if defined(ENGINE_PLATFORM_WINDOWS)
     Window.hWnd = handles.window;
@@ -70,19 +70,24 @@ bool DiligentModule::Initialize(engine::Engine& engine) {
         return false;
     }
 
-    // Initialize ImGui wrapper
-    Diligent::ImGuiDiligentCreateInfo ImGuiCI;
-    ImGuiCI.pDevice = m_pDevice;
-    ImGuiCI.BackBufferFmt = m_pSwapChain->GetDesc().ColorBufferFormat;
-    ImGuiCI.DepthBufferFmt = m_pSwapChain->GetDesc().DepthBufferFormat;
+#ifdef ENGINE_ENABLE_IMGUI
+    {
+        auto* glfwWindow = static_cast<GlfwWindow*>(mainWindow)->GetRawWindow();
 
-    auto* pImGui = new Diligent::ImGuiImplDiligent(ImGuiCI);
-    pImGui->CreateDeviceObjects();
-    m_pImGui = pImGui;
-    m_imguiContext = ImGui::GetCurrentContext();
+        Diligent::ImGuiDiligentCreateInfo ImGuiCI;
+        ImGuiCI.pDevice = m_pDevice;
+        ImGuiCI.BackBufferFmt = m_pSwapChain->GetDesc().ColorBufferFormat;
+        ImGuiCI.DepthBufferFmt = m_pSwapChain->GetDesc().DepthBufferFormat;
 
-    ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_ViewportsEnable;
-    ImGui_ImplGlfw_InitForOther(glfwWindow, true);
+        auto* pImGui = new Diligent::ImGuiImplDiligent(ImGuiCI);
+        pImGui->CreateDeviceObjects();
+        m_pImGui = pImGui;
+        m_imguiContext = ImGui::GetCurrentContext();
+
+        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_ViewportsEnable;
+        ImGui_ImplGlfw_InitForOther(glfwWindow, true);
+    }
+#endif
 
     // Configure Global Bindless Setup
     Diligent::PipelineResourceDesc Resources[] = {
@@ -357,9 +362,11 @@ void DiligentModule::Shutdown() {
 
     ENGINE_ASSERT(!m_renderThread.joinable(), "DiligentModule: render thread failed to join at shutdown");
 
+#ifdef ENGINE_ENABLE_IMGUI
     if (m_pImGui != nullptr) {
         DestroyImGui();
     }
+#endif
 
     m_defaultTexture.Release();
     m_defaultInstanceBuffer.Release();

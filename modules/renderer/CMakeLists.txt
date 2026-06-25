@@ -50,10 +50,6 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(DiligentCore DiligentTools DiligentFX)
 
-if(TARGET Diligent-Imgui)
-    target_link_libraries(Diligent-Imgui PUBLIC imgui)
-endif()
-
 # Define DiligentTools interface target to wrap individual DiligentTools static libraries
 add_library(DiligentTools INTERFACE)
 target_link_libraries(DiligentTools INTERFACE
@@ -107,8 +103,14 @@ target_link_libraries(renderer PUBLIC
     Diligent-GraphicsEngineVk-static
     DiligentTools
     DiligentFX
-    Diligent-Imgui
 )
+
+if(ENGINE_ENABLE_IMGUI)
+    if(TARGET Diligent-Imgui)
+        target_link_libraries(Diligent-Imgui PUBLIC imgui)
+    endif()
+    target_link_libraries(renderer PUBLIC Diligent-Imgui)
+endif()
 
 # Exclude shared variants from the build to avoid MinGW linker map script errors
 if(TARGET Diligent-GraphicsEngineVk-shared)

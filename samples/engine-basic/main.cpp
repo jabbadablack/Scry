@@ -62,16 +62,17 @@ public:
                            }
 
                            engine::math::Vector3 moveDelta = engine::math::Vector3::Zero();
-                           if (input->IsKeyHeld(engine::Key::W))
-                               moveDelta.z() += 1.0F;
-                           if (input->IsKeyHeld(engine::Key::S))
-                               moveDelta.z() -= 1.0F;
-                           if (input->IsKeyHeld(engine::Key::A))
-                               moveDelta.x() -= 1.0F;
-                           if (input->IsKeyHeld(engine::Key::D))
-                               moveDelta.x() += 1.0F;
+                           if (input->IsKeyHeld(engine::Key::W)) {
+                               moveDelta.z() += 1.0F;}
+                           if (input->IsKeyHeld(engine::Key::S)) {
+                               moveDelta.z() -= 1.0F;}
+                           if (input->IsKeyHeld(engine::Key::A)) {
+                               moveDelta.x() -= 1.0F;}
+                           if (input->IsKeyHeld(engine::Key::D)) {
+                               moveDelta.x() += 1.0F;}
 
-                           engine::f64 dx = 0, dy = 0;
+                           engine::f64 dx = 0;
+                           engine::f64 dy = 0;
                            if (input->IsMouseButtonHeld(engine::MouseButton::Right)) {
                                input->GetMouseDelta(dx, dy);
                            }
@@ -165,7 +166,7 @@ int main() {
     engine.RegisterModule<engine::renderer::DiligentModule>();
     engine.RegisterModule<GameLogicModule>();
 
-    if (!engine.Initialize(800, 600, "SCRY Engine: Level & Hierarchy")) {
+    if (!engine.Initialize(800, 600, "SCRY")) {
         return -1;
     }
 

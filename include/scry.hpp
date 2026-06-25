@@ -2,6 +2,7 @@
 #define ENGINE_CORE_HPP
 
 #include "debug/assert.h"
+#include "debug/profiler.hpp"
 #include "OS/window_manager.hpp"
 #include "OS/glfw/glfw_window.hpp"
 #include "OS/glfw/glfw_input.hpp"

@@ -67,7 +67,7 @@ ENGINE_INLINE void TrackedHeap::Deallocate(void* ptr, size_t size) noexcept {
     }
     ENGINE_ASSERT(header->original_ptr != nullptr, "Invalid metadata pointer in TrackedHeap!");
 
-    TracyFree(reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(ptr) - sizeof(AllocationHeader)));
+    TracyFree(ptr);
 
     size_t actual_size = header->size;
     void* original_ptr = header->original_ptr;

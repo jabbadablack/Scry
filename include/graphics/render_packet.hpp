@@ -10,9 +10,13 @@ namespace engine::graphics {
         PipelineHandle        pipeline;
         BufferHandle          vertex_buffer;
         BufferHandle          index_buffer;
+        BufferHandle          instance_buffer; // New: Bound to slot 1
+        BufferHandle          indirect_buffer; // New: Contains DrawIndexedIndirectAttribs
+        u32                   indirect_offset = 0;
+
         TextureHandle         texture;
-        engine::math::Matrix4 transform;
-        u32                   index_count = 0;
+        engine::math::Matrix4 transform;       // Fallback for non-instanced
+        u32                   index_count = 0; // Fallback for non-indirect
     };
 
 } // namespace engine::graphics

@@ -10,8 +10,8 @@ set(DILIGENT_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(DILIGENT_BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
 set(DILIGENT_BUILD_TUTORIALS OFF CACHE BOOL "" FORCE)
 set(DILIGENT_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(DILIGENT_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
-set(DILIGENT_BUILD_FX OFF CACHE BOOL "" FORCE)
+set(DILIGENT_BUILD_TOOLS ON CACHE BOOL "" FORCE)
+set(DILIGENT_BUILD_FX ON CACHE BOOL "" FORCE)
 
 set(DILIGENT_NO_DIRECT3D11 ON CACHE BOOL "" FORCE)
 set(DILIGENT_NO_DIRECT3D12 ON CACHE BOOL "" FORCE)
@@ -35,8 +35,28 @@ FetchContent_Declare(
     GIT_TAG master
     SOURCE_DIR ${CMAKE_BINARY_DIR}/_deps/DiligentCore
 )
+FetchContent_Declare(
+    DiligentTools
+    GIT_REPOSITORY https://github.com/DiligentGraphics/DiligentTools.git
+    GIT_TAG master
+    SOURCE_DIR ${CMAKE_BINARY_DIR}/_deps/DiligentTools
+)
+FetchContent_Declare(
+    DiligentFX
+    GIT_REPOSITORY https://github.com/DiligentGraphics/DiligentFX.git
+    GIT_TAG master
+    SOURCE_DIR ${CMAKE_BINARY_DIR}/_deps/DiligentFX
+)
 
-FetchContent_MakeAvailable(DiligentCore)
+FetchContent_MakeAvailable(DiligentCore DiligentTools DiligentFX)
+
+# Define DiligentTools interface target to wrap individual DiligentTools static libraries
+add_library(DiligentTools INTERFACE)
+target_link_libraries(DiligentTools INTERFACE
+    Diligent-TextureLoader
+    Diligent-AssetLoader
+    Diligent-RenderStateNotation
+)
 
 # Suppress DiligentCore warnings that don't affect our code:
 #   -Winvalid-offsetof : PipelineStateBase uses offsetof on non-standard-layout for a
@@ -69,6 +89,8 @@ add_library(renderer STATIC src/diligent_module.cpp)
 target_include_directories(renderer PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     ${diligentcore_SOURCE_DIR}
+    ${diligenttools_SOURCE_DIR}
+    ${diligentfx_SOURCE_DIR}
 )
 
 target_include_directories(renderer PRIVATE
@@ -79,6 +101,8 @@ target_link_libraries(renderer PUBLIC
     SCRY
     Diligent-BuildSettings
     Diligent-GraphicsEngineVk-static
+    DiligentTools
+    DiligentFX
 )
 
 # Exclude shared variants from the build to avoid MinGW linker map script errors

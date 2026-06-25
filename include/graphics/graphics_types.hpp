@@ -32,7 +32,9 @@ namespace engine::graphics {
     enum class BufferBind : u8 {
         Vertex,
         Index,
-        Uniform
+        Uniform,
+        Instance,
+        Indirect
     };
 
     struct BufferDesc {

@@ -201,7 +201,15 @@ namespace engine::renderer {
                 Diligent::BufferDesc BuffDesc;
                 BuffDesc.Name = "DoDBuffer";
                 BuffDesc.Size = intent.desc.size;
-                BuffDesc.BindFlags = (intent.desc.bind == engine::graphics::BufferBind::Vertex) ? Diligent::BIND_VERTEX_BUFFER : Diligent::BIND_INDEX_BUFFER;
+                if (intent.desc.bind == engine::graphics::BufferBind::Vertex || intent.desc.bind == engine::graphics::BufferBind::Instance) {
+                    BuffDesc.BindFlags = Diligent::BIND_VERTEX_BUFFER;
+                } else if (intent.desc.bind == engine::graphics::BufferBind::Index) {
+                    BuffDesc.BindFlags = Diligent::BIND_INDEX_BUFFER;
+                } else if (intent.desc.bind == engine::graphics::BufferBind::Uniform) {
+                    BuffDesc.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
+                } else if (intent.desc.bind == engine::graphics::BufferBind::Indirect) {
+                    BuffDesc.BindFlags = Diligent::BIND_INDIRECT_DRAW_ARGS;
+                }
                 BuffDesc.Usage = (intent.desc.usage == engine::graphics::BufferUsage::Static) ? Diligent::USAGE_IMMUTABLE : Diligent::USAGE_DYNAMIC;
 
                 Diligent::BufferData BuffData;
@@ -341,21 +349,46 @@ namespace engine::renderer {
                     m_pImmediateContext->UnmapBuffer(m_pushConstants, Diligent::MAP_WRITE);
                 }
 
+                // 1. Bind Vertex and Instance Buffers
+                Diligent::IBuffer* pBuffs[2]  = { nullptr, nullptr };
+                Diligent::Uint64   offsets[2] = { 0, 0 };
+                engine::u32        num_buffers = 0;
+
                 auto* vBuffer = m_buffers.Get(packet.vertex_buffer.GetIndex(), packet.vertex_buffer.GetGeneration());
                 if (vBuffer != nullptr) {
-                    Diligent::IBuffer* pBuffs[]  = { vBuffer };
-                    Diligent::Uint64   offsets[] = { 0 };
-                    m_pImmediateContext->SetVertexBuffers(0, 1, pBuffs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION, Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
+                    pBuffs[0]   = vBuffer;
+                    num_buffers = 1;
+
+                    auto* instBuffer = m_buffers.Get(packet.instance_buffer.GetIndex(), packet.instance_buffer.GetGeneration());
+                    if (instBuffer != nullptr) {
+                        pBuffs[1]   = instBuffer;
+                        num_buffers = 2;
+                    }
+
+                    m_pImmediateContext->SetVertexBuffers(0, num_buffers, pBuffs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION, Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
                 }
 
+                // 2. Bind Index Buffer
                 auto* iBuffer = m_buffers.Get(packet.index_buffer.GetIndex(), packet.index_buffer.GetGeneration());
                 if (iBuffer != nullptr) {
                     m_pImmediateContext->SetIndexBuffer(iBuffer, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-                    Diligent::DrawIndexedAttribs DrawAttrs;
-                    DrawAttrs.NumIndices = packet.index_count;
-                    DrawAttrs.IndexType  = Diligent::VT_UINT32;
-                    DrawAttrs.Flags      = Diligent::DRAW_FLAG_VERIFY_ALL;
-                    m_pImmediateContext->DrawIndexed(DrawAttrs);
+
+                    // 3. Dispatch Draw Call (Indirect vs Direct)
+                    auto* indirectBuffer = m_buffers.Get(packet.indirect_buffer.GetIndex(), packet.indirect_buffer.GetGeneration());
+                    if (indirectBuffer != nullptr) {
+                        Diligent::DrawIndexedIndirectAttribs DrawAttrs;
+                        DrawAttrs.pAttribsBuffer = indirectBuffer;
+                        DrawAttrs.DrawArgsOffset = packet.indirect_offset;
+                        DrawAttrs.IndexType      = Diligent::VT_UINT32;
+                        DrawAttrs.Flags          = Diligent::DRAW_FLAG_VERIFY_ALL;
+                        m_pImmediateContext->DrawIndexedIndirect(DrawAttrs);
+                    } else {
+                        Diligent::DrawIndexedAttribs DrawAttrs;
+                        DrawAttrs.NumIndices = packet.index_count;
+                        DrawAttrs.IndexType  = Diligent::VT_UINT32;
+                        DrawAttrs.Flags      = Diligent::DRAW_FLAG_VERIFY_ALL;
+                        m_pImmediateContext->DrawIndexed(DrawAttrs);
+                    }
                 }
             }
 

@@ -24,14 +24,7 @@ public:
 
     void BuildGraph(tf::Taskflow& taskflow) override {}
 
-    void RegisterReflection() override {
-        engine::ecs::Meta<engine::ecs::EnvironmentComponent>()
-            .type(engine::ecs::Hash("EnvironmentComponent"))
-            .data<&engine::ecs::EnvironmentComponent::bounds>(engine::ecs::Hash("bounds"))
-            .data<&engine::ecs::EnvironmentComponent::gravity>(engine::ecs::Hash("gravity"))
-            .data<&engine::ecs::EnvironmentComponent::ambient_color>(engine::ecs::Hash("ambient_color"))
-            .data<&engine::ecs::EnvironmentComponent::fog_density>(engine::ecs::Hash("fog_density"));
-    }
+    void RegisterReflection() override {}
 
     void CompileFrameGraph(engine::FrameDAG& dag) override {
         const int* p_write = dag.p_write_state;

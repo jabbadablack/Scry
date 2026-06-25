@@ -5,6 +5,7 @@
 #include "OS/glfw/glfw_window.hpp"
 #include "debug/logger.hpp"
 #include "engine.hpp"
+#include "reflection/core_reflection.hpp"
 
 namespace engine {
 
@@ -36,6 +37,8 @@ ENGINE_INLINE bool Engine::Initialize(IInput* input) {
 
     m_input = input;
     ENGINE_LOG_INFO("Engine initializing");
+
+    engine::RegisterCoreReflection();
 
     ENGINE_LOG_INFO("Engine: Registering module reflection types");
     for (auto& module : m_modules) {

@@ -25,5 +25,7 @@
 #include "ecs/registry.hpp"
 #include "IO/asset_types.h"
 #include "IO/manager.hpp"
+#include "serialization/archive.hpp"
+#include "serialization/meta_serializer.hpp"
 
 #endif // ENGINE_CORE_HPP

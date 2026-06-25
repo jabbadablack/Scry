@@ -15,6 +15,6 @@
 - [ ] make an editor.
 - [ ] choose a scripting language.
 - [ ] hot reloading.
-- [ ] serialization.
+- [x] serialization.
 - [x] decouple glfw from the core engine code and instead interface windowing from the core engine.
 - [x] remove references to external libraries from syntax

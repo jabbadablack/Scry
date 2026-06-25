@@ -54,12 +54,6 @@ public:
                                ENGINE_LOG_INFO(std::string("Cursor confinement toggled to: ") +
                                                (input->IsCursorConfined() ? "confined" : "unconfined"));
                            }
-                           if (input->IsKeyPressed(engine::Key::F11)) {
-                               auto view = m_engine->GetRegistry().View<engine::ecs::EditorComponent>();
-                               for (auto ent : view) {
-                                   m_editorQueue.Push({ent}, m_engine->GetFrameArena(write_state));
-                               }
-                           }
 
                            engine::math::Vector3 moveDelta = engine::math::Vector3::Zero();
                            if (input->IsKeyHeld(engine::Key::W)) {
@@ -117,14 +111,6 @@ public:
                                     engine::math::DegToRad(cam.fov), 800.0F / 600.0F, cam.near_plane, cam.far_plane);
                                 cam.view_proj = view * proj;
                             }
-                        }))
-            .AddReactor("EditorReactor", engine::Process(m_editorQueue, [this](const EditorToggleIntent& intent) {
-                            auto& reg = m_engine->GetRegistry();
-                            if (reg.HasComponent<engine::ecs::EditorComponent>(intent.target)) {
-                                auto& editor = reg.GetComponent<engine::ecs::EditorComponent>(intent.target);
-                                editor.show_overlay = !editor.show_overlay;
-                                ENGINE_LOG_INFO(std::string("[EDITOR] Overlay toggled to: ") + (editor.show_overlay ? "ON" : "OFF"));
-                            }
                         }));
     }
     void Shutdown() override {}
@@ -179,7 +165,6 @@ int main() {
     reg.AddComponent<engine::ecs::TagComponent>(levelEnt).tag = engine::StringHash{"Level"};
     reg.AddComponent<engine::ecs::HierarchyComponent>(levelEnt);
     reg.AddComponent<engine::ecs::EnvironmentComponent>(levelEnt);
-    reg.AddComponent<engine::ecs::EditorComponent>(levelEnt);
 
     // 2. Create Grid (Child of Level)
     auto gridEnt = reg.CreateEntity();

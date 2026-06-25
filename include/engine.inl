@@ -89,6 +89,14 @@ ENGINE_INLINE void Engine::Run() {
     const double target_dt = m_ITime.GetFixedDeltaTime();
 
     while (!m_windowManager.ShouldClose()) {
+        m_windowManager.PollAllEvents();
+
+        if (!m_windowManager.GetMainWindow()->HasFocus()) {
+            engine::ITime::Sleep(33);
+            m_ITime.Update();
+            continue;
+        }
+
         m_ITime.Update();
         accumulator += m_ITime.GetDeltaTime();
 
@@ -98,7 +106,6 @@ ENGINE_INLINE void Engine::Run() {
         }
 
         SetInterpolationAlpha(accumulator / target_dt);
-        m_windowManager.PollAllEvents();
         engine::ITime::Sleep(1);
     }
 

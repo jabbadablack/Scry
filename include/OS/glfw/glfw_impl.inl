@@ -170,6 +170,12 @@ namespace engine {
         return m_window != nullptr;
     }
 
+    bool GlfwWindow::HasFocus() const {
+        ENGINE_ASSERT(m_initialized, "HasFocus called before Initialize");
+        ENGINE_ASSERT(m_window != nullptr, "HasFocus called with no window");
+        return glfwGetWindowAttrib(m_window, GLFW_FOCUSED) != 0;
+    }
+
     NativeHandles GlfwWindow::GetNativeHandles() const {
         ENGINE_ASSERT(m_initialized, "GlfwWindow::GetNativeHandles called before Initialize");
         ENGINE_ASSERT(m_window != nullptr, "GlfwWindow::GetNativeHandles called with no window");

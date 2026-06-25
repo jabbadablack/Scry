@@ -37,6 +37,7 @@ namespace engine {
         void SwapBuffers() override;
         bool ShouldClose() const override;
         NativeHandles GetNativeHandles() const override;
+        [[nodiscard]] bool HasFocus() const override;
 
         // Non-virtual GLFW-specific method
         GLFWwindow* GetRawWindow() const noexcept;

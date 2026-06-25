@@ -15,6 +15,7 @@ namespace engine {
         virtual void SwapBuffers() = 0;
         [[nodiscard]] virtual bool ShouldClose() const = 0;
         [[nodiscard]] virtual NativeHandles GetNativeHandles() const = 0;
+        [[nodiscard]] virtual bool HasFocus() const = 0;
     };
 
 } // namespace engine

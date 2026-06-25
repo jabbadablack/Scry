@@ -257,7 +257,7 @@ void DiligentModule::RenderThreadLoop() {
                 pImGui->NewFrame(m_pSwapChain->GetDesc().Width, m_pSwapChain->GetDesc().Height, m_pSwapChain->GetDesc().PreTransform);
 
                 if (queue.ShouldDrawEditor()) {
-                    ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
+                    ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
                     if (ImGui::Begin("SCRY Engine Tools")) {
                         ImGui::Text("Renderer: Vulkan (Diligent)");
                         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
@@ -276,7 +276,6 @@ void DiligentModule::RenderThreadLoop() {
                 m_pImmediateContext->SetRenderTargets(1, &pMainRTV, pMainDSV, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
                 pImGui->Render(m_pImmediateContext);
 
-                // CRITICAL FIX: This allows ImGui to destroy orphaned swapchains when the editor is toggled off!
                 if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
                     ImGui::UpdatePlatformWindows();
                     ImGui::RenderPlatformWindowsDefault();

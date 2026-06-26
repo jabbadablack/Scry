@@ -92,6 +92,11 @@ if(MSVC)
 else()
     target_compile_options(${PROJECT_NAME} INTERFACE $<$<NOT:$<CONFIG:Debug>>:-fno-rtti> -ffunction-sections -fdata-sections)
     target_link_options(${PROJECT_NAME} INTERFACE -Wl,--gc-sections)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        # DiligentCore adds -mavx2 for Release; -mfma must accompany it or Eigen's FMA
+        # intrinsics (_mm_fmadd_ps, always_inline) fail to compile without the fma target feature.
+        target_compile_options(${PROJECT_NAME} INTERFACE $<$<NOT:$<CONFIG:Debug>>:-mfma>)
+    endif()
 endif()
 
 target_compile_definitions(${PROJECT_NAME} INTERFACE ENTT_PACKED_PAGE=128 ENTT_SPARSE_PAGE=128)

@@ -48,10 +48,6 @@ namespace engine::ecs {
         f32                   fog_density   = 0.01F;
     };
 
-    struct EditorComponent {
-        bool show_overlay = false;
-    };
-
 } // namespace engine::ecs
 
 

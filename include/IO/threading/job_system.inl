@@ -3,7 +3,6 @@
 
 #include <algorithm>
 #include <thread>
-#include "../../debug/profiler.hpp"
 
 namespace engine::io {
 
@@ -25,7 +24,6 @@ template <typename F>
 ENGINE_INLINE auto JobSystem::RunTask(F&& func) {
     ENGINE_ASSERT(m_executor.num_workers() > 0, "RunTask called on a zero-worker executor");
     return m_executor.async([f = std::forward<F>(func)]() mutable {
-        ENGINE_PROFILE_ZONE("Taskflow Job");
         return f();
     });
 }

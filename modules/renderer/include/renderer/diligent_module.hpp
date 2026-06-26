@@ -5,10 +5,6 @@
 #include "render_queue.hpp"
 #include <atomic>
 #include <cstddef>
-#ifdef ENGINE_ENABLE_IMGUI
-#include <imgui.h>
-#include <backends/imgui_impl_glfw.h>
-#endif
 #include <memory/chained_arena.hpp>
 #include <module/module.hpp>
 #include <mutex>
@@ -49,10 +45,6 @@ public:
     void BuildGraph(tf::Taskflow& taskflow) override;
     void CompileFrameGraph(FrameDAG& dag) override;
     void Shutdown() override;
-
-#ifdef ENGINE_ENABLE_IMGUI
-    [[nodiscard]] std::mutex& GetImGuiMutex() { return m_imguiMutex; }
-#endif
 
 private:
     void RenderThreadLoop();
@@ -96,13 +88,6 @@ private:
     std::unordered_map<uint32_t, GPUMesh> m_gpuMeshes;
     std::unordered_map<uint32_t, engine::graphics::TextureHandle> m_gpuTextures;
 
-#ifdef ENGINE_ENABLE_IMGUI
-    std::mutex m_imguiMutex;
-#endif
-    void* m_pImGui = nullptr;
-    void* m_imguiContext = nullptr;
-
-    void DestroyImGui();
 };
 
 } // namespace engine::renderer

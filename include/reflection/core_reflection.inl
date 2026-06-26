@@ -193,12 +193,6 @@ ENGINE_INLINE void RegisterCoreReflection() {
             .ENGINE_REFLECT_FIELD(ambient_color)
             .ENGINE_REFLECT_FIELD(fog_density);
     }
-    {
-        using CurrentType = EditorComponent;
-        ENGINE_REFLECT_CLASS(EditorComponent)
-            .ENGINE_REFLECT_FIELD(show_overlay);
-    }
-
     ENGINE_LOG_INFO("Core Engine Reflection Registered");
 }
 

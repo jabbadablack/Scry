@@ -105,13 +105,6 @@ target_link_libraries(renderer PUBLIC
     DiligentFX
 )
 
-if(ENGINE_ENABLE_IMGUI)
-    if(TARGET Diligent-Imgui)
-        target_link_libraries(Diligent-Imgui PUBLIC imgui)
-    endif()
-    target_link_libraries(renderer PUBLIC Diligent-Imgui)
-endif()
-
 # Exclude shared variants from the build to avoid MinGW linker map script errors
 if(TARGET Diligent-GraphicsEngineVk-shared)
     set_target_properties(Diligent-GraphicsEngineVk-shared PROPERTIES EXCLUDE_FROM_ALL ON)

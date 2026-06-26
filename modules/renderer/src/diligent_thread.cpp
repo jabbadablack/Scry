@@ -1,34 +1,13 @@
-#ifdef ENGINE_ENABLE_IMGUI
-#include "Imgui/interface/ImGuiImplDiligent.hpp"
-#endif
 #include "renderer/diligent_module.hpp"
 #include <GLFW/glfw3.h>
-#ifdef ENGINE_ENABLE_IMGUI
-#include <backends/imgui_impl_glfw.h>
-#endif
 #include <debug/assert.h>
 #include <debug/logger.hpp>
-#include <debug/profiler.hpp>
 #include <engine.hpp>
 #include <thread>
 
 namespace engine::renderer {
 
-void DiligentModule::DestroyImGui() {
-#ifdef ENGINE_ENABLE_IMGUI
-    ImGui_ImplGlfw_Shutdown();
-    delete static_cast<Diligent::ImGuiImplDiligent*>(m_pImGui);
-    m_pImGui = nullptr;
-#endif
-}
-
 void DiligentModule::RenderThreadLoop() {
-#ifdef ENGINE_ENABLE_IMGUI
-    if (m_imguiContext != nullptr) {
-        ImGui::SetCurrentContext(static_cast<ImGuiContext*>(m_imguiContext));
-    }
-#endif
-
     while (m_running.load(std::memory_order_relaxed)) {
         // Process resource intents before locking swap mutex
         std::vector<engine::graphics::BufferIntent> new_buffers;
@@ -256,53 +235,16 @@ void DiligentModule::RenderThreadLoop() {
             // (When you implement offscreen HDR buffers, you will bind the Swapchain RTV here
             // and draw a fullscreen quad reading from your offscreen HDR texture).
             DispatchPackets(queue, engine::graphics::RenderPass::PostProcess);
-
-#ifdef ENGINE_ENABLE_IMGUI
-            if (m_pImGui != nullptr) {
-                std::lock_guard<std::mutex> lock(m_imguiMutex);
-
-                auto* pImGui = static_cast<Diligent::ImGuiImplDiligent*>(m_pImGui);
-                ImGui_ImplGlfw_NewFrame();
-                pImGui->NewFrame(m_pSwapChain->GetDesc().Width, m_pSwapChain->GetDesc().Height, m_pSwapChain->GetDesc().PreTransform);
-
-                if (queue.ShouldDrawEditor()) {
-                    ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
-                    if (ImGui::Begin("SCRY Debug UI")) {
-                        ImGui::Text("Renderer: Vulkan (Diligent)");
-                        ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
-                        ImGui::Text("Frame Time: %.4f ms", m_engine->GetTime().GetDeltaTime() * 1000.0);
-                        ImGui::Separator();
-                        ImGui::Text("Memory Usage: %zu MB", engine::TrackedHeap::GetCurrentUsage() / (1024 * 1024));
-
-                        if (ImGui::Button("Connect Tracy Server")) {
-                            ENGINE_LOG_INFO("To view deep profiling, launch 'tracy-profiler' and connect to 127.0.0.1");
-                        }
-                    }
-                    ImGui::End();
-                }
-
-                ImGui::Render();
-                m_pImmediateContext->SetRenderTargets(1, &pMainRTV, pMainDSV, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-                pImGui->Render(m_pImmediateContext);
-
-                if ((ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) != 0) {
-                    ImGui::UpdatePlatformWindows();
-                    ImGui::RenderPlatformWindowsDefault();
-                }
-            }
-#endif
         }
 
         m_pSwapChain->Present();
         m_frameCount++;
         std::this_thread::yield();
-        ENGINE_PROFILE_FRAME();
     }
 }
 
 void DiligentModule::DispatchPackets(const engine::renderer::RenderQueue& queue,
                                      engine::graphics::RenderPass targetPass) {
-    ENGINE_PROFILE_ZONE("DispatchPackets");
     for (size_t i = 0; i < queue.GetCount(); ++i) {
         const auto& packet = queue.GetCommands()[i];
         if (packet.pass != targetPass)

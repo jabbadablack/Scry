@@ -1,9 +1,6 @@
 cmake_minimum_required(VERSION 3.19)
 project(SCRY C CXX)
 
-option(ENGINE_ENABLE_TRACY "Enable Tracy Profiler" OFF)
-option(ENGINE_ENABLE_IMGUI "Enable ImGui Debugging UI" OFF)
-
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
 endif()
@@ -28,26 +25,6 @@ set(ASSIMP_BUILD_ASSIMP_TOOLS OFF CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(ASSIMP_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
-
-if(ENGINE_ENABLE_TRACY)
-    FetchContent_Declare(tracy GIT_REPOSITORY https://github.com/wolfpld/tracy.git GIT_TAG v0.13.1)
-    set(TRACY_ENABLE ON CACHE BOOL "" FORCE)
-    set(TRACY_ON_DEMAND ON CACHE BOOL "" FORCE)        # Only allocate heavy queues when the server actually connects
-    set(TRACY_NO_SYSTEM_TRACING ON CACHE BOOL "" FORCE)# Disable heavy OS-level context switch tracking
-    set(TRACY_NO_FRAME_IMAGE ON CACHE BOOL "" FORCE)   # Prevent capturing framebuffer screenshots to RAM
-    set(TRACY_NO_CALLSTACK ON CACHE BOOL "" FORCE)     # Disable automatic callstack unwinding (massive RAM saver)
-    FetchContent_MakeAvailable(tracy)
-endif()
-
-if(ENGINE_ENABLE_IMGUI)
-    FetchContent_Declare(imgui GIT_REPOSITORY https://github.com/ocornut/imgui.git GIT_TAG docking)
-    FetchContent_GetProperties(imgui)
-    if(NOT imgui_POPULATED)
-        FetchContent_Populate(imgui)
-    endif()
-    file(WRITE ${imgui_SOURCE_DIR}/CMakeLists.txt "cmake_minimum_required(VERSION 3.19)\nproject(imgui CXX)\nadd_library(imgui STATIC imgui.cpp imgui_demo.cpp imgui_draw.cpp imgui_tables.cpp imgui_widgets.cpp backends/imgui_impl_glfw.cpp)\ntarget_include_directories(imgui PUBLIC \${CMAKE_CURRENT_SOURCE_DIR} \${CMAKE_CURRENT_SOURCE_DIR}/backends)\ntarget_link_libraries(imgui PUBLIC glfw)\nadd_library(imgui::imgui ALIAS imgui)\n")
-    add_subdirectory(${imgui_SOURCE_DIR} ${imgui_BINARY_DIR})
-endif()
 
 FetchContent_MakeAvailable(glfw taskflow doctest entt assimp)
 
@@ -75,16 +52,6 @@ if(WIN32)
     target_link_libraries(${PROJECT_NAME} INTERFACE winmm)
 endif()
 
-if(ENGINE_ENABLE_TRACY)
-    target_link_libraries(${PROJECT_NAME} INTERFACE TracyClient)
-    target_compile_definitions(${PROJECT_NAME} INTERFACE ENGINE_ENABLE_TRACY)
-endif()
-
-if(ENGINE_ENABLE_IMGUI)
-    target_link_libraries(${PROJECT_NAME} INTERFACE imgui::imgui)
-    target_compile_definitions(${PROJECT_NAME} INTERFACE ENGINE_ENABLE_IMGUI)
-endif()
-
 # POTATO PC / EXTREME RAM REDUCTION
 if(MSVC)
     target_compile_options(${PROJECT_NAME} INTERFACE $<$<NOT:$<CONFIG:Debug>>:/GR-> /Gy /Gw)
@@ -107,3 +74,4 @@ target_sources(${PROJECT_NAME} INTERFACE FILE_SET HEADERS BASE_DIRS include FILE
 add_subdirectory(modules/renderer)
 add_subdirectory(tests)
 add_subdirectory(samples/engine-basic)
+add_subdirectory(editor)

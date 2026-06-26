@@ -2,7 +2,6 @@
 #define ENGINE_CORE_TRACKED_HEAP_INL
 
 #include <new>
-#include "../debug/profiler.hpp"
 
 namespace engine {
 
@@ -47,7 +46,6 @@ ENGINE_INLINE void* TrackedHeap::Allocate(size_t size, size_t alignment) {
         // Loop executes if peak has changed concurrently
     }
 
-    ENGINE_PROFILE_ALLOC(reinterpret_cast<void*>(aligned_address), size);
     return reinterpret_cast<void*>(aligned_address);
 }
 
@@ -66,8 +64,6 @@ ENGINE_INLINE void TrackedHeap::Deallocate(void* ptr, size_t size) noexcept {
         ENGINE_ASSERT(header->size == size, "Deallocation size mismatch in TrackedHeap!");
     }
     ENGINE_ASSERT(header->original_ptr != nullptr, "Invalid metadata pointer in TrackedHeap!");
-
-    ENGINE_PROFILE_FREE(ptr);
 
     size_t actual_size = header->size;
     void* original_ptr = header->original_ptr;

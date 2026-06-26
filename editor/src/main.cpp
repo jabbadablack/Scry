@@ -36,6 +36,7 @@ public:
     }
 
     void RegisterReflection() override {
+        ENGINE_ASSERT(m_engine != nullptr, "RegisterReflection called before Initialize()");
         using CurrentType = EntitySelectionIntent;
         ENGINE_REFLECT_CLASS(EntitySelectionIntent).ENGINE_REFLECT_FIELD(target);
     }
@@ -59,6 +60,7 @@ public:
     }
 
     void Shutdown() override {
+        ENGINE_ASSERT(m_engine != nullptr, "Shutdown called on module that was never initialized");
         m_engine = nullptr;
     }
 

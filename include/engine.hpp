@@ -40,10 +40,6 @@ public:
     ENGINE_INLINE void RebuildExecutionGraph();
     ENGINE_INLINE void Run();
 
-    // Time helpers for custom run loops (replaces the internal time management in Run())
-    ENGINE_INLINE void InitializeTime();
-    ENGINE_INLINE void UpdateTime();
-
     // Execute Intent Frame to generate intents
     ENGINE_INLINE void ExecuteIntentFrame();
 

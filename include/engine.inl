@@ -136,14 +136,6 @@ ENGINE_INLINE void Engine::SetInterpolationAlpha(double alpha) {
     m_interpolationAlpha = alpha;
 }
 
-ENGINE_INLINE void Engine::InitializeTime() {
-    m_ITime.Initialize();
-}
-
-ENGINE_INLINE void Engine::UpdateTime() {
-    m_ITime.Update();
-}
-
 // Execute Intent Frame to generate intents
 ENGINE_INLINE void Engine::ExecuteIntentFrame() {
     // Hook for intent-generation systems

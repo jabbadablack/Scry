@@ -91,37 +91,34 @@ ENGINE_INLINE void RegisterCoreReflection() {
         .data<MouseButton::Middle>(Hash("Middle")).prop(Hash("name"), "Middle");
 
     // ── 2. MATH TYPES ──────────────────────────────────────────────────────
-    // Eigen types define x()/y()/z()/w() in a deep template base class
-    // (DenseCoeffsBase), not in Matrix<> itself.  GCC 15 refuses the
-    // static_cast<const f32&(Vector2::*)() const>(&Vector2::x) form because the
-    // member pointer's class doesn't match.  Using captureless C++20 lambdas
-    // converted to free-function pointers via unary + avoids the cast entirely
-    // while still satisfying EnTT's data<nullptr, Getter> overload.
+    // data<nullptr, getter>() silences meta_setter instantiation: a 0-arg const
+    // member fn has an empty args_type, so the single-arg data<fn> path would
+    // fail on type_list_element_t<0, type_list<>> inside meta_setter (EnTT v3.13).
     Meta<Vector2>().type(Hash("Vector2")).prop(Hash("name"), "Vector2")
-        .data<nullptr, +[](const Vector2& v) -> f32 { return v.x(); }>(Hash("x")).prop(Hash("name"), "x")
-        .data<nullptr, +[](const Vector2& v) -> f32 { return v.y(); }>(Hash("y")).prop(Hash("name"), "y");
+        .data<nullptr, static_cast<const f32&(Vector2::*)() const>(&Vector2::x)>(Hash("x")).prop(Hash("name"), "x")
+        .data<nullptr, static_cast<const f32&(Vector2::*)() const>(&Vector2::y)>(Hash("y")).prop(Hash("name"), "y");
 
     Meta<Vector3>().type(Hash("Vector3")).prop(Hash("name"), "Vector3")
-        .data<nullptr, +[](const Vector3& v) -> f32 { return v.x(); }>(Hash("x")).prop(Hash("name"), "x")
-        .data<nullptr, +[](const Vector3& v) -> f32 { return v.y(); }>(Hash("y")).prop(Hash("name"), "y")
-        .data<nullptr, +[](const Vector3& v) -> f32 { return v.z(); }>(Hash("z")).prop(Hash("name"), "z");
+        .data<nullptr, static_cast<const f32&(Vector3::*)() const>(&Vector3::x)>(Hash("x")).prop(Hash("name"), "x")
+        .data<nullptr, static_cast<const f32&(Vector3::*)() const>(&Vector3::y)>(Hash("y")).prop(Hash("name"), "y")
+        .data<nullptr, static_cast<const f32&(Vector3::*)() const>(&Vector3::z)>(Hash("z")).prop(Hash("name"), "z");
 
     Meta<Vector4>().type(Hash("Vector4")).prop(Hash("name"), "Vector4")
-        .data<nullptr, +[](const Vector4& v) -> f32 { return v.x(); }>(Hash("x")).prop(Hash("name"), "x")
-        .data<nullptr, +[](const Vector4& v) -> f32 { return v.y(); }>(Hash("y")).prop(Hash("name"), "y")
-        .data<nullptr, +[](const Vector4& v) -> f32 { return v.z(); }>(Hash("z")).prop(Hash("name"), "z")
-        .data<nullptr, +[](const Vector4& v) -> f32 { return v.w(); }>(Hash("w")).prop(Hash("name"), "w");
+        .data<nullptr, static_cast<const f32&(Vector4::*)() const>(&Vector4::x)>(Hash("x")).prop(Hash("name"), "x")
+        .data<nullptr, static_cast<const f32&(Vector4::*)() const>(&Vector4::y)>(Hash("y")).prop(Hash("name"), "y")
+        .data<nullptr, static_cast<const f32&(Vector4::*)() const>(&Vector4::z)>(Hash("z")).prop(Hash("name"), "z")
+        .data<nullptr, static_cast<const f32&(Vector4::*)() const>(&Vector4::w)>(Hash("w")).prop(Hash("name"), "w");
 
     // Quaternion: x/y/z/w component access for serializing rotation state
     Meta<Quaternion>().type(Hash("Quaternion")).prop(Hash("name"), "Quaternion")
-        .data<nullptr, +[](const Quaternion& q) -> f32 { return q.x(); }>(Hash("x")).prop(Hash("name"), "x")
-        .data<nullptr, +[](const Quaternion& q) -> f32 { return q.y(); }>(Hash("y")).prop(Hash("name"), "y")
-        .data<nullptr, +[](const Quaternion& q) -> f32 { return q.z(); }>(Hash("z")).prop(Hash("name"), "z")
-        .data<nullptr, +[](const Quaternion& q) -> f32 { return q.w(); }>(Hash("w")).prop(Hash("name"), "w");
+        .data<nullptr, static_cast<const f32&(Quaternion::*)() const>(&Quaternion::x)>(Hash("x")).prop(Hash("name"), "x")
+        .data<nullptr, static_cast<const f32&(Quaternion::*)() const>(&Quaternion::y)>(Hash("y")).prop(Hash("name"), "y")
+        .data<nullptr, static_cast<const f32&(Quaternion::*)() const>(&Quaternion::z)>(Hash("z")).prop(Hash("name"), "z")
+        .data<nullptr, static_cast<const f32&(Quaternion::*)() const>(&Quaternion::w)>(Hash("w")).prop(Hash("name"), "w");
 
-    // Matrix4: raw float buffer pointer for serialization
+    // Matrix4: const data() selects the const float* overload (two overloads exist)
     Meta<Matrix4>().type(Hash("Matrix4")).prop(Hash("name"), "Matrix4")
-        .data<nullptr, +[](const Matrix4& m) -> const f32* { return m.data(); }>(Hash("data")).prop(Hash("name"), "data");
+        .data<nullptr, static_cast<const f32*(Matrix4::*)() const>(&Matrix4::data)>(Hash("data")).prop(Hash("name"), "data");
 
     Meta<AABB>().type(Hash("AABB")).prop(Hash("name"), "AABB")
         .data<&AABB::min>(Hash("min")).prop(Hash("name"), "min")

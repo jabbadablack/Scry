@@ -308,6 +308,10 @@ void DiligentModule::RenderThreadLoop() {
             // flush+idle to guarantee the copy is visible on the CPU, then invoke the callback.
             // The full GPU sync is acceptable for an editor (one-frame readback latency).
             if (offscreen && m_stagingReadback) {
+                // Unbind the offscreen RT before transitioning it as a copy source.
+                m_pImmediateContext->SetRenderTargets(0, nullptr, nullptr,
+                                                      Diligent::RESOURCE_STATE_TRANSITION_MODE_NONE);
+
                 Diligent::CopyTextureAttribs CopyAttribs;
                 CopyAttribs.pSrcTexture = m_offscreenRT;
                 CopyAttribs.SrcTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
@@ -318,9 +322,11 @@ void DiligentModule::RenderThreadLoop() {
                 m_pImmediateContext->Flush();
                 m_pImmediateContext->WaitForIdle();
 
+                // MAP_FLAG_DO_NOT_WAIT: we handle synchronization via WaitForIdle above,
+                // so Diligent does not need to issue its own internal GPU wait.
                 Diligent::MappedTextureSubresource MappedData;
                 m_pImmediateContext->MapTextureSubresource(m_stagingReadback, 0, 0, Diligent::MAP_READ,
-                                                           Diligent::MAP_FLAG_NONE, nullptr, MappedData);
+                                                           Diligent::MAP_FLAG_DO_NOT_WAIT, nullptr, MappedData);
                 if (MappedData.pData != nullptr) {
                     std::lock_guard<std::mutex> lock(m_frameCallbackMutex);
                     if (m_frameCallback) {

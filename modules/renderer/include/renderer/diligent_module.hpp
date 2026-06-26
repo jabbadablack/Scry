@@ -5,6 +5,8 @@
 #include "render_queue.hpp"
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
+#include <functional>
 #ifdef ENGINE_ENABLE_IMGUI
 #include <imgui.h>
 #include <backends/imgui_impl_glfw.h>
@@ -53,6 +55,12 @@ public:
 #ifdef ENGINE_ENABLE_IMGUI
     [[nodiscard]] std::mutex& GetImGuiMutex() { return m_imguiMutex; }
 #endif
+
+    // Offscreen rendering API (used by the editor to redirect output to a CPU-readable texture)
+    // Must be called after Initialize(). Thread-safe: creates GPU resources via the device (which is
+    // internally synchronized) then atomically enables the offscreen path in the render thread.
+    void EnableOffscreenMode(uint32_t width, uint32_t height);
+    void SetFrameReadyCallback(std::function<void(const uint8_t*, uint32_t, uint32_t, uint32_t)> callback);
 
 private:
     void RenderThreadLoop();
@@ -103,6 +111,16 @@ private:
     void* m_imguiContext = nullptr;
 
     void DestroyImGui();
+
+    // Offscreen state — written once from main thread after Initialize(), then read-only in render thread
+    std::atomic<bool> m_offscreenEnabled{false};
+    uint32_t m_offscreenWidth = 0;
+    uint32_t m_offscreenHeight = 0;
+    Diligent::RefCntAutoPtr<Diligent::ITexture> m_offscreenRT;
+    Diligent::RefCntAutoPtr<Diligent::ITexture> m_offscreenDS;
+    Diligent::RefCntAutoPtr<Diligent::ITexture> m_stagingReadback;
+    std::function<void(const uint8_t*, uint32_t, uint32_t, uint32_t)> m_frameCallback;
+    std::mutex m_frameCallbackMutex;
 };
 
 } // namespace engine::renderer

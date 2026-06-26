@@ -225,16 +225,28 @@ void DiligentModule::RenderThreadLoop() {
             m_pImmediateContext->UnmapBuffer(m_cameraConstants, Diligent::MAP_WRITE);
         }
 
-        auto* pMainRTV = m_pSwapChain->GetCurrentBackBufferRTV();
-        auto* pMainDSV = m_pSwapChain->GetDepthBufferDSV();
+        // Resolve the active render target: offscreen texture for editor mode, swap chain for standalone
+        const bool offscreen = m_offscreenEnabled.load(std::memory_order_acquire);
+
+        Diligent::ITextureView* pColorRTV = nullptr;
+        Diligent::ITextureView* pDepthDSV = nullptr;
+
+        if (offscreen) {
+            pColorRTV = m_offscreenRT->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
+            pDepthDSV = m_offscreenDS->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
+        } else {
+            pColorRTV = m_pSwapChain->GetCurrentBackBufferRTV();
+            pDepthDSV = m_pSwapChain->GetDepthBufferDSV();
+        }
+
         const float ClearColor[] = {0.15F, 0.15F, 0.15F, 1.0F};
 
-        if ((pMainRTV != nullptr) && (pMainDSV != nullptr)) {
+        if ((pColorRTV != nullptr) && (pDepthDSV != nullptr)) {
             // 1. Z-PREPASS
             // Render ONLY to the depth buffer to prime early-Z culling
-            m_pImmediateContext->SetRenderTargets(0, nullptr, pMainDSV,
+            m_pImmediateContext->SetRenderTargets(0, nullptr, pDepthDSV,
                                                   Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-            m_pImmediateContext->ClearDepthStencil(pMainDSV, Diligent::CLEAR_DEPTH_FLAG, 1.0F, 0,
+            m_pImmediateContext->ClearDepthStencil(pDepthDSV, Diligent::CLEAR_DEPTH_FLAG, 1.0F, 0,
                                                    Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
             m_pImmediateContext->CommitShaderResources(m_globalSRB,
@@ -242,10 +254,10 @@ void DiligentModule::RenderThreadLoop() {
             DispatchPackets(queue, engine::graphics::RenderPass::ZPrePass);
 
             // 2. OPAQUE (G-BUFFER / FORWARD)
-            // Re-bind the color target, keeping the primed depth buffer
-            m_pImmediateContext->SetRenderTargets(1, &pMainRTV, pMainDSV,
+            // Re-bind the colour target, keeping the primed depth buffer
+            m_pImmediateContext->SetRenderTargets(1, &pColorRTV, pDepthDSV,
                                                   Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-            m_pImmediateContext->ClearRenderTarget(pMainRTV, ClearColor,
+            m_pImmediateContext->ClearRenderTarget(pColorRTV, ClearColor,
                                                    Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
             DispatchPackets(queue, engine::graphics::RenderPass::Opaque);
 
@@ -253,17 +265,16 @@ void DiligentModule::RenderThreadLoop() {
             DispatchPackets(queue, engine::graphics::RenderPass::Transparent);
 
             // 4. POST-PROCESS
-            // (When you implement offscreen HDR buffers, you will bind the Swapchain RTV here
-            // and draw a fullscreen quad reading from your offscreen HDR texture).
             DispatchPackets(queue, engine::graphics::RenderPass::PostProcess);
 
 #ifdef ENGINE_ENABLE_IMGUI
-            if (m_pImGui != nullptr) {
+            if (!offscreen && m_pImGui != nullptr) {
                 std::lock_guard<std::mutex> lock(m_imguiMutex);
 
                 auto* pImGui = static_cast<Diligent::ImGuiImplDiligent*>(m_pImGui);
                 ImGui_ImplGlfw_NewFrame();
-                pImGui->NewFrame(m_pSwapChain->GetDesc().Width, m_pSwapChain->GetDesc().Height, m_pSwapChain->GetDesc().PreTransform);
+                pImGui->NewFrame(m_pSwapChain->GetDesc().Width, m_pSwapChain->GetDesc().Height,
+                                 m_pSwapChain->GetDesc().PreTransform);
 
                 if (queue.ShouldDrawEditor()) {
                     ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
@@ -282,7 +293,8 @@ void DiligentModule::RenderThreadLoop() {
                 }
 
                 ImGui::Render();
-                m_pImmediateContext->SetRenderTargets(1, &pMainRTV, pMainDSV, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+                m_pImmediateContext->SetRenderTargets(1, &pColorRTV, pDepthDSV,
+                                                      Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
                 pImGui->Render(m_pImmediateContext);
 
                 if ((ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) != 0) {
@@ -291,6 +303,44 @@ void DiligentModule::RenderThreadLoop() {
                 }
             }
 #endif
+
+            // In offscreen mode: blit the colour RT into the CPU-accessible staging texture,
+            // flush+idle to guarantee the copy is visible on the CPU, then invoke the callback.
+            // The full GPU sync is acceptable for an editor (one-frame readback latency).
+            if (offscreen && m_stagingReadback) {
+                Diligent::CopyTextureAttribs CopyAttribs;
+                CopyAttribs.pSrcTexture = m_offscreenRT;
+                CopyAttribs.SrcTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+                CopyAttribs.pDstTexture = m_stagingReadback;
+                CopyAttribs.DstTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+                m_pImmediateContext->CopyTexture(CopyAttribs);
+
+                m_pImmediateContext->Flush();
+                m_pImmediateContext->WaitForIdle();
+
+                Diligent::MappedTextureSubresource MappedData;
+                m_pImmediateContext->MapTextureSubresource(m_stagingReadback, 0, 0, Diligent::MAP_READ,
+                                                           Diligent::MAP_FLAG_NONE, nullptr, MappedData);
+                if (MappedData.pData != nullptr) {
+                    std::lock_guard<std::mutex> lock(m_frameCallbackMutex);
+                    if (m_frameCallback) {
+                        m_frameCallback(static_cast<const uint8_t*>(MappedData.pData), m_offscreenWidth,
+                                        m_offscreenHeight, static_cast<uint32_t>(MappedData.Stride));
+                    }
+                    m_pImmediateContext->UnmapTextureSubresource(m_stagingReadback, 0, 0);
+                }
+
+                // Clear the hidden swap chain back buffer so the Vulkan WSI image is in a presentable
+                // state, then call Present to keep the swap chain acquisition/release cycle healthy.
+                auto* pHiddenRTV = m_pSwapChain->GetCurrentBackBufferRTV();
+                if (pHiddenRTV != nullptr) {
+                    const float black[] = {0.0F, 0.0F, 0.0F, 1.0F};
+                    m_pImmediateContext->SetRenderTargets(1, &pHiddenRTV, nullptr,
+                                                          Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+                    m_pImmediateContext->ClearRenderTarget(pHiddenRTV, black,
+                                                           Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+                }
+            }
         }
 
         m_pSwapChain->Present();

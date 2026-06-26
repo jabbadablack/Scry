@@ -196,6 +196,63 @@ void DiligentModule::BuildGraph(tf::Taskflow& taskflow) {
     // Decoupled execution graph
 }
 
+void DiligentModule::EnableOffscreenMode(uint32_t width, uint32_t height) {
+    ENGINE_ASSERT(m_pDevice != nullptr, "EnableOffscreenMode called before Initialize");
+    ENGINE_ASSERT(width > 0 && height > 0, "EnableOffscreenMode requires non-zero dimensions");
+    ENGINE_ASSERT(!m_offscreenEnabled.load(std::memory_order_relaxed), "EnableOffscreenMode called more than once");
+
+    m_offscreenWidth = width;
+    m_offscreenHeight = height;
+
+    // Offscreen RGBA8 colour render target
+    Diligent::TextureDesc RTDesc;
+    RTDesc.Name = "Editor Offscreen Color RT";
+    RTDesc.Type = Diligent::RESOURCE_DIM_TEX_2D;
+    RTDesc.Width = width;
+    RTDesc.Height = height;
+    RTDesc.Format = Diligent::TEX_FORMAT_RGBA8_UNORM;
+    RTDesc.BindFlags = Diligent::BIND_RENDER_TARGET | Diligent::BIND_SHADER_RESOURCE;
+    RTDesc.Usage = Diligent::USAGE_DEFAULT;
+    m_pDevice->CreateTexture(RTDesc, nullptr, &m_offscreenRT);
+    ENGINE_ASSERT(m_offscreenRT, "Failed to create offscreen colour render target");
+
+    // Offscreen 32-bit depth buffer
+    Diligent::TextureDesc DSDesc;
+    DSDesc.Name = "Editor Offscreen Depth DS";
+    DSDesc.Type = Diligent::RESOURCE_DIM_TEX_2D;
+    DSDesc.Width = width;
+    DSDesc.Height = height;
+    DSDesc.Format = Diligent::TEX_FORMAT_D32_FLOAT;
+    DSDesc.BindFlags = Diligent::BIND_DEPTH_STENCIL;
+    DSDesc.Usage = Diligent::USAGE_DEFAULT;
+    m_pDevice->CreateTexture(DSDesc, nullptr, &m_offscreenDS);
+    ENGINE_ASSERT(m_offscreenDS, "Failed to create offscreen depth stencil");
+
+    // CPU-readable staging texture for readback (one-frame latency acceptable for editor)
+    Diligent::TextureDesc StagingDesc;
+    StagingDesc.Name = "Editor Offscreen Staging";
+    StagingDesc.Type = Diligent::RESOURCE_DIM_TEX_2D;
+    StagingDesc.Width = width;
+    StagingDesc.Height = height;
+    StagingDesc.Format = Diligent::TEX_FORMAT_RGBA8_UNORM;
+    StagingDesc.BindFlags = Diligent::BIND_NONE;
+    StagingDesc.Usage = Diligent::USAGE_STAGING;
+    StagingDesc.CPUAccessFlags = Diligent::CPU_ACCESS_READ;
+    m_pDevice->CreateTexture(StagingDesc, nullptr, &m_stagingReadback);
+    ENGINE_ASSERT(m_stagingReadback, "Failed to create offscreen staging texture");
+
+    // Arm the render thread — after this store the offscreen path is active on the next iteration
+    m_offscreenEnabled.store(true, std::memory_order_release);
+    ENGINE_LOG_INFO("DiligentModule: offscreen mode enabled (" + std::to_string(width) + "x" + std::to_string(height) +
+                    ")");
+}
+
+void DiligentModule::SetFrameReadyCallback(
+    std::function<void(const uint8_t*, uint32_t, uint32_t, uint32_t)> callback) {
+    std::lock_guard<std::mutex> lock(m_frameCallbackMutex);
+    m_frameCallback = std::move(callback);
+}
+
 void DiligentModule::CompileFrameGraph(FrameDAG& dag) {
     ENGINE_ASSERT(m_engine != nullptr, "DiligentModule::CompileFrameGraph called before Initialize");
     ENGINE_ASSERT(m_pDevice != nullptr, "DiligentModule::CompileFrameGraph called without a valid Vulkan device");
@@ -367,6 +424,12 @@ void DiligentModule::Shutdown() {
         DestroyImGui();
     }
 #endif
+
+    // Disarm offscreen mode before releasing textures
+    m_offscreenEnabled.store(false, std::memory_order_release);
+    m_stagingReadback.Release();
+    m_offscreenDS.Release();
+    m_offscreenRT.Release();
 
     m_defaultTexture.Release();
     m_defaultInstanceBuffer.Release();

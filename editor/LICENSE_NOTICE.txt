@@ -1,0 +1,21 @@
+SCRY Editor — License Notice
+==============================
+
+This Editor application (the "Editor") is distributed under the GNU General
+Public License version 3 (GPLv3), due to its use of the Slint UI Framework
+(https://slint.dev), which is itself licensed under GPLv3.
+
+The full text of the GPLv3 license can be found at:
+  https://www.gnu.org/licenses/gpl-3.0.en.html
+
+Core Engine License
+-------------------
+The SCRY engine library that this Editor links against is a separate work and
+remains under its own independent license, which is NOT GPLv3. The GPLv3
+license of this Editor does NOT retroactively affect the core SCRY engine
+library, its headers, or any other standalone executable (e.g. engine-basic)
+that links against SCRY without also linking against Slint.
+
+The GPLv3 applies exclusively to this Editor binary and its source files
+located under editor/. Any file outside the editor/ subdirectory retains its
+original license as declared in the repository root.
